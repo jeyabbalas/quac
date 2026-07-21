@@ -1,0 +1,42 @@
+{
+  "name": "Household Economic Security Panel (HESP) CORE table",
+  "status": "hypothetical example",
+  "json_schema_draft": "2020-12",
+  "record_granularity": "one sampled household at one annual interview wave",
+  "entrypoints": {
+    "modular": "core/core.schema.json",
+    "standalone": "core/hesp.core.bundle.schema.json"
+  },
+  "category_variable_counts": {
+    "assets.json": 24,
+    "debts_credit.json": 26,
+    "derived_measures.json": 15,
+    "employment.json": 32,
+    "financial_services.json": 17,
+    "hardship_shocks.json": 23,
+    "household_composition.json": 28,
+    "housing.json": 24,
+    "identification.json": 16,
+    "income.json": 26,
+    "panel_status.json": 10,
+    "social_programs.json": 24
+  },
+  "total_variables_per_record": 265,
+  "table_level_conditional_blocks": 171,
+  "numeric_sentinels": {
+    "-666": "not applicable / structural skip",
+    "-777": "refused",
+    "-888": "do not know / unavailable",
+    "-999": "not collected / processing missing"
+  },
+  "examples": {
+    "valid": [
+      "valid_owner_selfemployed.json",
+      "valid_public_housing_unbanked.json",
+      "valid_records.json"
+    ],
+    "invalid": [
+      "invalid_renter_with_mortgage.json"
+    ]
+  }
+}

@@ -29,4 +29,12 @@ Any `src/` app code; asserting that the app finds these violations (later phases
 - **UI/UX:** n/a (no UI). Sanity: open `hesp_dirty_100.xlsx` locally once — sheets/values look right (note in log).
 
 ## Deferred notes
-*(agent fills in)*
+
+- **`qc_fixture` seed SQL is NOT here**: it appears under `testing-strategy.md §3` fixtures, but `phase-11-rules-validations.md` task 6 owns it ("Seed helper that materializes the qc_fixture table"). Deferred to P11 deliberately.
+- **`mini_expected_flags.json` message strings are best-effort renderings** of the `json-schema-subsystem.md §D` templates; structural fields (ruleId/scope/row/column/severity/value) are ground truth. P08/P09 may refine the message text when the real translator lands (the file's `$comment` says so too).
+- **§D.7 golden #2 contradicts the committed schema** (see Verified fact V11): `-555` is valid in `selfemp_income_annual`. The dirty fixture's sentinel-in-numeric-branch injection uses `wage_income_annual = -555` (branch min 0 → genuinely invalid, Q021-guarded). P08 must choose a schema-consistent golden for the "collapse with exclusions" template.
+- **XLSX determinism recipe** (for anyone touching the generator): keep `workbook.xlsx.writeBuffer()` (jszip/pako, platform-independent) — never the streaming `WorkbookWriter` (archiver/node-zlib, node-version-dependent bytes) — plus pinned workbook metadata and the post-hoc zip DOS-timestamp normalization (`normalizeZipTimestamps`). The double-run unit test enforces this.
+- **Repair-loop insight for future schema edits**: conditionals can rewrite *drivers* (e.g. `public_housing=1` forces `tenure=3` via allOf[44/45]), so archetype initialization must stay consistent with such implications or the constraint repair will reshape distributions (harmless but unrealistic). The generator hard-errors on any unrecognized schema shape rather than guessing.
+- **Manual xlsx eyeball**: this session ran headless; `hesp_dirty_100.xlsx` was verified programmatically (sheet `hesp_dirty_100`, 102×266 incl. header, injected values in place, exceljs re-read). Owner: open it once locally if a human glance is still wanted.
+- **Multi-sheet .xlsx ingest fixture** (golden journey 3 / SheetPickerModal) is P05's to create — the dirty workbook here is deliberately single-sheet.
+- **Reminder (master-plan rule 6)**: any change to generator output requires re-running `fixtures:check` and a progress-log note; fixtures are append-only for other phases' expectations.

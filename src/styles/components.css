@@ -134,3 +134,87 @@
 .q-modal-body {
   padding: 16px;
 }
+
+/* Badge */
+.q-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--q-gray-300);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--q-gray-100);
+  color: var(--q-gray-700);
+}
+
+.q-badge--valid {
+  background: var(--q-success-fill);
+  color: var(--q-success);
+  border-color: var(--q-success);
+}
+
+.q-badge--warning {
+  background: var(--q-warning-fill);
+  color: var(--q-warning);
+  border-color: var(--q-warning);
+}
+
+.q-badge--error {
+  background: var(--q-error-fill);
+  color: var(--q-error);
+  border-color: var(--q-error);
+}
+
+.q-badge--info {
+  background: var(--q-info-fill);
+  color: var(--q-info);
+  border-color: var(--q-info);
+}
+
+/* Severity pill (nav tab count; white passes AA on all three severity colors) */
+.q-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--q-gray-200);
+  color: var(--q-ink);
+}
+
+.q-pill--error {
+  background: var(--q-error);
+  color: #ffffff;
+}
+
+.q-pill--warning {
+  background: var(--q-warning);
+  color: #ffffff;
+}
+
+.q-pill--info {
+  background: var(--q-info);
+  color: #ffffff;
+}
+
+/* Empty state */
+.q-empty {
+  max-width: 480px;
+  margin: 48px auto;
+  padding: 32px 24px;
+  text-align: center;
+  border: 2px dashed var(--q-gray-300);
+  border-radius: 12px;
+}
+
+.q-empty-title {
+  margin-bottom: 8px;
+}
+
+.q-empty-body {
+  color: var(--q-gray-600);
+}

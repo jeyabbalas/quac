@@ -1,46 +1,157 @@
 /**
- * QC Report view. P05 scope: host the display grid for the ingested dataset
- * via the byte round-trip; the annotation/report panels arrive in P14. The
- * grid (re)builds only while this view is the active route — data-table
- * mis-measures inside hidden containers — and a generation counter marks
- * staleness while the tab is away.
+ * QC Report view (P14, qc-report-spec.md §4): left = the annotated display
+ * grid (lazy data-table chunk), right = the four report panels. During a run
+ * the grid area shows DuckProgress + Cancel; the presenter registered here is
+ * what the pipeline's annotate stage awaits. Header tooltips recompute
+ * whenever schema, rules, or dataset change — inspectable before any run.
  */
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
+import { showToast } from '../../../app/toast';
+import { createDuckProgress } from '../../components/duckProgress';
 import { createEmptyState } from '../../components/emptyState';
+import { buildHeaderTooltips } from '../../../core/report/headerTooltips';
+import { columnDigest } from '../../../core/schema/column-meta';
+import { schemaState } from '../../../core/schema/schema-store';
+import { rulesState } from '../../../core/rules/rules-store';
+import { mountReportPanels } from './reportPanels';
+import { setPresenter } from './presenter';
+import type { PipelineStage } from '../../../app/store';
 import type { ShellContext } from '../../../app/shell';
+import type { HeaderTooltipPlan } from '../../../core/report/headerTooltips';
+import type { SeverityToggles } from './reportGrid';
+
+type GridModule = typeof import('./reportGrid');
+
+const STAGE_LABELS: Partial<Record<PipelineStage, string>> = {
+  prepare: 'Preparing tables',
+  corrections: 'Applying corrections',
+  schema: 'Validating against the schema',
+  rules: 'Running QC rules',
+  annotate: 'Painting the report',
+};
+
+const RUNNING = new Set<PipelineStage>(['prepare', 'corrections', 'schema', 'rules', 'annotate']);
 
 export function mountReportView(container: HTMLElement, ctx: ShellContext): void {
   const empty = createEmptyState({
     title: 'No flags yet.',
     body: 'Load a dataset to see it here, then run QC and see what floats up.',
   });
-  const gridHost = document.createElement('div');
-  gridHost.hidden = true;
-  container.append(empty, gridHost);
 
+  const layout = document.createElement('div');
+  layout.className = 'q-report-layout';
+  layout.hidden = true;
+
+  const gridArea = document.createElement('div');
+  gridArea.className = 'q-report-gridarea';
+  const capBanner = document.createElement('p');
+  capBanner.className = 'q-cap-banner';
+  capBanner.hidden = true;
+  const progressWrap = document.createElement('div');
+  progressWrap.className = 'q-run-progress';
+  progressWrap.hidden = true;
+  const progress = createDuckProgress();
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'q-btn q-run-cancel';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', () => {
+    ctx.store.pipeline.get().cancel.cancel();
+    cancelButton.disabled = true;
+    cancelButton.textContent = 'Cancelling…';
+  });
+  progressWrap.append(progress.el, cancelButton);
+  const gridHost = document.createElement('div');
+  gridHost.className = 'q-report-gridhost';
+  gridArea.append(capBanner, progressWrap, gridHost);
+
+  const panelHost = document.createElement('aside');
+  layout.append(gridArea, panelHost);
+  container.append(empty, layout);
+
+  let gridModule: GridModule | null = null;
+  let severity: SeverityToggles = { error: true, warning: true, info: true };
+  let pendingTooltips: HeaderTooltipPlan | null = null;
+  const loadGridModule = async (): Promise<GridModule> => {
+    gridModule ??= await import('./reportGrid');
+    if (pendingTooltips !== null) {
+      gridModule.applyTooltips(pendingTooltips);
+      pendingTooltips = null;
+    }
+    return gridModule;
+  };
+
+  mountReportPanels(panelHost, ctx, {
+    onSeverityChange: (next) => {
+      severity = next;
+      gridModule?.applySeverityFilter(next);
+    },
+    onOffenderFocus: async (condition, label) => {
+      const mod = await loadGridModule();
+      const applied = await mod.tryFilterByCondition(condition, label);
+      if (!applied) {
+        showToast('This rule cannot filter the grid (window functions or unavailable columns).', {
+          kind: 'info',
+        });
+      }
+      return applied;
+    },
+    onClearOffenderFocus: () => {
+      gridModule?.clearOffenderFilter();
+    },
+    onRerun: () => {
+      void (async () => {
+        const { startRun } = await import('../../../app/runController');
+        await startRun(ctx);
+      })().catch((err: unknown) => {
+        reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
+      });
+    },
+  });
+
+  // The pipeline's annotate stage awaits this (registered before any run).
+  setPresenter(async (payload) => {
+    const generation = ctx.store.dataset.get()?.generation ?? 0;
+    const mod = await loadGridModule();
+    await mod.presentPayload(gridHost, generation, payload, severity);
+    if (payload.annotations.capped) {
+      capBanner.textContent =
+        `Painting ${payload.annotations.cellPainted.toLocaleString('en-US')} of ` +
+        `${payload.annotations.cellTotal.toLocaleString('en-US')} cell flags — ` +
+        'full detail in the panels and the Excel report.';
+      capBanner.hidden = false;
+    } else {
+      capBanner.hidden = true;
+    }
+  });
+
+  // Initial (pre-run) grid: render the ingested dataset while the view is the
+  // active route (data-table mis-measures in hidden containers). Skipped when
+  // a run is in flight — its presenter builds the grid with fresh bytes.
   let renderedGeneration = 0;
   let rendering = false;
-
   effect(() => {
     const dataset = ctx.store.dataset.get();
     const route = ctx.router.route.get();
+    const stage = ctx.store.pipeline.get().stage;
 
     if (!dataset) {
       empty.hidden = false;
-      gridHost.hidden = true;
+      layout.hidden = true;
       renderedGeneration = 0;
       return;
     }
-    if (route !== 'report' || dataset.generation === renderedGeneration || rendering) return;
+    empty.hidden = true;
+    layout.hidden = false;
+    if (route !== 'report' || RUNNING.has(stage)) return;
+    if (dataset.generation === renderedGeneration || rendering) return;
 
     rendering = true;
     renderedGeneration = dataset.generation;
-    empty.hidden = true;
-    gridHost.hidden = false;
     void (async () => {
-      const { renderGrid } = await import('./reportGrid');
-      await renderGrid(gridHost);
+      const mod = await loadGridModule();
+      await mod.renderGrid(gridHost, dataset.generation);
     })()
       .catch((err: unknown) => {
         renderedGeneration = 0; // allow a retry on the next route visit
@@ -49,5 +160,46 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       .finally(() => {
         rendering = false;
       });
+  });
+
+  // Run progress overlay + cancel state.
+  effect(() => {
+    const state = ctx.store.pipeline.get();
+    const running = RUNNING.has(state.stage);
+    progressWrap.hidden = !running;
+    if (running) {
+      const label = STAGE_LABELS[state.stage] ?? 'Running QC';
+      const percent =
+        state.progress.total > 0
+          ? Math.min(100, (state.progress.done / state.progress.total) * 100)
+          : null;
+      progress.setProgress(label, percent);
+      cancelButton.disabled = state.cancel.cancelled;
+      if (!state.cancel.cancelled) cancelButton.textContent = 'Cancel';
+    }
+  });
+
+  // Header tooltips recompute on schema/rules/dataset change (spec §3) so the
+  // pre-run grid is already inspectable. Applied via the grid module when (or
+  // once) a table exists; cheap to rebuild.
+  effect(() => {
+    const dataset = ctx.store.dataset.get();
+    const schema = schemaState.get();
+    const rules = rulesState.get();
+    if (dataset === null) return;
+    const digest = schema.phase === 'ready' && schema.set !== null ? columnDigest(schema.set) : null;
+    if (digest === null && rules.files.length === 0) return;
+    const plan = buildHeaderTooltips(
+      digest,
+      rules.files.map((f) => f.file),
+      dataset.columns,
+    );
+    if (gridModule !== null) {
+      gridModule.applyTooltips(plan);
+    } else {
+      // Grid chunk not loaded yet — stash; loadGridModule flushes it the
+      // moment the grid first renders (never force-loads the chunk early).
+      pendingTooltips = plan;
+    }
   });
 }

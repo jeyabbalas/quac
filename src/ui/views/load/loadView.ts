@@ -1,15 +1,19 @@
 /**
  * Load view (ingestion.md §1): persistent hint line, the three input slot
- * cards (Dataset P05 · JSON Schema P06 · QC Rules P12), and the plain 50-row
- * preview under them.
+ * cards (Dataset P05 · JSON Schema P06 · QC Rules P12), the plain 50-row
+ * preview, and the P14 run bar (Apply-corrections toggle + Run QC button —
+ * enabled when Dataset + at least one of Schema/Rules are valid; never
+ * auto-runs).
  */
 import { effect } from '../../../app/signals';
+import { reportError } from '../../../app/errors';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { mountDatasetCard } from './datasetCard';
 import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
 import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import type { ShellContext } from '../../../app/shell';
+import type { SlotState } from '../../../app/store';
 
 export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const hint = document.createElement('p');
@@ -42,7 +46,56 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const previewHost = document.createElement('div');
   preview.append(previewTitle, previewHost);
 
-  container.append(hint, grid, pertinenceHost, preview);
+  // ---- Run bar (P14): toggle + Run QC + disabled-state reason ----
+  const runBar = document.createElement('section');
+  runBar.className = 'q-runbar';
+  const reason = document.createElement('p');
+  reason.className = 'q-runbar-reason';
+  const toggleLabel = document.createElement('label');
+  toggleLabel.className = 'q-runbar-toggle';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = ctx.store.applyCorrections.get();
+  toggle.addEventListener('change', () => {
+    ctx.store.applyCorrections.set(toggle.checked);
+  });
+  toggleLabel.append(toggle, document.createTextNode(' Apply corrections'));
+  toggleLabel.title = 'Off = assess-only: schema and validation rules run on the untouched data.';
+  const runButton = document.createElement('button');
+  runButton.type = 'button';
+  runButton.className = 'q-btn q-btn--primary q-runbar-button';
+  runButton.textContent = 'Run QC ▸';
+  runButton.addEventListener('click', () => {
+    void (async () => {
+      const { startRun } = await import('../../../app/runController');
+      await startRun(ctx);
+    })().catch((err: unknown) => {
+      reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
+    });
+  });
+  runBar.append(reason, toggleLabel, runButton);
+
+  container.append(hint, grid, pertinenceHost, preview, runBar);
+
+  const usable = (slot: SlotState): boolean =>
+    slot.status === 'valid' || slot.status === 'warning';
+  effect(() => {
+    const data = ctx.store.slots.data.get();
+    const schema = ctx.store.slots.schema.get();
+    const rules = ctx.store.slots.rules.get();
+    const stage = ctx.store.pipeline.get().stage;
+    const running = stage !== 'idle' && stage !== 'done' && stage !== 'cancelled' && stage !== 'failed';
+
+    let why = '';
+    if (running) why = 'A QC run is in progress…';
+    else if (data.status === 'loading') why = 'The dataset is still loading…';
+    else if (data.status !== 'valid') why = 'Load a dataset to run QC.';
+    else if (!usable(schema) && !usable(rules))
+      why = 'Load a JSON Schema or a QC rules file to run QC.';
+    runButton.disabled = why !== '';
+    reason.textContent = why;
+    reason.hidden = why === '';
+  });
 
   // Preview refresh: engine access stays behind a dynamic import so the
   // entry chunk never pulls bridge/data-table code (bundle gate).

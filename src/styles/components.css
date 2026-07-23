@@ -721,3 +721,300 @@
 .q-rulesissue--info {
   color: var(--q-gray-700);
 }
+
+/* ---- P14: Report view — layout, run progress, panels ---------------------- */
+
+.q-report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1023px) {
+  .q-report-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.q-report-gridarea {
+  min-width: 0;
+}
+
+.q-report-gridhost {
+  min-width: 0;
+}
+
+.q-run-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--q-gray-200);
+  border-radius: 8px;
+  background: var(--q-gray-50);
+}
+
+.q-run-progress .q-duckprogress {
+  flex: 1;
+  min-width: 0;
+}
+
+.q-cap-banner {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--q-warning-fill, #fff4cc);
+  color: var(--q-warning);
+  font-size: 0.875rem;
+}
+
+.q-partial-banner {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--q-warning-fill, #fff4cc);
+  color: var(--q-warning);
+  font-size: 0.875rem;
+}
+
+.q-assess-note {
+  margin: 0 0 12px;
+  color: var(--q-gray-700);
+  font-size: 0.875rem;
+}
+
+/* Panel tabs */
+.q-report-panels {
+  border: 1px solid var(--q-gray-200);
+  border-radius: 8px;
+  background: var(--q-paper);
+  padding: 12px;
+  min-width: 0;
+}
+
+.q-paneltabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--q-gray-200);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.q-paneltab {
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--q-gray-700);
+}
+
+.q-paneltab:hover {
+  background: var(--q-gray-100);
+}
+
+.q-paneltab--active {
+  background: var(--q-sky);
+  color: var(--q-ink);
+  font-weight: 600;
+}
+
+.q-panel {
+  min-width: 0;
+}
+
+.q-panel-note {
+  color: var(--q-gray-700);
+  font-size: 0.875rem;
+}
+
+/* Summary stat cards */
+.q-statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.q-statcard {
+  border: 1px solid var(--q-gray-200);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--q-gray-50);
+}
+
+.q-statcard-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--q-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-statcard-label {
+  font-size: 0.75rem;
+  color: var(--q-gray-700);
+  margin-top: 2px;
+}
+
+.q-sevfilter {
+  border: 1px solid var(--q-gray-200);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.q-sevfilter legend {
+  font-size: 0.75rem;
+  color: var(--q-gray-700);
+  padding: 0 4px;
+}
+
+.q-sevfilter label {
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.q-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.q-btn--small {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
+/* Missing variables */
+.q-missing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.q-missing-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 0.875rem;
+}
+
+.q-missing-list code {
+  font-family: var(--q-font-mono, monospace);
+  background: var(--q-gray-100);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.q-missing-text {
+  flex-basis: 100%;
+  color: var(--q-gray-700);
+}
+
+/* Dataset findings */
+.q-findings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 480px;
+  overflow: auto;
+  font-size: 0.875rem;
+}
+
+.q-findings-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+/* Repeat offenders */
+.q-offenders-scroll {
+  overflow: auto;
+  max-height: 480px;
+}
+
+.q-offenders {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.q-offenders th,
+.q-offenders td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--q-gray-200);
+  vertical-align: top;
+}
+
+.q-offenders th {
+  position: sticky;
+  top: 0;
+  background: var(--q-paper);
+  font-weight: 600;
+}
+
+.q-offenders .q-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-offender--clickable {
+  cursor: pointer;
+}
+
+.q-offender--clickable:hover {
+  background: var(--q-gray-50);
+}
+
+.q-offender--clickable:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: -2px;
+}
+
+/* Run bar (Load view, P14) */
+.q-runbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--q-gray-200);
+}
+
+.q-runbar-reason {
+  margin: 0;
+  color: var(--q-gray-700);
+  font-size: 0.875rem;
+}
+
+.q-runbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+
+.q-runbar-button {
+  font-weight: 700;
+}

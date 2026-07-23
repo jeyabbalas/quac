@@ -1,0 +1,13 @@
+rule_id,rule_type,rule_scope,target_variables,condition,update_language,update_expression,severity,comment,enabled
+Q047,correct,row,wage_income_annual|selfemp_income_annual|monthly_rent|credit_card_balance,"__value__ IN (777, 888, 999, 999999999)",sql,"CASE __value__ WHEN 777 THEN -777 WHEN 888 THEN -888 ELSE -999 END",info,"Legacy positive sentinel recoded to HESP negative sentinel convention (-777 refused, -888 don't know, -999 not collected).",true
+Q048,correct,row,monthly_rent,"tenure IN (1, 2, 4, 5) AND monthly_rent <> -666",sql,-666,info,"Structural skip: household is not a cash renter (tenure 1/2/4/5), so monthly_rent is out of universe and set to -666 (Not applicable).",true
+Q050,correct,row,monthly_rent,monthly_rent >= 20000,sql,"CAST(ROUND(monthly_rent / 100.0) AS INTEGER)",info,"Source exported rent in cents; converted to whole dollars (divide by 100, round). Runs after sentinel recode so 999999999 is never treated as cents.",true
+Q052,correct,row,credit_card_balance|student_loan_balance|auto_loan_balance|payday_loan_balance,"__value__ < 0 AND __value__ NOT IN (-666, -777, -888, -999)",sql,ABS(__value__),info,"Debt balance arrived as a signed liability; stored as a positive amount per HESP convention. Negative sentinels preserved by the guard.",true
+Q055,correct,longitudinal,reference_education,"reference_education IN (-777, -888, -999)
+AND LAG(reference_education) OVER (PARTITION BY household_id ORDER BY wave) BETWEEN 1 AND 6",sql,"LAG(reference_education) OVER (PARTITION BY household_id ORDER BY wave)",info,"Missing education carried forward from the household's previous wave (stable characteristic). Set an imputation flag downstream.",true
+H006,correct,row,household_id,"household_id IS NOT NULL AND NOT regexp_full_match(household_id, 'HH[0-9]{8}')",js,"(value, row) => {
+  const m = /^hh[\s_-]*([0-9]{1,8})$/i.exec(String(value).trim());
+  if (!m) return value; // leave unrecognized formats for manual review
+  return 'HH' + m[1].padStart(8, '0');
+}",info,"Legacy household_id formats (e.g. 'hh-42', 'HH 00000042') normalized to canonical HH######## via regex capture groups.",true
+Q057,correct,row,total_household_income_annual,total_household_income_annual > 1500000,sql,1500000,info,"Disclosure top-code: incomes above $1.5M capped for the public-use file. Enable only when producing the public release.",false

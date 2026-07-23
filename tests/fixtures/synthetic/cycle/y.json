@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/synthetic/cycle/y.json",
+  "title": "Cycle Y",
+  "$defs": {
+    "row": {
+      "type": "object",
+      "properties": {
+        "v": { "$ref": "x.json#/$defs/value" }
+      },
+      "required": ["v"]
+    }
+  }
+}

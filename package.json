@@ -18,8 +18,8 @@
     "format": "prettier --write .",
     "verify": "npm run typecheck && npm run lint && npm test",
     "size": "node scripts/check-bundle-size.mjs",
-    "fixtures": "node -e \"console.log('fixtures: no-op stub until P02 adds scripts/generate-fixtures.mjs')\"",
-    "fixtures:check": "node -e \"console.log('fixtures:check: no-op stub until P02')\""
+    "fixtures": "node scripts/generate-fixtures.mjs",
+    "fixtures:check": "npm run fixtures && git diff --exit-code -- tests/fixtures && node -e \"const{execSync}=require('node:child_process');const s=execSync('git ls-files --others --exclude-standard -- tests/fixtures').toString().trim();if(s){console.error('untracked fixture files:\\n'+s);process.exit(1)}\""
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
@@ -33,6 +33,7 @@
     "@vitest/browser-playwright": "^4.1.10",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
+    "exceljs": "4.4.0",
     "globals": "^17.7.0",
     "playwright": "^1.61.1",
     "prettier": "^3.9.6",

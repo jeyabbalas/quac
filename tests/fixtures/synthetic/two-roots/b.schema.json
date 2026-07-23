@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/synthetic/two-roots/b.schema.json",
+  "title": "Root B",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "b_id": { "type": "string", "title": "B identifier" },
+      "b_flag": { "$ref": "shared.defs.json#/$defs/code", "title": "B indicator" }
+    },
+    "required": ["b_id", "b_flag"]
+  }
+}

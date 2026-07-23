@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/synthetic/two-roots/shared.defs.json",
+  "title": "Shared definitions",
+  "$defs": {
+    "code": {
+      "oneOf": [
+        { "const": 0, "title": "No" },
+        { "const": 1, "title": "Yes" }
+      ]
+    }
+  }
+}

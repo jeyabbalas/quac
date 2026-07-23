@@ -1,0 +1,323 @@
+{
+  "$comment": "Ground truth for the seeded violations in hesp_dirty_100.*. Row indices are 0-based data-row positions (the future __row__), header excluded. expectedRuleIds mixes schema ruleIds (json-schema-subsystem §D.5 formats) with Q*/H* ids from tests/fixtures/hesp/rules/. P07-P14 refine these entries into full QCFlag manifests.",
+  "seed": 20260723,
+  "rowIndexBase": 0,
+  "baseRows": 100,
+  "dirtyRows": 101,
+  "columns": 266,
+  "kinds": [
+    "pattern-break",
+    "range-break",
+    "sentinel-in-numeric-branch",
+    "ifthen-const-break",
+    "ifthen-notconst-break",
+    "cast-non-numeric",
+    "cast-non-integral",
+    "empty-cell",
+    "empty-cell-key",
+    "record-id-decomposition",
+    "age-regression",
+    "roster-arithmetic",
+    "income-sum-tolerance",
+    "legacy-sentinel-777",
+    "legacy-sentinel-888",
+    "legacy-sentinel-999",
+    "cents-scaled-rent",
+    "negative-debt",
+    "malformed-household-id",
+    "invalid-calendar-date",
+    "duplicate-household-wave",
+    "duplicate-full-row",
+    "extra-column"
+  ],
+  "injections": [
+    {
+      "kind": "pattern-break",
+      "rows": [
+        10
+      ],
+      "column": "record_id",
+      "before": "HH10000182_W01",
+      "after": "HH1234_W01",
+      "expectedRuleIds": [
+        "schema:prop:record_id:value",
+        "Q003"
+      ]
+    },
+    {
+      "kind": "range-break",
+      "rows": [
+        0
+      ],
+      "column": "reference_year",
+      "before": 2019,
+      "after": 2150,
+      "expectedRuleIds": [
+        "schema:prop:reference_year:value"
+      ]
+    },
+    {
+      "kind": "sentinel-in-numeric-branch",
+      "rows": [
+        1
+      ],
+      "column": "wage_income_annual",
+      "before": 43948,
+      "after": -555,
+      "expectedRuleIds": [
+        "schema:prop:wage_income_annual:value"
+      ]
+    },
+    {
+      "kind": "ifthen-const-break",
+      "rows": [
+        2
+      ],
+      "column": "move_reason",
+      "before": -666,
+      "after": 3,
+      "expectedRuleIds": [
+        "schema:cond:12:move_reason"
+      ]
+    },
+    {
+      "kind": "ifthen-notconst-break",
+      "rows": [
+        25
+      ],
+      "column": "move_reason",
+      "before": 5,
+      "after": -666,
+      "expectedRuleIds": [
+        "schema:cond:14:move_reason"
+      ]
+    },
+    {
+      "kind": "cast-non-numeric",
+      "rows": [
+        3
+      ],
+      "column": "sample_stratum",
+      "before": 873,
+      "after": "twelve hundred",
+      "expectedRuleIds": [
+        "schema:prop:sample_stratum:cast"
+      ]
+    },
+    {
+      "kind": "cast-non-integral",
+      "rows": [
+        4
+      ],
+      "column": "sample_psu",
+      "before": 27721,
+      "after": "412.75",
+      "expectedRuleIds": [
+        "schema:prop:sample_psu:cast"
+      ]
+    },
+    {
+      "kind": "empty-cell",
+      "rows": [
+        9
+      ],
+      "column": "partner_age",
+      "before": 20,
+      "after": null,
+      "expectedRuleIds": [
+        "schema:prop:partner_age:required"
+      ]
+    },
+    {
+      "kind": "empty-cell-key",
+      "rows": [
+        5
+      ],
+      "column": "interview_date",
+      "before": "2020-04-23",
+      "after": null,
+      "expectedRuleIds": [
+        "schema:prop:interview_date:required",
+        "H002"
+      ]
+    },
+    {
+      "kind": "record-id-decomposition",
+      "rows": [
+        11
+      ],
+      "column": "record_id",
+      "before": "HH10000247_W01",
+      "after": "HH99999901_W01",
+      "expectedRuleIds": [
+        "Q003"
+      ]
+    },
+    {
+      "kind": "age-regression",
+      "rows": [
+        30
+      ],
+      "column": "reference_age",
+      "before": 35,
+      "after": 30,
+      "expectedRuleIds": [
+        "Q008"
+      ]
+    },
+    {
+      "kind": "roster-arithmetic",
+      "rows": [
+        6
+      ],
+      "column": "household_size",
+      "before": 4,
+      "after": 5,
+      "expectedRuleIds": [
+        "Q011"
+      ]
+    },
+    {
+      "kind": "income-sum-tolerance",
+      "rows": [
+        24
+      ],
+      "column": "total_household_income_annual",
+      "before": 175811,
+      "after": 180811,
+      "expectedRuleIds": [
+        "Q021"
+      ]
+    },
+    {
+      "kind": "legacy-sentinel-777",
+      "rows": [
+        7
+      ],
+      "column": "monthly_rent",
+      "before": 1261,
+      "after": 777,
+      "expectedRuleIds": [
+        "Q047"
+      ]
+    },
+    {
+      "kind": "legacy-sentinel-888",
+      "rows": [
+        12
+      ],
+      "column": "credit_card_balance",
+      "before": 50249,
+      "after": 888,
+      "expectedRuleIds": [
+        "Q047"
+      ]
+    },
+    {
+      "kind": "legacy-sentinel-999",
+      "rows": [
+        8
+      ],
+      "column": "wage_income_annual",
+      "before": 75476,
+      "after": 999,
+      "expectedRuleIds": [
+        "Q047"
+      ]
+    },
+    {
+      "kind": "cents-scaled-rent",
+      "rows": [
+        14
+      ],
+      "column": "monthly_rent",
+      "before": 1394,
+      "after": 49500,
+      "expectedRuleIds": [
+        "Q050",
+        "Q038"
+      ]
+    },
+    {
+      "kind": "negative-debt",
+      "rows": [
+        15
+      ],
+      "column": "credit_card_balance",
+      "before": 245608,
+      "after": -1200,
+      "expectedRuleIds": [
+        "schema:prop:credit_card_balance:value",
+        "Q052"
+      ]
+    },
+    {
+      "kind": "malformed-household-id",
+      "rows": [
+        13
+      ],
+      "column": "household_id",
+      "before": "HH10000377",
+      "after": "hh-42",
+      "expectedRuleIds": [
+        "schema:prop:household_id:value",
+        "H001",
+        "H006",
+        "Q003"
+      ]
+    },
+    {
+      "kind": "invalid-calendar-date",
+      "rows": [
+        16
+      ],
+      "column": "interview_date",
+      "before": "2020-05-15",
+      "after": "2026-02-30",
+      "expectedRuleIds": [
+        "H004"
+      ]
+    },
+    {
+      "kind": "duplicate-household-wave",
+      "rows": [
+        18,
+        17
+      ],
+      "column": "household_id",
+      "before": "HH10000637",
+      "after": "HH10000702",
+      "expectedRuleIds": [
+        "Q002",
+        "Q003",
+        "H005"
+      ]
+    },
+    {
+      "kind": "duplicate-full-row",
+      "rows": [
+        19,
+        100
+      ],
+      "column": null,
+      "before": null,
+      "after": null,
+      "expectedRuleIds": [
+        "schema:dataset:duplicate-records",
+        "Q001",
+        "Q002",
+        "H005"
+      ]
+    },
+    {
+      "kind": "extra-column",
+      "rows": [],
+      "column": "notes",
+      "before": null,
+      "after": null,
+      "expectedRuleIds": [
+        "schema:column:notes:unexpected"
+      ]
+    }
+  ]
+}

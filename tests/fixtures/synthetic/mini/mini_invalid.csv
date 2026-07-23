@@ -1,0 +1,11 @@
+id,age,score,consent,notes
+R101,25,0.5,1,ok
+X99,30,0.75,1,bad-id
+R102,150,0.5,1,age-range
+R103,abc,0.25,1,age-cast
+R104,40,1.5,1,score-range
+R105,50,0.5,5,consent-enum
+R106,60,0.5,0,cond-break
+R107,,0.75,1,empty-age
+R108,70,0.25,1,dup-a
+R108,70,0.25,1,dup-a

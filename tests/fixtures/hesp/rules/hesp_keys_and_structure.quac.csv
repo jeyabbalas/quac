@@ -1,0 +1,18 @@
+rule_id,rule_type,rule_scope,target_variables,condition,update_language,update_expression,severity,comment,enabled
+Q001,validate,column,record_id,unique,,,error,Duplicate record_id: household-wave record identifiers must be unique across the file.,true
+Q002,validate,row,household_id|wave,"COUNT(*) OVER (PARTITION BY household_id, wave) > 1",,,error,"Duplicate household_id + wave combination: each household may appear at most once per wave. Split-offs receive new household_id values, so duplicates indicate a bad extract.",true
+Q003,validate,row,record_id|household_id|wave,"record_id IS NOT NULL AND household_id IS NOT NULL AND wave BETWEEN 1 AND 20 AND record_id <> household_id || '_W' || lpad(CAST(wave AS VARCHAR), 2, '0')",,,error,"record_id does not decompose into household_id + '_W' + zero-padded wave; internal key components disagree.",true
+Q007,validate,row,panel_entry_wave|wave|baseline_record,"panel_entry_wave BETWEEN 1 AND 20 AND wave BETWEEN 1 AND 20 AND baseline_record IN (0, 1) AND (panel_entry_wave > wave OR (baseline_record = 1) <> (wave = panel_entry_wave))",,,error,"Panel entry logic inconsistent: panel_entry_wave must be <= wave and baseline_record = 1 exactly when wave = panel_entry_wave.",true
+H001,validate,column,household_id,match_regex('^HH[0-9]{8}$'),,,error,Household identifier must be HH followed by eight digits.,true
+H002,validate,column,record_id|household_id|wave|interview_date,no_nulls,,,error,Core identifier fields must never be missing in any wave.,true
+H003,validate,column,wave,"count_distinct_in_range(1, 20)",,,warning,"Distinct wave count outside 1-20 suggests a truncated or wrongly merged extract.",true
+H004,validate,row,interview_date,"interview_date IS NOT NULL AND TRY_CAST(interview_date AS DATE) IS NULL",,,error,"interview_date is not a real calendar date (e.g. Feb 30). The JSON Schema regex cannot check calendar validity; this rule does.",true
+H005,validate,dataset,household_id|wave,"SELECT wave,
+       COUNT(*) AS n_rows,
+       COUNT(DISTINCT household_id) AS n_households,
+       COUNT(*) - COUNT(DISTINCT household_id) AS n_duplicate_household_rows
+FROM data
+GROUP BY wave
+HAVING COUNT(*) - COUNT(DISTINCT household_id) > 0
+ORDER BY wave",,,error,"Wave contains more rows than distinct households; per-wave duplicate household extractions listed.",true
+Q044,external,row,linkage_consent,Administrative income or benefit records are attached to this household and must be covered by consent scope and date range.,,,warning,"Linkage-consent reconciliation requires linkage audit metadata that is not part of this dataset. Not executable in QuaC.",true

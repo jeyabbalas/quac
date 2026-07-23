@@ -1,0 +1,12 @@
+# Generated fixtures are byte-exact artifacts gated by `fixtures:check`
+# (regenerate + git diff --exit-code). -text disables any EOL conversion so
+# a generator newline regression can never be masked by git's clean filter,
+# and checkout can never alter committed bytes on any platform.
+tests/fixtures/hesp/data/** -text
+# Hand-committed rules CSVs contain RFC 4180 quoted multiline cells whose
+# embedded LFs must survive checkout untouched.
+tests/fixtures/hesp/rules/*.quac.csv -text
+tests/fixtures/tiny/*.csv -text
+tests/fixtures/synthetic/**/*.csv -text
+*.xlsx binary
+*.parquet binary

@@ -1,0 +1,13 @@
+person_id,name,age,city,score
+P001,Ada Lovelace,36,LONDON,72.5
+P002,Grace Hopper,85,ARLINGTON,88
+P003,Alan Turing,41,MANCHESTER,91.25
+P004,Katherine Johnson,101,HAMPTON,64
+P005,Margaret Hamilton,88,BOSTON,79.5
+P006,Annie Easley,78,CLEVELAND,55.75
+P007,Mary Jackson,83,HAMPTON,68
+P007,Dorothy Vaughan,98,newport news,49.5
+P009,Radia Perlman,130,BOSTON,81
+P010,,52,SEATTLE,60.25
+P011,Hedy Lamarr,7,VIENNA,92
+P012,Barbara Liskov,86,CAMBRIDGE,77.5

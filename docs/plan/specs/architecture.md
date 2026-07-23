@@ -169,5 +169,6 @@ P03 verifies the byte-retrieval step (`bridge.export()` vs alternatives) and rec
 | V8 | Exact self-hosted duckdb-wasm dist filenames + `bridgeOptions` wiring under `/quac/` base | ⏳ P03 | — |
 | V9 | Vitest 4 node env reports `import.meta.env.BASE_URL` as `'/'` regardless of vite `base` (vitest-dev/vitest#8895, open) → unit tests assert base-join invariants, never the literal `/quac/`; e2e owns the deployed-base truth | ✅ confirmed | P01, 2026-07-23 |
 | V10 | GH Pages deploy actions current majors: `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5` (Node-24 runtime-only bumps over the v5/v4 named in `testing-strategy.md §4`) | ✅ confirmed | P01, 2026-07-23 |
+| V11 | `-555` is schema-VALID in `selfemp_income_annual` (branch min −5,000,000; `not.enum` excludes only the four sentinel codes), so `json-schema-subsystem.md §D.7` golden #2's expected flag contradicts the committed HESP schema. P02's sentinel-in-numeric-branch injection targets `wage_income_annual` (branch min 0, genuinely invalid) instead; P08 must pick a schema-consistent golden for the collapse-with-exclusions template | ✅ confirmed | P02, schema inspection, 2026-07-23 |
 
 Phases append rows here (with date + evidence) whenever reality is tested against a spec claim.

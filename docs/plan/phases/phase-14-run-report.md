@@ -28,4 +28,51 @@ Excel export (P15), URL params (P16), Studio.
 - **UI/UX:** Playwright `tests/e2e/runQc.spec.ts` — HESP dirty CSV + schema + rules → Run → progress stages visible → counts in Summary match `seeded-violations.json`-derived expectations (allow ≥ semantics where later phases refine manifests); annotated cells visible with popover text `"{ruleId}: …"`; severity toggle hides warnings; cancel mid-run leaves a sane partial state; re-upload data → grid/panels reset. Manual: tooltip content spot-check on 3 columns (screenshot in log).
 
 ## Deferred notes
-*(agent fills in)*
+
+**Composition (design-reviewed before implementation):** the pipeline makes ONE `runQC` call for every
+shape (schema-only / rules-only / both / assess-only) — `EngineOptions.betweenPhases` realizes engine-spec
+§3's reserved "phase 2 runs here" slot, so schema validation executes inside `runQC` between corrections
+and validations, reading the corrected `data` (`sourceTable: DATA_VIEW`). `runQC` with zero rule files
+still performs the work-table CTAS, so no prepare special case exists. `ValidationRunDeps.castPlan`
+(new) lets prepare apply the cast CTAS before corrections while validation-run remains the single writer
+of cast flags (a second writer would inflate FlagStore dedupe counts — `add()` counts repeats).
+`runSchemaValidation` is called at most once per run (its pertinence/advisory block is unconditional);
+a containment fallback runs it after `runQC` if the engine rejected before the hook.
+
+**Cancellation:** `EngineOptions.signal` + `RunResult.aborted` — return-partial, never throw (mirrors
+the schema side). Checks at both rule loops, abort-guards before `recordBrokenRule` (an abort-rejected
+call is a cancel, not a broken rule), `throwIfAborted()` at the js keyset chunk loop. The signal is NOT
+bound into bridge calls: post-abort cleanup (staging DROPs, view refresh) must still run. Annotate always
+runs — partial state presents, labeled.
+
+**Spec gaps closed (were unimplemented, discovered here):**
+- `quac_typed` "(+ after schema load)" (architecture §4): `app/typedSync.ts` rebuilds the cast on schema
+  arrival (and reverts to a plain copy on schema removal), re-points work/data, and re-installs the rules
+  lint context. Without it a CSV dataset stayed all-VARCHAR until the first run, every arithmetic rule
+  linted as a binder error, and (with the next item) would have been excluded from runs — the exact demo
+  path (CSV + schema + HESP rules).
+- Lint-error rules "excluded from runs" (engine-spec §7): `lint.ts → executableRuleFile` (file-level
+  error ⇒ whole file; error rows dropped; disabled/external kept — the engine owns their skipped stats),
+  applied by `app/runController.ts`.
+
+**AppState additions beyond architecture §7:** `store.runArtifacts` (per-run FlagStore + stats — the
+panels' source) and `store.applyCorrections` (run toggle, default ON).
+
+**UI interpretations:** Re-run button on the Summary panel (§4 "run/cancel states"); pre-run header
+tooltips (spec §3's recompute triggers are not run-gated); grid keeps showing the ingested data pre-run
+while the panels hold the empty state; panel empty-state copy de-duplicated from the view-level copy
+(Playwright strict mode). Panel counts follow the exact-count rule: offenders = `RuleRunStat.violationCount`
++ `ValidationSummary.countsByRuleId`; "corrections applied" = `correctedCells`; severity cards =
+`flagStore.severityTotals` (reflect *emitted* flags — engine caps truncate emission past 10k/rule).
+
+**Demo scope (user-approved):** `scripts/copy-example-assets.mjs` stages the HESP fixtures →
+`public/examples/` (gitignored; predev/prebuild) + `index.json`; the Load view's "Load example files"
+strip drives the three existing URL loaders same-origin. `mountDatasetCard` returns a `fetchUrl` handle.
+
+**Discovered limits (P20 attention):** the CSV wrapped-JSON ingest CTAS (`json_extract_string` × N cols)
+OOMs duckdb-wasm (~3.1 GiB cap) at roughly 2k rows × 266 cols — recorded as Verified fact V20. The cancel
+e2e replicates the dirty dataset ×20 through the JSON path instead. Also: annotation popover e2e pins the
+`.dt-annotation-popover` portal (role="tooltip"); hover needs a settle after paint on the virtualized grid.
+
+**Not done here:** testing-strategy §1's "local CORS-enabled static fixture server" still does not exist
+(e2e uses `page.route()`); becomes load-bearing at P16. Excel download ships as a disabled stub (P15).

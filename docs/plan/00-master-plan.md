@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V19) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V20) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -61,7 +61,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 5ce8a79 | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
 | [x] 2026-07-23 · 43e0c31 | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
 | [x] 2026-07-23 · 3cf097e | P13 | QuickJS sandbox & JS corrections | P12 |
-| [ ] | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
+| [x] 2026-07-23 · 0e817b9 | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
 | [ ] | P15 | Excel QC report export | P14 |
 | [ ] | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
 | [ ] | P17 | Rule Studio: workspace & editor | P12, P05 |
@@ -72,6 +72,14 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P14 · Run orchestration + in-app report shipped on main: core/pipeline.ts (ONE runQC call, schema in the NEW
+EngineOptions.betweenPhases hook = §3's reserved slot, sourceTable='data', castPlan seam; signal cancel = return-partial; annotate
+always presents via the reportView presenter port), report view (annotated grid + 4 panels + DuckProgress/cancel + 20k cap banner +
+pre-run tooltips), Load run bar, app/typedSync.ts (quac_typed recast on schema load — arch §4's "(+ after schema load)" was
+unimplemented; CSV+schema arithmetic rules linted broken otherwise), lint executableRuleFile (§7 exclusion was unimplemented),
+store gains runArtifacts/applyCorrections; devHooks deleted. User-approved demo: public/examples bundle + "Load example files".
+V20: wrapped-JSON CSV ingest OOMs ~2k×266 (cancel e2e uses JSON path). Unit 440 + browser 44 + e2e 35 green; entry 26.2 KB gz. P15/P16 unblocked.
 
 2026-07-23 · P13 · QuickJS sandbox shipped on main: core/rules/{sandbox,sandbox-loader}.ts (quickjs-emscripten-core+wasmfile variant
 0.32.0 exact, optimizeDeps.exclude'd; wasm = same-origin Vite asset), engine runJsCorrection (keyset __qc_hit__ fetch → per-chunk fresh

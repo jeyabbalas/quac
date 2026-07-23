@@ -28,7 +28,7 @@ import type { StorageType } from './value-spec';
  * decoupling; the shapes are compatible).
  */
 export interface SqlRunner {
-  query<T = Record<string, unknown>>(sql: string): Promise<T[]>;
+  query<T = Record<string, unknown>>(sql: string, signal?: AbortSignal): Promise<T[]>;
   /** Present on the bridge (V2: SELECT cache survives DDL/DML); optional for node. */
   clearQueryCache?: () => void;
 }

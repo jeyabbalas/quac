@@ -18,6 +18,11 @@
   margin: 0;
 }
 
+/* Keep the hidden attribute authoritative even when a component sets display */
+[hidden] {
+  display: none !important;
+}
+
 html {
   color-scheme: light;
 }

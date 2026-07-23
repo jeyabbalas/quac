@@ -4,7 +4,14 @@ import { playwright } from '@vitest/browser-playwright';
 export default defineConfig({
   base: '/quac/',
   optimizeDeps: {
-    exclude: ['@duckdb/duckdb-wasm'],
+    // quickjs: esbuild pre-bundling relocates the module, breaking its
+    // `new URL('emscripten-module.wasm', import.meta.url)` asset resolution;
+    // excluded deps also never trigger the late-discovery reload flake.
+    exclude: [
+      '@duckdb/duckdb-wasm',
+      'quickjs-emscripten-core',
+      '@jitl/quickjs-wasmfile-release-sync',
+    ],
     // Pre-bundle upfront: late discovery mid-test-run makes Vite reload and flake.
     // ajv/ajv-formats reach the browser via dynamic import (meta-validate) and
     // the validation worker (P09) — same late-discovery reload otherwise.

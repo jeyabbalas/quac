@@ -80,7 +80,20 @@ export interface JSSandbox {
     fnSource: string,
     batch: { row: number; value: unknown; rowData: Record<string, unknown> }[],
     budget: { timeoutMs: number },
-  ): Promise<{ row: number; value: unknown; changed: boolean }[]>;
+  ): Promise<JSCorrectionResult[]>;
+}
+
+/**
+ * One per batch row. `error` extends the engine-spec §1 shape (which has no
+ * per-row failure channel): a thrown user-function error is reported here with
+ * `changed:false`, and the engine applies the §5 per-row error policy. Fatal
+ * conditions (interrupt deadline, memory cap) reject runCorrection instead.
+ */
+export interface JSCorrectionResult {
+  row: number;
+  value: unknown;
+  changed: boolean;
+  error?: string;
 }
 
 // ---- Lint result shapes (qc-rules-engine.md §7) ----

@@ -12,6 +12,7 @@ import {
   type DatasetLintContext,
 } from '../../../src/core/rules/lint';
 import { parseRuleFile, type ParsedRuleFile } from '../../../src/core/rules/parse';
+import { createQuickJSSandbox } from '../../../src/core/rules/sandbox';
 import type { RuleFileLintResult } from '../../../src/core/rules/types';
 import { openDuckDb, openQcFixture, type QcFixtureDb } from './support';
 
@@ -605,7 +606,7 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
     });
   });
 
-  it('js rules — condition is dry-run; compile check stays pending with a dataset loaded', async () => {
+  it('js rules — condition is dry-run; compile check pends without a sandbox source', async () => {
     await withScratch(async (ctx) => {
       const csv = `${FULL_HEADER}R1,correct,row,a,a > 1,js,"(value, row) => value",info,c,true\n`;
       const { issues } = await lintWith(csv, ctx);
@@ -617,7 +618,7 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
           ruleId: 'R1',
           rowNumber: 1,
           csvColumn: 'update_expression',
-          message: 'JS compile check pending — the QuickJS sandbox arrives in a later phase.',
+          message: 'JS compile check pending — no sandbox available.',
         },
       ]);
       const badCond = await lintWith(
@@ -625,6 +626,121 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
         ctx,
       );
       expect(badCond.issues.map((i) => i.code).sort()).toEqual(['pending-data', 'sql-error']);
+    });
+  });
+
+  describe('stage 5 — QuickJS compile checks (P13)', () => {
+    const js = { loadSandbox: () => Promise.resolve(createQuickJSSandbox()) };
+    const lintJs = async (
+      text: string,
+      ctx: DatasetLintContext | null,
+      opts = js,
+    ): Promise<RuleFileLintResult> => {
+      const result = (await lintRuleFilesWithDataset([parse(text)], ctx, opts))[0];
+      if (!result) throw new Error('no lint result');
+      return result;
+    };
+    const GOOD = `${FULL_HEADER}R1,correct,row,a,a > 1,js,"(value, row) => value + 1",info,c,true\n`;
+    const BAD = `${FULL_HEADER}R1,correct,row,a,a > 1,js,"(value, row => {",info,c,true\n`;
+
+    it('a compiling js rule lints clean — the P12 pending is gone', async () => {
+      await withScratch(async (ctx) => {
+        const result = await lintJs(GOOD, ctx);
+        expect(result.issues).toEqual([]);
+        expect(result.executable).toBe(1);
+      });
+    });
+
+    it('a broken js rule gets js-error with the raw QuickJS detail and drops from executable', async () => {
+      await withScratch(async (ctx) => {
+        const result = await lintJs(BAD, ctx);
+        expect(result.issues).toEqual([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'js-error',
+            ruleId: 'R1',
+            rowNumber: 1,
+            csvColumn: 'update_expression',
+          }),
+        ]);
+        expect(result.issues[0]?.message).toMatch(
+          /^update_expression failed the JS compile check: SyntaxError/,
+        );
+        expect(result.issues[0]?.detail).toMatch(/SyntaxError/);
+        expect(result.ok).toBe(false);
+        expect(result.executable).toBe(0);
+      });
+    });
+
+    it('a non-function expression is a js-error too', async () => {
+      await withScratch(async (ctx) => {
+        const result = await lintJs(
+          `${FULL_HEADER}R1,correct,row,a,a > 1,js,42,info,c,true\n`,
+          ctx,
+        );
+        expect(result.issues[0]?.message).toMatch(/must evaluate to a function/);
+      });
+    });
+
+    it('compile checks are dataset-independent — they run with ctx === null', async () => {
+      const result = await lintJs(BAD, null);
+      expect(result.issues.map((i) => i.code).sort()).toEqual(['js-error', 'pending-data']);
+      // The file-level SQL pending stays until a dataset arrives.
+      expect(result.issues.find((i) => i.code === 'pending-data')?.message).toBe(
+        'SQL checks are pending until a dataset is loaded.',
+      );
+    });
+
+    it('inapplicable js rules still compile-check (applicability does not gate stage 5)', async () => {
+      await withScratch(async (ctx) => {
+        const result = await lintJs(
+          `${FULL_HEADER}R1,correct,row,missing_col,missing_col > 1,js,"(value, row => {",info,c,true\n`,
+          ctx,
+        );
+        // pertinence: 0 of 1 targets present also raises the file banner.
+        expect(result.issues.map((i) => i.code).sort()).toEqual([
+          'js-error',
+          'pertinence',
+          'unknown-target',
+        ]);
+      });
+    });
+
+    it('pending resolves to a real result when a sandbox source appears', async () => {
+      await withScratch(async (ctx) => {
+        const before = await lintWith(GOOD, ctx); // no js option
+        expect(before.issues.map((i) => i.code)).toEqual(['pending-data']);
+        const after = await lintJs(GOOD, ctx);
+        expect(after.issues).toEqual([]);
+      });
+    });
+
+    it('a failing sandbox load falls back to the pending info', async () => {
+      await withScratch(async (ctx) => {
+        const result = await lintJs(GOOD, ctx, {
+          loadSandbox: () => Promise.reject(new Error('chunk failed to load')),
+        });
+        expect(result.issues).toEqual([
+          expect.objectContaining({
+            code: 'pending-data',
+            message: 'JS compile check pending — no sandbox available.',
+          }),
+        ]);
+      });
+    });
+
+    it('the sandbox source is not consulted for js-free files', async () => {
+      await withScratch(async (ctx) => {
+        let calls = 0;
+        const result = await lintJs(`${HEADER}R1,validate,row,a,a > 1,c\n`, ctx, {
+          loadSandbox: () => {
+            calls += 1;
+            return Promise.resolve(createQuickJSSandbox());
+          },
+        });
+        expect(result.issues).toEqual([]);
+        expect(calls).toBe(0); // the lazy-chunk trigger contract
+      });
     });
   });
 

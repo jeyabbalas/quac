@@ -64,6 +64,22 @@ export function installDevHooks(store: AppStore): void {
     const rules = rulesStore.rulesState.get();
     if (rules.files.length === 0) throw new Error('QuaC dev: load a rules file first');
 
+    // P13: the quickjs chunk loads only when an enabled js correction rule is
+    // actually present; a failed load leaves jsSandbox null (js rules break,
+    // the run continues — EngineOptions contract).
+    let jsSandbox = null;
+    const hasJsRules = rules.files.some((f) =>
+      f.file.rules.some((r) => r.enabled && r.ruleType === 'correct' && r.updateLanguage === 'js'),
+    );
+    if (hasJsRules) {
+      try {
+        const loader = await import('../core/rules/sandbox-loader');
+        jsSandbox = await loader.loadJSSandbox();
+      } catch (err) {
+        console.warn('[quac:rules] QuickJS sandbox failed to load — js rules will be broken', err);
+      }
+    }
+
     // Run start (phase-12 task 4): harden BEFORE any rule SQL, then runQC.
     const bridge = await bridgeModule.getBridge();
     await hardenModule.hardenBridge(bridge);
@@ -72,6 +88,7 @@ export function installDevHooks(store: AppStore): void {
       rules.files.map((f) => f.file),
       {
         applyCorrections,
+        jsSandbox,
         onProgress: (p) => {
           console.log(
             `[quac:rules] ${p.phase} ${String(p.index + 1)}/${String(p.total)} ${p.ruleId}`,

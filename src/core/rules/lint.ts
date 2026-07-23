@@ -3,11 +3,14 @@
 // stage 3 (assertion grammar / SELECT-in-row-scope) — static, synchronous.
 // `lintRuleFilesWithDataset` (P12) layers the dataset-dependent stages on top:
 // stage 4 (EXPLAIN dry-run of the EXACT engine wrappers → `sql-error`),
-// stage 5 placeholder (js compile check arrives with the P13 sandbox →
-// `pending-data` info), stage 6 (pertinence: `unknown-target` per rule,
-// `pertinence` file banner, `RuleFileLintResult.pertinence`). With no dataset
-// context it reports one `pending-data` info per SQL-bearing file, upgraded
-// automatically when the caller re-lints with a context.
+// stage 5 (P13: QuickJS `compileCheck` of js correction expressions →
+// `js-error`; dataset-INdependent, so it runs in the no-dataset branch too —
+// the sandbox loads lazily, at most once, and only when a js correction rule
+// exists), stage 6 (pertinence: `unknown-target` per rule, `pertinence` file
+// banner, `RuleFileLintResult.pertinence`). With no dataset context it reports
+// one `pending-data` info per SQL-bearing file, upgraded automatically when
+// the caller re-lints with a context; without a sandbox source (or when its
+// load fails) js rules keep a per-rule `pending-data` info the same way.
 //
 // External rules: condition may be free text, so SQL/JS-shaped checks are
 // skipped entirely (semicolon, smart-quotes, select-in-row-scope, bad-assertion,
@@ -31,7 +34,7 @@ import {
   violCountSQL,
   violFetchSQL,
 } from './sql';
-import type { QCRule, RuleFileLintResult, RuleLintIssue, SQLRunner } from './types';
+import type { JSSandbox, QCRule, RuleFileLintResult, RuleLintIssue, SQLRunner } from './types';
 import { computePertinence } from '../pertinence';
 
 export type { LintCode, RuleFileLintResult, RuleLintIssue } from './types';
@@ -327,17 +330,98 @@ export interface DatasetLintContext {
 const sqlLikeRule = (rule: QCRule): boolean =>
   rule.ruleType === 'validate' || rule.ruleType === 'correct';
 
+export interface JsLintOptions {
+  /**
+   * Lazy sandbox source (the app passes `loadJSSandbox` from sandbox-loader).
+   * Called at most once per lint pass, and ONLY when a js correction rule
+   * exists — this call is the app's quickjs lazy-chunk trigger.
+   */
+  loadSandbox: () => Promise<JSSandbox>;
+}
+
+/** Stage-5 candidates: js correct rules that are not already error-broken. */
+function jsCompileRules(parsed: ParsedRuleFile, issues: readonly RuleLintIssue[]): QCRule[] {
+  const errorRows = new Set(
+    issues.filter((i) => i.severity === 'error' && i.rowNumber !== undefined).map((i) => i.rowNumber),
+  );
+  return parsed.file.rules.filter(
+    (r) =>
+      r.ruleType === 'correct' &&
+      r.updateLanguage === 'js' &&
+      r.updateExpression !== '' &&
+      !errorRows.has(r.rowNumber),
+  );
+}
+
+/**
+ * Stage 5 for one file: real `compileCheck` results when a sandbox is
+ * available, the pending info otherwise. Compilation is dataset-independent —
+ * applicability does NOT gate it (an inapplicable rule with a broken function
+ * still deserves the compile error).
+ */
+async function stage5CompileChecks(
+  parsed: ParsedRuleFile,
+  issues: RuleLintIssue[],
+  sandbox: JSSandbox | null,
+): Promise<void> {
+  for (const rule of jsCompileRules(parsed, issues)) {
+    if (sandbox === null) {
+      issues.push({
+        severity: 'info',
+        code: 'pending-data',
+        file: parsed.file.name,
+        ruleId: rule.ruleId,
+        rowNumber: rule.rowNumber,
+        csvColumn: 'update_expression',
+        message: 'JS compile check pending — no sandbox available.',
+      });
+      continue;
+    }
+    const result = await sandbox.compileCheck(rule.updateExpression);
+    if (result.ok) continue;
+    const detail = result.error ?? 'unknown error';
+    const firstLine = detail.split('\n', 1)[0] ?? detail;
+    issues.push({
+      severity: 'error',
+      code: 'js-error',
+      file: parsed.file.name,
+      ruleId: rule.ruleId,
+      rowNumber: rule.rowNumber,
+      csvColumn: 'update_expression',
+      message: `update_expression failed the JS compile check: ${firstLine}`,
+      detail,
+    });
+  }
+}
+
 /**
  * Stages 4–6 layered over the static lint. `ctx === null` (no dataset yet) →
  * one `pending-data` info per SQL-bearing file; callers re-invoke with a
  * context when the dataset arrives/changes (ingestion.md §4 lifecycle).
+ * Stage 5 (js compile checks) is dataset-independent and runs in both
+ * branches whenever `js` provides a sandbox source.
  */
 export async function lintRuleFilesWithDataset(
   files: ParsedRuleFile[],
   ctx: DatasetLintContext | null,
+  js?: JsLintOptions,
 ): Promise<RuleFileLintResult[]> {
   const collected = collectStaticIssues(files);
   const results: RuleFileLintResult[] = [];
+
+  // ---- stage 5: QuickJS compile checks (before stage 4, so a compile-broken
+  // rule skips its dry-run exactly like any other error-severity rule) ----
+  let sandbox: JSSandbox | null = null;
+  if (js !== undefined && collected.some((c) => jsCompileRules(c.parsed, c.issues).length > 0)) {
+    try {
+      sandbox = await js.loadSandbox();
+    } catch {
+      sandbox = null; // fall back to pending infos; the loader memo resets for retry
+    }
+  }
+  for (const c of collected) {
+    await stage5CompileChecks(c.parsed, c.issues, sandbox);
+  }
 
   for (const { parsed, issues } of collected) {
     const { file } = parsed;
@@ -479,20 +563,7 @@ export async function lintRuleFilesWithDataset(
         'condition',
         rule.condition,
       );
-      if (rule.updateLanguage === 'js') {
-        // Stage 5 placeholder — the QuickJS compileCheck arrives in P13. This
-        // pending does NOT resolve when a dataset loads, only when P13 lands.
-        issues.push({
-          severity: 'info',
-          code: 'pending-data',
-          file: file.name,
-          ruleId: rule.ruleId,
-          rowNumber: rule.rowNumber,
-          csvColumn: 'update_expression',
-          message: 'JS compile check pending — the QuickJS sandbox arrives in a later phase.',
-        });
-        continue;
-      }
+      if (rule.updateLanguage === 'js') continue; // stage 5 owns the expression
       if (conditionOk && rule.updateExpression !== '') {
         await dryRun(rebuildSelectSQL(pairs), 'update_expression', rule.updateExpression);
       }

@@ -51,8 +51,13 @@ let currentCtx: DatasetLintContext | null = null;
 async function relint(files: readonly ParsedRuleFile[]): Promise<void> {
   const token = ++lintToken;
   const ctx = currentCtx;
-  const { lintRuleFilesWithDataset } = await import('./lint');
-  const results = await lintRuleFilesWithDataset([...files], ctx);
+  // sandbox-loader is a tiny stub — the quickjs chunk itself only downloads
+  // if lint actually calls loadSandbox (i.e. a js correction rule is loaded).
+  const [{ lintRuleFilesWithDataset }, { loadJSSandbox }] = await Promise.all([
+    import('./lint'),
+    import('./sandbox-loader'),
+  ]);
+  const results = await lintRuleFilesWithDataset([...files], ctx, { loadSandbox: loadJSSandbox });
   if (token !== lintToken) return; // a newer load/relint superseded this one
   rulesState.set({
     ...rulesState.get(),

@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V15) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V18) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -72,6 +72,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · merge · P05+P06+P10 merged to main (09bff1c, 12e641b, d754b28). Conflicts: master-plan table/log unions; package.json
+dep union (lock regenerated, zero drift at P10); loadView.ts hand-merged — P05's three-slot grid + ctx signature kept, P06's
+`mountSchemaSlotCard` replaces the schema placeholder; nav.spec asserts BOTH card headings. One cross-branch e2e fix: two "Fetch"
+buttons post-merge → ingest.spec URL-fetch locator scoped to the dataset card. Doc-map V-range → V1–V18. Integrated tree green:
+verify (225 unit) + fixtures:check byte-clean + browser 27 + e2e 26 + build/size (entry 14.8 KB gz). P07/P08→P09/P11 now unblocked;
+slot-card consolidation (P06 note) stays deferred. Phase worktrees/branches removed.
 
 2026-07-23 · P10 · Rules front-end shipped (branch p10-rules-model, sibling worktree — P05/P06 in flight): core/rules/{types,parse,
 serialize,lint,assertions,sql}.ts + canonical core/flags/flag.ts (created ahead of P08, verbatim §5) + tests/unit/rules/* incl. the

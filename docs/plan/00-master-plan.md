@@ -58,7 +58,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · fb7d11b | P08 | FlagStore & schema translator | P07 |
 | [ ] | P09 | Schema validation engine | P05, P08 |
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
-| [ ] | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
+| [x] 2026-07-23 · 5ce8a79 | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
 | [ ] | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
 | [ ] | P13 | QuickJS sandbox & JS corrections | P12 |
 | [ ] | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
@@ -72,6 +72,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P11 · Validations engine shipped (branch p11-rules-validations, sibling worktree — P09 in flight): core/rules/engine.ts
+(runValidations + private FlagSink + createBridgeRunner) + sql.ts datasetFetchSQL/datasetCountSQL + support.ts openDuckDb refactor
+(openQcFixture delegates; P10 pins unchanged). All 7 named tests + 15-rule fixture manifest green (unit 324; Q021 exercises
+skipped-inapplicable on qc_fixture, H004=2 incl. whitespace date). Spec-silent contracts (violationCount per path, onProgress
+0-based/before-rule, summaries bypass global cap, broken rules discard buffers, external-over-disabled) → phase Deferred notes.
+Engine unimported by app code — entry 19.1 KB gz unchanged. P12 unblocked.
 
 2026-07-23 · P08 · Flag layer + translator shipped on main: core/flags/{flagStore,messages}.ts + core/schema/{rule-ids,translator}.ts
 + recorded-Ajv fixtures (scripts/record-ajv-errors.mjs → synthetic/ajv-errors/, standalone, NOT in fixtures:check). §D.7 goldens pinned

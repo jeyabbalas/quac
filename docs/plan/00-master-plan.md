@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V18) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V19) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -72,6 +72,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · merge · P09+P11 merged to main (df1c01d, 47494fe). Conflicts: master-plan progress-log union only (phase-table ticks
+auto-merged; entries stacked P11-over-P09). No V-number collision — P11 claimed none; V19 stands, doc-map V-range → V1–V19, stale
+collide-caveat stripped from V19. No cross-branch code fixes needed; twin @duckdb/node-api test helpers (tests/unit/schema/duckdb.ts
+vs tests/unit/rules/support.ts) are intentional per P09's header — consolidation deferred. Integrated tree green: verify (352 unit)
++ fixtures:check byte-clean + browser 34 + e2e 29 + build/size (entry 19.9 KB gz). P12 unblocked (P14 awaits P12); worktrees/branches removed.
 
 2026-07-23 · P11 · Validations engine shipped (branch p11-rules-validations, sibling worktree — P09 in flight): core/rules/engine.ts
 (runValidations + private FlagSink + createBridgeRunner) + sql.ts datasetFetchSQL/datasetCountSQL + support.ts openDuckDb refactor

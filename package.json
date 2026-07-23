@@ -37,6 +37,7 @@
     "@jeyabbalas/data-table": "0.5.1",
     "@lezer/highlight": "^1.2.3",
     "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "papaparse": "^5.5.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },

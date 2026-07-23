@@ -51,7 +51,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · dcec6c1 | P01 | Scaffold, CI, deployed shell | — |
 | [x] 2026-07-23 · d6476ef | P02 | Fixtures & deterministic generator | P01 |
 | [x] 2026-07-23 · 20f361b | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
-| [ ] | P04 | App shell, router, signals, design tokens | P01 |
+| [x] 2026-07-23 · f037f2a | P04 | App shell, router, signals, design tokens | P01 |
 | [ ] | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [ ] | P06 | Schema loading & root detection | P02, P04 |
 | [ ] | P07 | Column digests & pertinence | P06 |
@@ -72,6 +72,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P04 · Navigable shell shipped (branch p04-shell, own worktree — main checkout held P03-in-flight): signals/router/
+store/errors + Modal/Toast/Badge/SeverityPill/EmptyState/DuckProgress, three placeholder views, footer privacy line.
+Tokens finalized: `--dt-annotation-*` mapped on `body` (data-table.css ships `:root` defaults; inheritance proximity beats
+import order — P05 confirm on a mounted grid). @fontsource Inter/JBMono self-hosted (latin subsets; entry 3.7 KB gz).
+Router preserves raw fragment queries byte-for-byte (reads `href`, never `location.hash`). smoke.spec logo locator
+tightened to `header img.q-logo` (header gained the GitHub icon). Unit 38 + e2e 11 green. Details → phase Deferred notes.
 
 2026-07-23 · P03 · Bridge layer shipped on branch `p03-bridge`: core/bridge/{bridge,harden,tables}.ts, copy-duckdb-assets.mjs (predev/prebuild/pretest:browser), 4 browser spike regressions + unit URL test, all green; `vite preview` serves every `/quac/duckdb/*` asset 200 (verified). MAJOR deviations recorded in Verified facts V5–V8 + new V11–V14: no `bridge.export()` → `exportToBuffer`; every SQL hardening gate unusable in duckdb-wasm → hardening moved to a generated worker prelude (same-origin exact-file allowlist) + vendored parquet/icu/json extensions (NOT statically linked — they silently fetch from extensions.duckdb.org otherwise!) + `custom_extension_repository`; specs §2/§6/§8/§9 updated to match. Successors: bundle URLs must be absolute (blob worker), vite has `optimizeDeps.include:['@jeyabbalas/data-table']`, V-fact numbering may collide with parallel P02/P04 branches at merge.
 

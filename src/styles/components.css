@@ -1,0 +1,456 @@
+/* Component styles. Sections: shell → tabs → buttons → footer → badge → pill →
+   empty state → toast → modal → duck progress → responsive → reduced motion. */
+
+/* Shell */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.q-header {
+  display: grid;
+  grid-template-areas:
+    'brand actions'
+    'tabs tabs';
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  padding: 12px 20px 0;
+  background: var(--q-sky); /* black text on sky, never white */
+  color: var(--q-ink);
+  border-bottom: 3px solid var(--q-ink);
+}
+
+.q-brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.q-logo {
+  width: 40px;
+  height: 40px;
+}
+
+.q-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.q-subtitle {
+  font-size: 0.875rem;
+}
+
+.q-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.q-btn {
+  padding: 6px 16px;
+  border: 2px solid var(--q-ink);
+  border-radius: 8px;
+  background: var(--q-yellow);
+  color: var(--q-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.q-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+/* Solid fill, not opacity — translucent yellow over the sky header reads green */
+.q-btn:disabled {
+  background: var(--q-gray-200);
+  border-color: var(--q-gray-400);
+  color: var(--q-gray-500);
+  cursor: not-allowed;
+}
+
+.q-gh {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+/* Tabs — the active tab fuses into the white main area through the header's
+   3px ink stroke (negative margin + matching border) */
+.q-tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.q-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 3px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  color: var(--q-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.q-tab:hover:not([aria-current='page']) {
+  background: rgb(255 255 255 / 0.45);
+}
+
+.q-tab[aria-current='page'] {
+  background: var(--q-paper);
+  border-color: var(--q-ink);
+  margin-bottom: -3px;
+  padding-bottom: 11px;
+}
+
+.q-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: 24px;
+}
+
+.q-footer {
+  padding: 8px 24px;
+  font-size: 0.8125rem;
+  color: var(--q-gray-600);
+  background: var(--q-gray-50);
+  border-top: 1px solid var(--q-gray-200);
+}
+
+/* Below the desktop-first breakpoint: stack header rows, tabs scroll */
+@media (max-width: 1023px) {
+  .q-header {
+    grid-template-areas:
+      'brand'
+      'actions'
+      'tabs';
+    grid-template-columns: 1fr;
+  }
+
+  .q-tabs {
+    overflow-x: auto;
+  }
+
+  .q-main {
+    padding: 16px;
+  }
+}
+
+/* Toast */
+.q-toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.q-toast {
+  background: var(--q-paper);
+  border: 2px solid var(--q-ink);
+  border-left-width: 6px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgb(17 17 17 / 0.15);
+  cursor: pointer;
+}
+
+.q-toast--info {
+  border-left-color: var(--q-info);
+}
+
+.q-toast--success {
+  border-left-color: var(--q-success);
+}
+
+.q-toast--error {
+  border-left-color: var(--q-error);
+}
+
+.q-toast-msg {
+  font-weight: 500;
+}
+
+.q-toast-hint {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--q-gray-600);
+}
+
+/* Modal */
+.q-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(17 17 17 / 0.5);
+}
+
+.q-modal {
+  background: var(--q-paper);
+  border: 3px solid var(--q-ink);
+  border-radius: 12px;
+  min-width: min(320px, 100%);
+  max-width: 560px;
+  max-height: 80dvh;
+  overflow: auto;
+}
+
+.q-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--q-gray-200);
+}
+
+.q-modal-title {
+  font-size: 1.125rem;
+}
+
+.q-modal-close {
+  border: none;
+  background: none;
+  padding: 2px 8px;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.q-modal-close:hover {
+  background: var(--q-gray-100);
+}
+
+.q-modal-body {
+  padding: 16px;
+}
+
+/* Badge */
+.q-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--q-gray-300);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--q-gray-100);
+  color: var(--q-gray-700);
+}
+
+.q-badge--valid {
+  background: var(--q-success-fill);
+  color: var(--q-success);
+  border-color: var(--q-success);
+}
+
+.q-badge--warning {
+  background: var(--q-warning-fill);
+  color: var(--q-warning);
+  border-color: var(--q-warning);
+}
+
+.q-badge--error {
+  background: var(--q-error-fill);
+  color: var(--q-error);
+  border-color: var(--q-error);
+}
+
+.q-badge--info {
+  background: var(--q-info-fill);
+  color: var(--q-info);
+  border-color: var(--q-info);
+}
+
+/* Severity pill (nav tab count; white passes AA on all three severity colors) */
+.q-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--q-gray-200);
+  color: var(--q-ink);
+}
+
+.q-pill--error {
+  background: var(--q-error);
+  color: #ffffff;
+}
+
+.q-pill--warning {
+  background: var(--q-warning);
+  color: #ffffff;
+}
+
+.q-pill--info {
+  background: var(--q-info);
+  color: #ffffff;
+}
+
+/* Empty state */
+.q-empty {
+  max-width: 480px;
+  margin: 48px auto;
+  padding: 32px 24px;
+  text-align: center;
+  border: 2px dashed var(--q-gray-300);
+  border-radius: 12px;
+}
+
+.q-empty-title {
+  margin-bottom: 8px;
+}
+
+.q-empty-body {
+  color: var(--q-gray-600);
+}
+
+/* Duck progress */
+.q-duckprogress {
+  --q-dp-pct: 0%;
+
+  width: 100%;
+  max-width: 520px;
+}
+
+.q-duckprogress-track {
+  position: relative;
+  height: 14px;
+  margin-top: 20px; /* headroom for the duck riding above the track */
+  border: 2px solid var(--q-ink);
+  border-radius: 999px;
+  background: var(--q-gray-100);
+}
+
+.q-duckprogress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--q-dp-pct);
+  border-radius: 999px;
+  background-color: var(--q-sky);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5' fill='none' stroke='%230099cc' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: 0 60%;
+  transition: width 300ms linear;
+}
+
+.q-duckprogress-duck {
+  position: absolute;
+  top: -16px;
+  left: var(--q-dp-pct);
+  width: 36px;
+  height: 24px;
+  transform: translateX(-50%);
+  transition: left 300ms linear;
+  animation: q-duck-bob 1.1s ease-in-out infinite alternate;
+}
+
+.q-duck-body,
+.q-duck-head {
+  fill: var(--q-yellow);
+  stroke: var(--q-ink);
+  stroke-width: 1.5;
+}
+
+.q-duck-beak {
+  fill: var(--q-orange);
+  stroke: var(--q-ink);
+  stroke-width: 1;
+}
+
+.q-duck-eye {
+  fill: var(--q-ink);
+}
+
+.q-duck-wing {
+  fill: none;
+  stroke: var(--q-ink);
+  stroke-width: 1.5;
+}
+
+@keyframes q-duck-bob {
+  from {
+    transform: translateX(-50%) translateY(0) rotate(-2deg);
+  }
+
+  to {
+    transform: translateX(-50%) translateY(-3px) rotate(3deg);
+  }
+}
+
+/* Indeterminate: no fill; the duck swims end to end (left) while bobbing (transform) */
+.q-duckprogress--indeterminate .q-duckprogress-fill {
+  display: none;
+}
+
+.q-duckprogress--indeterminate .q-duckprogress-duck {
+  animation:
+    q-duck-swim 2.4s linear infinite,
+    q-duck-bob 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes q-duck-swim {
+  from {
+    left: -5%;
+  }
+
+  to {
+    left: 105%;
+  }
+}
+
+.q-duckprogress-label {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.875rem;
+  color: var(--q-gray-700);
+}
+
+.q-duckprogress-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reduced motion: plain bar — duck hidden, no transitions; indeterminate shows
+   a full-width muted bar instead of the swim animation */
+@media (prefers-reduced-motion: reduce) {
+  .q-duckprogress-duck {
+    display: none;
+  }
+
+  .q-duckprogress-track {
+    margin-top: 0;
+  }
+
+  .q-duckprogress-fill {
+    transition: none;
+  }
+
+  .q-duckprogress--indeterminate .q-duckprogress-fill {
+    display: block;
+    width: 100%;
+    opacity: 0.35;
+  }
+}

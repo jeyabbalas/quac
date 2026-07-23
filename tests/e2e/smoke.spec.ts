@@ -15,7 +15,8 @@ test('shell serves under /quac/ with header, logo, and favicon', async ({ page }
     page.getByText('Your data never leaves this browser. No uploads, no servers, no storage.'),
   ).toBeVisible();
 
-  const logo = page.locator('header img');
+  // .q-logo: the header gained a second img (GitHub icon) in P04 — keep strict mode happy
+  const logo = page.locator('header img.q-logo');
   await expect(logo).toBeVisible();
   await expect
     .poll(() => logo.evaluate((el) => (el as HTMLImageElement).naturalWidth))

@@ -1,5 +1,4 @@
-/* Design tokens — ui-design.md §2. Brand + semantic only in P01.
-   The --dt-annotation-* mapping arrives in P04 when data-table mounts. */
+/* Design tokens — ui-design.md §2. */
 :root {
   /* Brand */
   --q-sky: #00ccff; /* header/banners; BLACK text on sky, never white */
@@ -37,4 +36,22 @@
 
   /* Focus ring — 2px orange, visible on every interactive element */
   --q-focus-ring: 2px solid var(--q-orange);
+}
+
+/* data-table annotation mapping — grid tints match app semantics (ui-design §2).
+   Declared on body, NOT :root: data-table.css ships its own :root defaults, and
+   inheritance from a nearer ancestor beats cascade order, so these win no matter
+   where the library stylesheet lands in the import graph when the grid mounts
+   in P05. The lib's -bg-hover variants derive from -bg/-bdr via color-mix, so
+   they need no override. */
+body {
+  --dt-annotation-error-fg: var(--q-error);
+  --dt-annotation-error-bg: var(--q-error-fill);
+  --dt-annotation-error-bdr: var(--q-error);
+  --dt-annotation-warning-fg: var(--q-warning);
+  --dt-annotation-warning-bg: var(--q-warning-fill);
+  --dt-annotation-warning-bdr: var(--q-warning);
+  --dt-annotation-info-fg: var(--q-info);
+  --dt-annotation-info-bg: var(--q-info-fill);
+  --dt-annotation-info-bdr: var(--q-info);
 }

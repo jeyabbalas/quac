@@ -1,13 +1,11 @@
-import { createEmptyState } from '../../components/emptyState';
+import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 
-/** P04 placeholder — the input slot cards land in P05. */
+/** Load view: the three input slot cards (dataset P05 · schema P06 · rules P12). */
 export function mountLoadView(container: HTMLElement): void {
-  container.append(
-    createEmptyState({
-      title: 'Load your inputs',
-      body:
-        'Dataset, JSON Schema, and QC rules slots arrive in an upcoming phase. ' +
-        'Your files stay in this browser.',
-    }),
-  );
+  const row = document.createElement('div');
+  row.className = 'q-slot-row';
+  container.append(row);
+  // P05: dataset slot card mounts FIRST in this row (wireframe order).
+  mountSchemaSlotCard(row);
+  // P12: rules slot card mounts last in this row.
 }

@@ -167,5 +167,7 @@ P03 verifies the byte-retrieval step (`bridge.export()` vs alternatives) and rec
 | V6 | `SET enable_external_access=false` + `lock_configuration=true` via `bridge.query()`: effective, and registered-buffer reads/`loadData` still work afterward | ⏳ P03 | — |
 | V7 | `loadData(parquet bytes ordered by __row__)` yields `__rowid__ === __row__` | ⏳ P03 | — |
 | V8 | Exact self-hosted duckdb-wasm dist filenames + `bridgeOptions` wiring under `/quac/` base | ⏳ P03 | — |
+| V9 | Vitest 4 node env reports `import.meta.env.BASE_URL` as `'/'` regardless of vite `base` (vitest-dev/vitest#8895, open) → unit tests assert base-join invariants, never the literal `/quac/`; e2e owns the deployed-base truth | ✅ confirmed | P01, 2026-07-23 |
+| V10 | GH Pages deploy actions current majors: `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5` (Node-24 runtime-only bumps over the v5/v4 named in `testing-strategy.md §4`) | ✅ confirmed | P01, 2026-07-23 |
 
 Phases append rows here (with date + evidence) whenever reality is tested against a spec claim.

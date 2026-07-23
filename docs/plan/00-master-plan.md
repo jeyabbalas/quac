@@ -48,7 +48,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 | Status | Phase | Title | Depends on |
 |---|---|---|---|
-| [ ] | P01 | Scaffold, CI, deployed shell | — |
+| [x] 2026-07-23 · dcec6c1 | P01 | Scaffold, CI, deployed shell | — |
 | [ ] | P02 | Fixtures & deterministic generator | P01 |
 | [ ] | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
 | [ ] | P04 | App shell, router, signals, design tokens | P01 |
@@ -73,7 +73,11 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
-*(empty — no phases implemented yet)*
+2026-07-23 · P01 · Scaffold shipped: Vite 8.1.5 + TS ~6.0.3 (typescript-eslint caps TS <6.1.0; TS 7 native port unsupported),
+ESLint 10 flat (explicit `@eslint/js` devDep — eslint 10 dropped it), Vitest 4 projects (unit node + browser Chromium via
+`@vitest/browser-playwright`), Playwright smoke, bundle gate (entry 0.7 KB gz / 300 KB budget), CI verify+deploy green,
+live at https://jeyabbalas.github.io/quac/ (favicon + logos 200, zero 404s). Deviations → Verified facts V9 (vitest#8895:
+BASE_URL is '/' in node env) and V10 (Pages actions at v6/v5/v5, not spec's v5/v4). data-table 0.5.1 + duckdb-wasm 1.33.1-dev57.0 pinned exact.
 
 ## BRIEF → plan traceability
 

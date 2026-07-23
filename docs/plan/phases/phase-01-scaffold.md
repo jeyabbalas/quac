@@ -32,4 +32,9 @@ DuckDB usage, any real view, fixtures, router/signals (P04).
 - **UI/UX:** `smoke.spec.ts` passes against `vite preview`; after merge to main, the Pages URL serves the shell (manual check, note the URL in the progress log); favicon + logo load (no 404s under `/quac/`).
 
 ## Deferred notes
-*(agent fills in)*
+- TypeScript pinned `~6.0.3`: typescript-eslint 8.65 requires TS `<6.1.0`; TS 7 (native port) unsupported by the lint toolchain. Revisit at P20.
+- `@fontsource` Inter/JetBrains Mono not installed; tokens carry the family names with system-stack fallbacks. P04 (real shell) should add the self-hosted fonts per `ui-design.md §2`.
+- Shell styles live in `base.css` for now; migrate to `components.css` when P04 builds the real shell. Gray-ramp values (`--q-gray-50..900`) were chosen in P01 — spec named only the ramp.
+- `tests/browser/env.browser.test.ts` is a harness-proof placeholder (window/WASM/Worker); P03's bridge tests supersede it as the meat of the browser tier.
+- No `tests/**` lint relaxation was needed; strict-type-checked passes as written. If a later phase hits a test-only rule, add a scoped override and note it.
+- npm 11 auto-installs data-table's CodeMirror peers into the lockfile; unused until P05/P17, zero bundle impact (nothing imports them).

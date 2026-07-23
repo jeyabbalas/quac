@@ -64,8 +64,11 @@
   filter: brightness(1.05);
 }
 
+/* Solid fill, not opacity — translucent yellow over the sky header reads green */
 .q-btn:disabled {
-  opacity: 0.55;
+  background: var(--q-gray-200);
+  border-color: var(--q-gray-400);
+  color: var(--q-gray-500);
   cursor: not-allowed;
 }
 

@@ -10,6 +10,8 @@ import {
   correctionCaptureSQL,
   correctionCountSQL,
   ctasRebuildSQL,
+  datasetCountSQL,
+  datasetFetchSQL,
   expandValueToken,
   jsChunkFetchSQL,
   jsMergeCtasSQL,
@@ -197,6 +199,21 @@ describe('wrapper builders (engine §3 pseudocode, byte-pinned)', () => {
       'SELECT __row__, before, after FROM (SELECT __row__, "weird ""col""" AS before, ' +
         '(e) AS after, (c) AS hit FROM data) ' +
         'WHERE hit AND after IS DISTINCT FROM before ORDER BY __row__ LIMIT 10',
+    );
+  });
+
+  it('dataset SELECT wrappers — cap append + exact-count wrapper', () => {
+    expect(datasetFetchSQL('SELECT wave FROM data ORDER BY wave;', 201)).toBe(
+      'SELECT wave FROM data ORDER BY wave LIMIT 201',
+    );
+    // Unterminated line comment: stripTrailingSemicolon closes it so the
+    // appended LIMIT / closing paren land outside the comment.
+    expect(datasetFetchSQL('SELECT 1 -- note', 5)).toBe('SELECT 1 -- note\n LIMIT 5');
+    expect(datasetCountSQL('SELECT wave FROM data ORDER BY wave;')).toBe(
+      'SELECT COUNT(*) FROM (\nSELECT wave FROM data ORDER BY wave\n)',
+    );
+    expect(datasetCountSQL('SELECT 1 -- note')).toBe(
+      'SELECT COUNT(*) FROM (\nSELECT 1 -- note\n\n)',
     );
   });
 

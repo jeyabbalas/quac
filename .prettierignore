@@ -1,0 +1,8 @@
+dist
+playwright-report
+test-results
+package-lock.json
+tests/fixtures
+docs
+assets
+public

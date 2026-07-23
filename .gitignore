@@ -1,2 +1,11 @@
 .idea
 *.DS_Store
+node_modules/
+dist/
+playwright-report/
+test-results/
+blob-report/
+.vite/
+*.tsbuildinfo
+.eslintcache
+*.local

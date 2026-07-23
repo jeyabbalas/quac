@@ -1,0 +1,78 @@
+/* Reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--q-font-sans);
+  color: var(--q-ink);
+  background: var(--q-paper);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: var(--q-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Shell (P01 placeholder; migrates to components.css in P04) */
+.q-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--q-sky);
+  color: var(--q-ink);
+  border-bottom: 3px solid var(--q-ink);
+}
+
+.q-logo {
+  width: 40px;
+  height: 40px;
+}
+
+.q-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.q-subtitle {
+  font-size: 0.875rem;
+}
+
+.q-privacy {
+  padding: 6px 20px;
+  font-size: 0.875rem;
+  background: var(--q-gray-50);
+  border-bottom: 1px solid var(--q-gray-200);
+}
+
+.q-main {
+  padding: 20px;
+  min-height: 60vh;
+}

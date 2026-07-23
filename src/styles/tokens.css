@@ -1,0 +1,40 @@
+/* Design tokens — ui-design.md §2. Brand + semantic only in P01.
+   The --dt-annotation-* mapping arrives in P04 when data-table mounts. */
+:root {
+  /* Brand */
+  --q-sky: #00ccff; /* header/banners; BLACK text on sky, never white */
+  --q-yellow: #ffd21e; /* primary action accent */
+  --q-orange: #ff9f1c; /* hover/focus flourishes; never warning semantics */
+  --q-ink: #111111;
+  --q-paper: #ffffff;
+
+  /* Neutral ramp */
+  --q-gray-50: #fafafa;
+  --q-gray-100: #f5f5f5;
+  --q-gray-200: #e5e5e5;
+  --q-gray-300: #d4d4d4;
+  --q-gray-400: #a3a3a3;
+  --q-gray-500: #737373;
+  --q-gray-600: #525252;
+  --q-gray-700: #404040;
+  --q-gray-800: #262626;
+  --q-gray-900: #171717;
+
+  /* Semantic (distinct from brand; duck-yellow never means "warning") */
+  --q-error: #d7263d;
+  --q-error-fill: #ffc7ce;
+  --q-warning: #b45309;
+  --q-warning-fill: #fff4cc;
+  --q-info: #0369a1;
+  --q-info-fill: #ddebf7;
+  --q-success: #15803d;
+  --q-success-fill: #c6efce;
+
+  /* Type — @fontsource self-hosting arrives in P04; system fallbacks until then */
+  --q-font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --q-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Focus ring — 2px orange, visible on every interactive element */
+  --q-focus-ring: 2px solid var(--q-orange);
+}

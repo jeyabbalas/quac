@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V8) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V15) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -73,6 +73,11 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-23 · merge · P02+P03+P04 merged to main (1e1b629, 41231fd, 1939c7c). Conflicts: master-plan table/log unions; P02's
+Verified fact V11 renumbered to **V15** (P03 claimed V11–V14) with cross-refs updated in phase-02-fixtures.md; package-lock
+regenerated from the union package.json. Full suite green on the integrated tree: verify (47 unit) + fixtures:check (byte-clean)
++ browser 13 + e2e 11 + build/size (3.7 KB gz). P05–P10 dependencies now all satisfied; phase worktrees/branches removed.
+
 2026-07-23 · P04 · Navigable shell shipped (branch p04-shell, own worktree — main checkout held P03-in-flight): signals/router/
 store/errors + Modal/Toast/Badge/SeverityPill/EmptyState/DuckProgress, three placeholder views, footer privacy line.
 Tokens finalized: `--dt-annotation-*` mapped on `body` (data-table.css ships `:root` defaults; inheritance proximity beats
@@ -105,7 +110,7 @@ BASE_URL is '/' in node env) and V10 (Pages actions at v6/v5/v5, not spec's v5/v
 | QC rules as user-handcraftable CSV; generic name; documented rule_type taxonomy | `qc-rules-format.md` (name: "QC rules file", `*.quac.csv`); P10 |
 | Rule scopes incl. dataset/row/column/longitudinal; column assertions (unique, no_nulls, monotonic, match_regex, in_enum, count_distinct_in_range) | `qc-rules-format.md` §4/§4.1; P10–P11 |
 | Conditions in SQL (DuckDB); corrections in SQL or JS with language column; no THEN on flag-only rules | `qc-rules-format.md` §2/§5/§6; P11–P13 |
-| Safe in-browser execution of rules (privacy) | `architecture.md` §8 (external_access off + lock_configuration; QuickJS); P03, P12, P13 |
+| Safe in-browser execution of rules (privacy) | `architecture.md` §8 (worker-prelude network allowlist + vendored extensions per V6/V11; QuickJS); P03, P12, P13 |
 | Basic validity checks of rules files + broad data-pertinence check | `qc-rules-engine.md` §7 + `json-schema-subsystem.md` §E.5; P07, P08, P12 |
 | Inputs via upload AND dereferenceable URLs; partial pre-config; shareable | `url-params.md`; P16 |
 | Excel QC report: Sheet 1 annotated data w/ `<col>__review` sisters (comment text, multi-rule append, rule-ID provenance), Sheet 2 missing vars + descriptions, Sheet 3 non-annotatable/dataset flags, Sheet 4 repeat offenders | `qc-report-spec.md` §5; P15 |

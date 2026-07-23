@@ -10,9 +10,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run --project unit",
+    "test:browser": "vitest run --project browser",
     "typecheck": "tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "verify": "npm run typecheck && npm run lint && npm test",
     "fixtures": "node -e \"console.log('fixtures: no-op stub until P02 adds scripts/generate-fixtures.mjs')\"",
     "fixtures:check": "node -e \"console.log('fixtures:check: no-op stub until P02')\""
   },

@@ -7,10 +7,13 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "node scripts/copy-duckdb-assets.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-duckdb-assets.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --project unit",
+    "pretest:browser": "node scripts/copy-duckdb-assets.mjs",
     "test:browser": "vitest run --project browser",
     "test:e2e": "playwright test",
     "typecheck": "tsc",

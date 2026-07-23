@@ -57,7 +57,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [ ] | P07 | Column digests & pertinence | P06 |
 | [ ] | P08 | FlagStore & schema translator | P07 |
 | [ ] | P09 | Schema validation engine | P05, P08 |
-| [ ] | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
+| [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
 | [ ] | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
 | [ ] | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
 | [ ] | P13 | QuickJS sandbox & JS corrections | P12 |
@@ -72,6 +72,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P10 · Rules front-end shipped (branch p10-rules-model, sibling worktree — P05/P06 in flight): core/rules/{types,parse,
+serialize,lint,assertions,sql}.ts + canonical core/flags/flag.ts (created ahead of P08, verbatim §5) + tests/unit/rules/* incl. the
+engine-§9 qc_fixture seed helper (created ahead of P11; 2 documented extra rows). 66 new unit tests (113 total): round-trip fixpoint
++ byte idempotence, 16 static lint codes (HESP fixtures + tiny lint to ZERO issues), all 8 assertion expansions executed on
+@duckdb/node-api. papaparse added as runtime dep ('|' excluded from delimiter guessing). Spec-silent resolutions → phase Deferred notes.
 
 2026-07-23 · P02 · Post-merge CI hotfix (first Linux run of the generator): DuckDB-native parquet bytes are platform-dependent →
 `hesp_dirty_100.parquet` failed CI byte-equality vs the macOS-committed fixture. Contract scoped per **V16**: parquet byte-stable

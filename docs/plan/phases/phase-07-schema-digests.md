@@ -29,4 +29,33 @@ Translator/FlagStore (P08), casting/validation (P09), tooltip *wiring into the g
 - **UI/UX:** Playwright (extend `schemaLoad.spec.ts` or new) — load HESP schema + `hesp_dirty_100.csv` → strip shows "265/265 … [OK]"; load `tiny/people.csv` against HESP schema → block modal appears, "continue anyway" downgrades to warning strip.
 
 ## Deferred notes
-*(agent fills in)*
+
+Spec-silent resolutions made in P07 (all unit-pinned; revisit only with a spec change):
+
+- **Bare-`enum` conditional targets** (13 in HESP, e.g. allOf blocks constraining a code subset) render the
+  generic `schema`-kind text "must satisfy the conditional constraint (see schema)" per §D.2's fallback. A
+  nicer "must be one of …" rendering would need a new target kind — deferred (P08 may want it for messages).
+- **Sentinel-vs-code split rule** (§E.1 is silent): within a `codes` fold, consts reached via a branch-level
+  `$ref` (shared sentinel defs) are `sentinels`, inline consts are `codes`; provenance resets at every
+  anyOf/oneOf branch boundary. In `numeric`/`string-pattern` folds ALL const branches are sentinels (matches
+  the §D.7 goldens for wage/selfemp/split_origin).
+- **`if.anyOf` disjunction** (allOf[175]): conditions flattened, `conditionText` clauses joined `" or "`
+  (plain multi-property ifs join `" and "`). The `conditions[]` array does not record the and/or shape —
+  fine for cross-indexing; P08's translator matches by allOf index, not by re-evaluating conditions.
+- **`then.allOf` blocks** (156, 157, 160, 174): `properties` sub-blocks flatten to per-column targets;
+  `anyOf` sub-blocks (cross-column "at least one") emit one deduped `schema`-kind target per mentioned
+  column so `ColumnMeta.conditionals.asTarget` stays complete.
+- **Generic schemas**: `buildColumnMeta` also digests `items`-level `properties` and inline (non-`$ref`,
+  non-`if`) `items.allOf` entries — mini/tiny schemas would otherwise produce zero columns and skip
+  pertinence entirely.
+- **`computePertinence` returns `null`** for zero-property schemas (skip); the `schema:dataset:pertinence`
+  info flag lands with FlagStore in P08+. Score numerator counts matches within the denominator universe
+  (required, else all declared) so it stays ≤ 1.
+- **`ValueSpec`'s `'mixed' | 'opaque'`** member is split into two structurally identical members in
+  types (TS cannot narrow a two-literal discriminant member); semantics unchanged.
+- **`DatasetSession.columns`** added (shared surface, isolated commit 6821edc): ingest already computed the
+  sanitized names; pertinence and P12 rules-target pertinence consume them without re-querying DuckDB.
+- Block modal opens once per `(setId, dataset.generation)` key; after dismissal the Blocked strip carries an
+  inline "Continue anyway" so the §E.5 downgrade path stays reachable without re-loading files.
+- Tooltip `ColumnHeaderTooltipContent` is a local structural copy of the data-table v0.5.1 type (keeps the
+  digest layer free of runtime library imports); P14 passes it to `setColumnHeaderTooltip` unchanged.

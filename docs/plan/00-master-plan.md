@@ -54,7 +54,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · f037f2a | P04 | App shell, router, signals, design tokens | P01 |
 | [x] 2026-07-23 · b9763bc | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [x] 2026-07-23 · ff9551c | P06 | Schema loading & root detection | P02, P04 |
-| [ ] | P07 | Column digests & pertinence | P06 |
+| [x] 2026-07-23 · 95993f0 | P07 | Column digests & pertinence | P06 |
 | [ ] | P08 | FlagStore & schema translator | P07 |
 | [ ] | P09 | Schema validation engine | P05, P08 |
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
@@ -72,6 +72,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P07 · Digest layer shipped on main: core/schema/{deref,value-spec,conditionals,column-meta,tooltips}.ts +
+shared core/pertinence.ts + PertinenceStrip/block-modal under the Load slot cards. HESP goldens pinned: 265 cols /
+171 conditionals; sentinel-vs-code split, if.anyOf " or " join, then.allOf flattening → phase Deferred notes.
+Shared-surface: DatasetSession gains `columns` (isolated commit 6821edc); buildColumnMeta also digests items-level
+properties (generic schemas). Unit 258 + browser 27 + e2e 29 green; entry 19.1 KB gz. P08 unblocked.
 
 2026-07-23 · merge · P05+P06+P10 merged to main (09bff1c, 12e641b, d754b28). Conflicts: master-plan table/log unions; package.json
 dep union (lock regenerated, zero drift at P10); loadView.ts hand-merged — P05's three-slot grid + ctx signature kept, P06's

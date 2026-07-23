@@ -264,15 +264,25 @@ export function correctionCaptureSQL(
   );
 }
 
-/** Atomic rebuild — ONE CTAS covering all targets of a rule (engine §3/§4). */
-export function ctasRebuildSQL(pairs: ValueExpansion[]): string {
+/**
+ * The rebuild SELECT covering all targets of a rule (engine §3/§4) — the exact
+ * statement lint stage 4 EXPLAINs and the engine wraps in its atomic swap
+ * (`CREATE OR REPLACE TABLE quac_work AS …` per Verified fact V14; the
+ * quac_work_next dance in `ctasRebuildSQL` is not used by the engine).
+ */
+export function rebuildSelectSQL(pairs: ValueExpansion[]): string {
   const replaces = pairs
     .map((p) => {
       const t = quoteIdentifier(p.target);
       return `CASE WHEN (${p.condition}) THEN (${p.expression}) ELSE ${t} END AS ${t}`;
     })
     .join(', ');
-  return `CREATE TABLE quac_work_next AS SELECT * REPLACE (${replaces}) FROM data`;
+  return `SELECT * REPLACE (${replaces}) FROM data`;
+}
+
+/** Atomic rebuild — ONE CTAS covering all targets of a rule (engine §3/§4). */
+export function ctasRebuildSQL(pairs: ValueExpansion[]): string {
+  return `CREATE TABLE quac_work_next AS ${rebuildSelectSQL(pairs)}`;
 }
 
 /** Keyset-paginated match fetch for js corrections (engine §3, 5000-row chunks). */

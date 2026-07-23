@@ -1,28 +1,42 @@
-// Rules engine — validations phase (qc-rules-engine.md §3 phase 3, §5 caps).
-// P12 wraps these internals with runQC (hardening SETs, work-table rebuild,
-// corrections phase); P11 executes `validate` rules against the canonical view
-// `data` through the SQLRunner abstraction. EngineOptions.workTable /
-// applyCorrections / jsSandbox are runQC concerns — validations only read `data`.
+// Rules engine — runQC orchestration (qc-rules-engine.md §3): work-table
+// rebuild, corrections phase (P12), validations phase (P11), shared caps/sink.
+// All rule SQL executes against the canonical view `data` through the
+// SQLRunner abstraction. The pseudocode's hardening SETs are NOT issued here —
+// per Verified fact V6 network is closed in the worker prelude; browser
+// callers run hardenBridge() before runQC.
 //
-// Contracts fixed here (recorded in phase-11 Deferred notes):
-// - perRule is built in ONE file-order pass (validate + external interleaved),
-//   deviating from the §3 pseudocode's externals-appended-last: same stat set,
-//   deterministic file order for the report.
+// Contracts fixed here (recorded in phase-11/-12 Deferred notes):
+// - perRule: corrections stats first (file order over correct rules), then one
+//   file-order pass over validate + external (P11 shape unchanged).
 // - external → skipped-external unconditionally (even when disabled; §3
 //   `for rule in rules(type='external')` has no enabled filter).
-// - correct rules get NO stat here — P12's corrections phase owns them.
-// - onProgress fires BEFORE each enabled validate rule (inapplicable skips
-//   included — they are loop work), index 0-based, total = enabled validate
-//   count, phase always 'validate'.
+// - correct rules get NO stat from runValidations — the corrections phase owns
+//   them; in assess-only mode (applyCorrections:false) they get no stats at all.
+// - onProgress fires BEFORE each enabled rule (inapplicable skips included —
+//   they are loop work), index 0-based, total = enabled count for that phase.
 // - violationCount: row/longitudinal = violating ROWS; column asserts = sum of
 //   per-target counts (violating cells); count_distinct_in_range = number of
-//   violating targets; dataset = returned-row count (exact). broken/skips = 0.
+//   violating targets; dataset = returned-row count (exact); corrections =
+//   changed CELLS (== changedCells). broken/skips = 0.
 // - Broken rules are all-or-nothing: the rule's buffered flags are discarded
 //   and one dataset-scope error flag `Rule failed to execute: …` is emitted;
-//   the run continues (§5).
+//   the run continues (§5). Correction swaps are single-statement
+//   CREATE OR REPLACE CTAS (V14 — no quac_work_next dance), so a failed rule
+//   leaves quac_work untouched with nothing to clean up.
+// - js correct rules are broken in P12 regardless of opts.jsSandbox (the
+//   QuickJS execution path arrives in P13).
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { parseAssertion, expandAssertion } from './assertions';
-import { datasetCountSQL, datasetFetchSQL, violCountSQL, violFetchSQL } from './sql';
+import {
+  correctionCaptureSQL,
+  correctionCountSQL,
+  datasetCountSQL,
+  datasetFetchSQL,
+  expandValueToken,
+  rebuildSelectSQL,
+  violCountSQL,
+  violFetchSQL,
+} from './sql';
 import type { EngineOptions, QCRule, RuleFile, RuleRunStat, RunResult, SQLRunner } from './types';
 import { computePertinence } from '../pertinence';
 import type { QCFlag } from '../flags/flag';
@@ -303,7 +317,112 @@ async function runValidateRule(
   }
 }
 
+// ---- shared phase plumbing -------------------------------------------------
+
+interface PhaseCtx {
+  runner: SQLRunner & { clearCache?: () => void };
+  datasetColumns: string[];
+  rowCap: number;
+  datasetCap: number;
+  sink: FlagSink;
+  perRule: RuleRunStat[];
+  onProgress?: EngineOptions['onProgress'];
+}
+
+/** DISTINCT targets (§7) + the P11 applicability gate shared by both phases. */
+function applicableTargets(ctx: PhaseCtx, rule: QCRule): string[] | null {
+  const targets = [...new Set(rule.targetVariables)];
+  const pertinence = computePertinence({
+    schemaColumns: targets.map((name) => ({ name, required: true })),
+    datasetColumns: ctx.datasetColumns,
+  });
+  if (pertinence !== null && pertinence.missingRequired.length > 0) return null;
+  return targets;
+}
+
+/** The exact P11 broken-rule sequence: discard → broken flag → flush → stat. */
+function recordBrokenRule(ctx: PhaseCtx, rule: QCRule, err: unknown, started: number): void {
+  ctx.sink.discardRule(); // all-or-nothing: no partial flags from a broken rule
+  const msg = err instanceof Error ? err.message : String(err);
+  ctx.sink.emitSummary({
+    source: 'rules',
+    ruleId: rule.ruleId,
+    scope: 'dataset',
+    severity: 'error',
+    message: `Rule failed to execute: ${msg}`,
+  });
+  const { emitted } = ctx.sink.flushRule();
+  ctx.perRule.push({
+    ruleId: rule.ruleId,
+    status: 'broken',
+    violationCount: 0,
+    flagsEmitted: emitted,
+    truncated: false,
+    durationMs: performance.now() - started,
+    error: msg,
+  });
+}
+
 // ---- the validations phase (engine §3 phase 3) -----------------------------
+
+async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<void> {
+  const total = allRules.filter((r) => r.ruleType === 'validate' && r.enabled).length;
+  let index = 0;
+
+  for (const rule of allRules) {
+    if (rule.ruleType === 'correct') continue; // the corrections phase stats these
+    if (rule.ruleType === 'external') {
+      ctx.perRule.push(skipStat(rule, 'skipped-external'));
+      continue;
+    }
+    if (!rule.enabled) {
+      ctx.perRule.push(skipStat(rule, 'skipped-disabled'));
+      continue;
+    }
+
+    ctx.onProgress?.({ ruleId: rule.ruleId, index, total, phase: 'validate' });
+    index += 1;
+
+    const targets = applicableTargets(ctx, rule);
+    if (targets === null) {
+      ctx.perRule.push(skipStat(rule, 'skipped-inapplicable'));
+      continue;
+    }
+
+    const started = performance.now();
+    try {
+      const outcome = await runValidateRule(
+        ctx.runner,
+        rule,
+        targets,
+        ctx.rowCap,
+        ctx.datasetCap,
+        ctx.sink,
+      );
+      const suppressed = ctx.sink.suppressed();
+      if (suppressed > 0) {
+        ctx.sink.emitSummary({
+          source: 'rules',
+          ruleId: rule.ruleId,
+          scope: 'dataset',
+          severity: rule.severity,
+          message: `…and ${countFmt(suppressed)} more flags from this rule suppressed (global flag cap reached)`,
+        });
+      }
+      const { emitted } = ctx.sink.flushRule();
+      ctx.perRule.push({
+        ruleId: rule.ruleId,
+        status: 'ok',
+        violationCount: outcome.violationCount,
+        flagsEmitted: emitted,
+        truncated: outcome.truncated || suppressed > 0,
+        durationMs: performance.now() - started,
+      });
+    } catch (err) {
+      recordBrokenRule(ctx, rule, err, started);
+    }
+  }
+}
 
 export async function runValidations(
   runner: SQLRunner,
@@ -321,41 +440,103 @@ export async function runValidations(
 
   const sink = createFlagSink(globalCap, opts.onFlags);
   const perRule: RuleRunStat[] = [];
+  await runValidationsPhase(
+    { runner, datasetColumns, rowCap, datasetCap, sink, perRule, onProgress: opts.onProgress },
+    ruleFiles.flatMap((f) => f.rules),
+  );
+  return { flags: sink.all(), perRule, correctedCells: 0 };
+}
 
-  const allRules = ruleFiles.flatMap((f) => f.rules);
-  const total = allRules.filter((r) => r.ruleType === 'validate' && r.enabled).length;
+// ---- the corrections phase (engine §3 phase 1; P12) ------------------------
+
+/**
+ * Executes one SQL correction rule: exact per-target counts, before/after
+ * capture (no-op suppressed via `after IS DISTINCT FROM before`), then ONE
+ * atomic CREATE OR REPLACE CTAS covering all targets (V14) + view refresh +
+ * cache clear. Returns the changed-cell count.
+ */
+async function runSqlCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome> {
+  await ctx.runner.query('SELECT setseed(0.42)');
+  const pairs = expandValueToken(rule);
+  const message = flagMessage(rule);
+  let changed = 0;
+  let truncated = false;
+
+  // Capture BEFORE the rebuild: every count/capture and the CTAS all read the
+  // same pre-rule `data` state (spec §3 single-pass guarantee).
+  for (const pair of pairs) {
+    const n = firstScalar(
+      await ctx.runner.query(correctionCountSQL(pair.condition, pair.expression, pair.target)),
+    );
+    changed += n;
+    if (n === 0) continue;
+    const rows = await ctx.runner.query(
+      correctionCaptureSQL(pair.condition, pair.expression, pair.target, ctx.rowCap),
+    );
+    for (const row of rows) {
+      ctx.sink.emit({
+        source: 'rules',
+        ruleId: rule.ruleId,
+        scope: 'cell',
+        row: Number(row.__row__),
+        column: pair.target,
+        severity: rule.severity,
+        message,
+        value: row.before,
+        correction: { before: row.before, after: row.after },
+      });
+    }
+    if (n > ctx.rowCap) {
+      truncated = true;
+      ctx.sink.emitSummary({
+        source: 'rules',
+        ruleId: rule.ruleId,
+        scope: 'column',
+        column: pair.target,
+        severity: rule.severity,
+        message: `…and ${countFmt(n - ctx.rowCap)} more rows corrected by this rule`,
+      });
+    }
+  }
+
+  // Atomic swap — single self-referential CTAS (V14; failure leaves quac_work
+  // untouched, nothing to clean up), then the cheap-insurance view refresh.
+  await ctx.runner.query(`CREATE OR REPLACE TABLE quac_work AS ${rebuildSelectSQL(pairs)}`);
+  await ctx.runner.query('CREATE OR REPLACE VIEW data AS SELECT * FROM quac_work');
+  ctx.runner.clearCache?.();
+
+  return { violationCount: changed, truncated };
+}
+
+async function runCorrectionsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<number> {
+  const correctRules = allRules.filter((r) => r.ruleType === 'correct');
+  const total = correctRules.filter((r) => r.enabled).length;
   let index = 0;
+  let correctedCells = 0;
 
-  for (const rule of allRules) {
-    if (rule.ruleType === 'correct') continue; // P12's corrections phase stats these
-    if (rule.ruleType === 'external') {
-      perRule.push(skipStat(rule, 'skipped-external'));
-      continue;
-    }
+  for (const rule of correctRules) {
     if (!rule.enabled) {
-      perRule.push(skipStat(rule, 'skipped-disabled'));
+      ctx.perRule.push(skipStat(rule, 'skipped-disabled'));
       continue;
     }
 
-    opts.onProgress?.({ ruleId: rule.ruleId, index, total, phase: 'validate' });
+    ctx.onProgress?.({ ruleId: rule.ruleId, index, total, phase: 'correct' });
     index += 1;
 
-    const targets = [...new Set(rule.targetVariables)]; // §7: DISTINCT targets
-    const pertinence = computePertinence({
-      schemaColumns: targets.map((name) => ({ name, required: true })),
-      datasetColumns,
-    });
-    if (pertinence !== null && pertinence.missingRequired.length > 0) {
-      perRule.push(skipStat(rule, 'skipped-inapplicable'));
+    if (applicableTargets(ctx, rule) === null) {
+      ctx.perRule.push(skipStat(rule, 'skipped-inapplicable'));
       continue;
     }
 
     const started = performance.now();
     try {
-      const outcome = await runValidateRule(runner, rule, targets, rowCap, datasetCap, sink);
-      const suppressed = sink.suppressed();
+      if (rule.updateLanguage === 'js') {
+        throw new Error('JS corrections require the QuickJS sandbox (P13); rule not executed');
+      }
+      const outcome = await runSqlCorrection(ctx, rule);
+      const suppressed = ctx.sink.suppressed();
       if (suppressed > 0) {
-        sink.emitSummary({
+        ctx.sink.emitSummary({
           source: 'rules',
           ruleId: rule.ruleId,
           scope: 'dataset',
@@ -363,37 +544,72 @@ export async function runValidations(
           message: `…and ${countFmt(suppressed)} more flags from this rule suppressed (global flag cap reached)`,
         });
       }
-      const { emitted } = sink.flushRule();
-      perRule.push({
+      const { emitted } = ctx.sink.flushRule(); // only after the swap succeeded
+      correctedCells += outcome.violationCount;
+      ctx.perRule.push({
         ruleId: rule.ruleId,
         status: 'ok',
         violationCount: outcome.violationCount,
         flagsEmitted: emitted,
         truncated: outcome.truncated || suppressed > 0,
+        changedCells: outcome.violationCount,
         durationMs: performance.now() - started,
       });
     } catch (err) {
-      sink.discardRule(); // all-or-nothing: no partial flags from a broken rule
-      const msg = err instanceof Error ? err.message : String(err);
-      sink.emitSummary({
-        source: 'rules',
-        ruleId: rule.ruleId,
-        scope: 'dataset',
-        severity: 'error',
-        message: `Rule failed to execute: ${msg}`,
-      });
-      const { emitted } = sink.flushRule();
-      perRule.push({
-        ruleId: rule.ruleId,
-        status: 'broken',
-        violationCount: 0,
-        flagsEmitted: emitted,
-        truncated: false,
-        durationMs: performance.now() - started,
-        error: msg,
-      });
+      recordBrokenRule(ctx, rule, err, started);
     }
   }
 
-  return { flags: sink.all(), perRule, correctedCells: 0 };
+  return correctedCells;
+}
+
+// ---- runQC orchestration (engine §3) ---------------------------------------
+
+/**
+ * Full SQL-rules run: rebuild `quac_work` from the never-mutated `quac_typed`,
+ * refresh the canonical view `data`, run corrections (file order; skipped
+ * entirely in assess-only mode) then validations against the corrected data.
+ * One shared sink — the global flag cap spans the whole run. Browser callers
+ * must hardenBridge() first (architecture.md §8 / V6) and pass a runner whose
+ * clearCache invalidates the bridge SELECT cache (V2).
+ */
+export async function runQC(
+  runner: SQLRunner & { clearCache?: () => void },
+  ruleFiles: RuleFile[],
+  opts: EngineOptions = {},
+): Promise<RunResult> {
+  const rowCap = opts.rowCapPerRule ?? ROW_CAP_PER_RULE_DEFAULT;
+  const datasetCap = opts.datasetRowCap ?? DATASET_ROW_CAP_DEFAULT;
+  const globalCap = opts.globalFlagCap ?? GLOBAL_FLAG_CAP_DEFAULT;
+
+  // Prepare (§3): determinism — every run starts from a fresh work-table copy.
+  await runner.query('CREATE OR REPLACE TABLE quac_work AS SELECT * FROM quac_typed');
+  await runner.query('CREATE OR REPLACE VIEW data AS SELECT * FROM quac_work');
+  runner.clearCache?.();
+
+  // One DESCRIBE serves both phases — SELECT * REPLACE never changes columns.
+  const datasetColumns = (await runner.query<{ column_name: string }>('DESCRIBE data')).map(
+    (r) => r.column_name,
+  );
+
+  const sink = createFlagSink(globalCap, opts.onFlags);
+  const perRule: RuleRunStat[] = [];
+  const allRules = ruleFiles.flatMap((f) => f.rules);
+  const ctx: PhaseCtx = {
+    runner,
+    datasetColumns,
+    rowCap,
+    datasetCap,
+    sink,
+    perRule,
+    onProgress: opts.onProgress,
+  };
+
+  let correctedCells = 0;
+  if (opts.applyCorrections !== false) {
+    correctedCells = await runCorrectionsPhase(ctx, allRules);
+  }
+  await runValidationsPhase(ctx, allRules);
+
+  return { flags: sink.all(), perRule, correctedCells };
 }

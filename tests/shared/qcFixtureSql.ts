@@ -19,6 +19,8 @@
 //               tenure 9              → in_enum(1,2,3,4,5) violator (no rule in
 //               the fixture files targets tenure 9; Q048's tenure set excludes it)
 
+import type { QCFlag } from '../../src/core/flags/flag';
+
 // columns: record_id, household_id, wave, panel_entry_wave, baseline_record,
 // interview_date, reference_age, reference_education, household_size,
 // adult_count, child_count, tenure, monthly_rent, wage_income_annual,
@@ -365,6 +367,83 @@ export const QC_FIXTURE_ROWS: (string | number | null)[][] = [
 
 export const sqlLiteral = (v: string | number | null): string =>
   v === null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v.replace(/'/g, "''")}'`;
+
+// ---- runQC parity manifest (node ⇄ browser) --------------------------------
+// The P12 phase gate: representative fixture rules through the real hardened
+// bridge produce the SAME flags as the node run. Both tiers run runQC over the
+// qc-fixture rows seeded as quac_typed with this pick list, and assert this
+// exact result. Expectations hand-derived from the seed rows above:
+//   Q047 row 8  wage_income_annual 999 → -999 (the only positive sentinel)
+//   Q048 row 9  monthly_rent 950 → -666 (tenure 2; other tenure-hit rows
+//               already sit at -666, no-op suppressed)
+//   Q050 row 7  monthly_rent 150000 → 1500 (row 9 is -666 by now — file order)
+//   Q055 row 11 reference_education -999 → 4 (LAG from wave 1)
+//   Q001 rows 3,4 duplicate record_id · Q003 row 5 (×3 targets) · H004 rows 6,15
+
+/** Rule ids for the parity run, in execution-relevant file order. */
+export const PARITY_RULE_IDS = ['Q047', 'Q048', 'Q050', 'Q055', 'Q001', 'Q003', 'H004'];
+
+export interface ParityExpectation {
+  flags: QCFlag[];
+  /** [ruleId, status, violationCount] triples in perRule order. */
+  perRule: [string, string, number][];
+  correctedCells: number;
+}
+
+export function expectedParityResult(comments: Record<string, string>): ParityExpectation {
+  const correction = (
+    ruleId: string,
+    row: number,
+    column: string,
+    before: number,
+    after: number,
+  ): QCFlag => ({
+    source: 'rules',
+    ruleId,
+    scope: 'cell',
+    row,
+    column,
+    severity: 'info',
+    message: comments[ruleId] ?? '',
+    value: before,
+    correction: { before, after },
+  });
+  const violation = (ruleId: string, row: number, column: string, value: unknown): QCFlag => ({
+    source: 'rules',
+    ruleId,
+    scope: 'cell',
+    row,
+    column,
+    severity: 'error',
+    message: comments[ruleId] ?? '',
+    value,
+  });
+  return {
+    flags: [
+      correction('Q047', 8, 'wage_income_annual', 999, -999),
+      correction('Q048', 9, 'monthly_rent', 950, -666),
+      correction('Q050', 7, 'monthly_rent', 150000, 1500),
+      correction('Q055', 11, 'reference_education', -999, 4),
+      violation('Q001', 3, 'record_id', 'HH00000002_W01'),
+      violation('Q001', 4, 'record_id', 'HH00000002_W01'),
+      violation('Q003', 5, 'record_id', 'HH00000003_W02'),
+      violation('Q003', 5, 'household_id', 'HH00000003'),
+      violation('Q003', 5, 'wave', 1),
+      violation('H004', 6, 'interview_date', '2023-02-30'),
+      violation('H004', 15, 'interview_date', '   '),
+    ],
+    perRule: [
+      ['Q047', 'ok', 1],
+      ['Q048', 'ok', 1],
+      ['Q050', 'ok', 1],
+      ['Q055', 'ok', 1],
+      ['Q001', 'ok', 2],
+      ['Q003', 'ok', 1],
+      ['H004', 'ok', 2],
+    ],
+    correctedCells: 4,
+  };
+}
 
 /**
  * Setup statements seeding the 16-row qc_fixture data into `tableName`

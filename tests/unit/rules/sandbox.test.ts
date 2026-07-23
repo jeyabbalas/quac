@@ -410,7 +410,9 @@ describe('runQC js corrections (T-JS-SANDBOX engine path)', () => {
               `(value) => { const a = []; while (true) { a.push(new Array(65536).fill('x')); } }`,
           }),
         ),
-        { jsSandbox: small },
+        // Generous deadline so the MEMORY cap fires first even on slow CI
+        // runners — with the 2 s default the interrupt can win the race there.
+        { jsSandbox: small, jsChunkTimeoutMs: 10_000 },
       );
       expect(perRule[0]).toMatchObject({ ruleId: 'J_BOMB', status: 'broken' });
       expect(perRule[0]?.error).toMatch(/out of memory/);

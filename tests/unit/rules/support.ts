@@ -374,41 +374,18 @@ export interface QcFixtureDb {
 }
 
 /**
- * In-memory DuckDB with the seeded `qc_fixture` table (+ injected `__row__`
- * BIGINT, 0-based file order) and the canonical view `data` over it — all rule
- * SQL targets `data` (architecture.md §4). BIGINTs come back as JS bigint from
- * @duckdb/node-api; the SQLRunner adapter normalizes bigint → Number at the
- * boundary so tests compare plain numbers.
+ * Bare in-memory DuckDB behind the bigint→Number SQLRunner adapter, seeded by
+ * running `setupSql` statements in order. `openQcFixture` delegates here;
+ * engine tests also call it directly for purpose-built scratch tables
+ * (tolerance/caps/wave-gap cases) that expose their own `data` view.
  */
-export async function openQcFixture(): Promise<QcFixtureDb> {
+export async function openDuckDb(setupSql: readonly string[]): Promise<QcFixtureDb> {
   const duckdb = require('@duckdb/node-api') as typeof import('@duckdb/node-api');
   const instance = await duckdb.DuckDBInstance.create(':memory:');
   const conn = await instance.connect();
-  await conn.run(`CREATE TABLE qc_fixture (
-    __row__ BIGINT,
-    record_id VARCHAR,
-    household_id VARCHAR,
-    wave INTEGER,
-    panel_entry_wave INTEGER,
-    baseline_record INTEGER,
-    interview_date VARCHAR,
-    reference_age INTEGER,
-    reference_education INTEGER,
-    household_size INTEGER,
-    adult_count INTEGER,
-    child_count INTEGER,
-    tenure INTEGER,
-    monthly_rent INTEGER,
-    wage_income_annual INTEGER,
-    selfemp_income_annual INTEGER,
-    total_household_income_annual INTEGER,
-    credit_card_balance INTEGER,
-    partner_present INTEGER,
-    marital_status INTEGER
-  )`);
-  const values = ROWS.map((row, i) => `(${[i, ...row].map(sqlLiteral).join(', ')})`).join(',\n');
-  await conn.run(`INSERT INTO qc_fixture VALUES\n${values}`);
-  await conn.run('CREATE VIEW data AS SELECT * FROM qc_fixture');
+  for (const sql of setupSql) {
+    await conn.run(sql);
+  }
 
   const runner: SQLRunner = {
     async query<T = Record<string, unknown>>(sql: string): Promise<T[]> {
@@ -431,4 +408,41 @@ export async function openQcFixture(): Promise<QcFixtureDb> {
       instance.closeSync();
     },
   };
+}
+
+/**
+ * In-memory DuckDB with the seeded `qc_fixture` table (+ injected `__row__`
+ * BIGINT, 0-based file order) and the canonical view `data` over it — all rule
+ * SQL targets `data` (architecture.md §4). BIGINTs come back as JS bigint from
+ * @duckdb/node-api; the SQLRunner adapter normalizes bigint → Number at the
+ * boundary so tests compare plain numbers.
+ */
+export async function openQcFixture(): Promise<QcFixtureDb> {
+  const values = ROWS.map((row, i) => `(${[i, ...row].map(sqlLiteral).join(', ')})`).join(',\n');
+  return openDuckDb([
+    `CREATE TABLE qc_fixture (
+    __row__ BIGINT,
+    record_id VARCHAR,
+    household_id VARCHAR,
+    wave INTEGER,
+    panel_entry_wave INTEGER,
+    baseline_record INTEGER,
+    interview_date VARCHAR,
+    reference_age INTEGER,
+    reference_education INTEGER,
+    household_size INTEGER,
+    adult_count INTEGER,
+    child_count INTEGER,
+    tenure INTEGER,
+    monthly_rent INTEGER,
+    wage_income_annual INTEGER,
+    selfemp_income_annual INTEGER,
+    total_household_income_annual INTEGER,
+    credit_card_balance INTEGER,
+    partner_present INTEGER,
+    marital_status INTEGER
+  )`,
+    `INSERT INTO qc_fixture VALUES\n${values}`,
+    'CREATE VIEW data AS SELECT * FROM qc_fixture',
+  ]);
 }

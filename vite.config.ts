@@ -20,6 +20,9 @@ export default defineConfig({
         test: {
           name: 'browser',
           include: ['tests/browser/**/*.test.ts'],
+          // DuckDB-WASM init + 35 MB bundle fetches exceed the 5 s defaults in CI.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
           browser: {
             enabled: true,
             headless: true,

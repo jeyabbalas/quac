@@ -156,6 +156,77 @@ export interface IntakeResult {
 }
 
 /**
+ * §A.2 steps 1–4 for a single entry, appending into the accumulator. Also the
+ * intake path for URL-crawled files (ref-graph injects it, mirroring
+ * FetchJson). Returns the SchemaFile, or undefined for ignored extensions.
+ */
+export function intakeEntry(
+  entry: IntakeEntry,
+  origin: 'upload' | 'url',
+  acc: IntakeResult,
+): SchemaFile | undefined {
+  const isUpload = entry.retrievalUri === undefined;
+  if (isUpload && !/\.json$/i.test(entry.relativePath)) {
+    acc.ignored.push({ fileId: entry.relativePath, reason: 'unsupported-extension' });
+    return undefined;
+  }
+  const retrievalUri = entry.retrievalUri ?? quacSetUri(entry.relativePath);
+  const fileId = origin === 'url' ? retrievalUri : entry.relativePath;
+  const raw = stripBom(entry.raw);
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    acc.errors.push(loadError('E_PARSE', parseMessage(entry.relativePath, reason), { fileId }));
+    const file: SchemaFile = {
+      fileId,
+      relativePath: entry.relativePath,
+      retrievalUri,
+      raw,
+      json: undefined,
+      draft: 'unknown',
+      classification: 'invalid-json',
+      refs: [],
+    };
+    acc.files.push(file);
+    return file;
+  }
+
+  const file: SchemaFile = {
+    fileId,
+    relativePath: entry.relativePath,
+    retrievalUri,
+    raw,
+    json,
+    draft: draftOf(json),
+    classification: classifyJson(json),
+    refs: [],
+  };
+  const declaredId = declaredIdOf(json, retrievalUri);
+  if (declaredId !== undefined) {
+    file.declaredId = declaredId;
+    const holder = acc.idIndex.get(declaredId);
+    if (holder !== undefined) {
+      // First declarer keeps the index slot; the set is fatal anyway.
+      const holderPath = acc.files.find((f) => f.fileId === holder)?.relativePath ?? holder;
+      acc.errors.push(
+        loadError('E_DUP_ID', dupIdMessage(declaredId, holderPath, entry.relativePath), {
+          fileId,
+          meta: { id: declaredId, files: [holder, fileId] },
+        }),
+      );
+    } else {
+      acc.idIndex.set(declaredId, fileId);
+    }
+  }
+  acc.pathIndex.set(retrievalUri, fileId);
+  acc.files.push(file);
+  return file;
+}
+
+/**
  * §A.2 steps 1–4 for one batch of entries. Deterministic: files are processed
  * in relativePath order, and the first declarer of an `$id` keeps the index
  * slot when `E_DUP_ID` fires.
@@ -168,75 +239,17 @@ export function intakeFiles(
   const stripped = stripCommonRoot(normalized.map((e) => e.relativePath));
   const sorted = normalized
     .map((e, i) => ({ ...e, relativePath: stripped[i] ?? e.relativePath }))
-    .sort((a, b) => (a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0));
+    .sort((a, b) =>
+      a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0,
+    );
 
-  const files: SchemaFile[] = [];
-  const ignored: SchemaSet['ignored'] = [];
-  const idIndex = new Map<string, string>();
-  const pathIndex = new Map<string, string>();
-  const errors: SchemaLoadError[] = [];
-
-  for (const entry of sorted) {
-    const isUpload = entry.retrievalUri === undefined;
-    if (isUpload && !/\.json$/i.test(entry.relativePath)) {
-      ignored.push({ fileId: entry.relativePath, reason: 'unsupported-extension' });
-      continue;
-    }
-    const retrievalUri = entry.retrievalUri ?? quacSetUri(entry.relativePath);
-    const fileId = origin === 'url' ? retrievalUri : entry.relativePath;
-    const raw = stripBom(entry.raw);
-
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      errors.push(
-        loadError('E_PARSE', parseMessage(entry.relativePath, reason), { fileId }),
-      );
-      files.push({
-        fileId,
-        relativePath: entry.relativePath,
-        retrievalUri,
-        raw,
-        json: undefined,
-        draft: 'unknown',
-        classification: 'invalid-json',
-        refs: [],
-      });
-      continue;
-    }
-
-    const file: SchemaFile = {
-      fileId,
-      relativePath: entry.relativePath,
-      retrievalUri,
-      raw,
-      json,
-      draft: draftOf(json),
-      classification: classifyJson(json),
-      refs: [],
-    };
-    const declaredId = declaredIdOf(json, retrievalUri);
-    if (declaredId !== undefined) {
-      file.declaredId = declaredId;
-      const holder = idIndex.get(declaredId);
-      if (holder !== undefined) {
-        // First declarer keeps the index slot; the set is fatal anyway.
-        const holderPath = files.find((f) => f.fileId === holder)?.relativePath ?? holder;
-        errors.push(
-          loadError('E_DUP_ID', dupIdMessage(declaredId, holderPath, entry.relativePath), {
-            fileId,
-            meta: { id: declaredId, files: [holder, fileId] },
-          }),
-        );
-      } else {
-        idIndex.set(declaredId, fileId);
-      }
-    }
-    pathIndex.set(retrievalUri, fileId);
-    files.push(file);
-  }
-
-  return { files, ignored, idIndex, pathIndex, errors };
+  const acc: IntakeResult = {
+    files: [],
+    ignored: [],
+    idIndex: new Map(),
+    pathIndex: new Map(),
+    errors: [],
+  };
+  for (const entry of sorted) intakeEntry(entry, origin, acc);
+  return acc;
 }

@@ -2,9 +2,14 @@
  * AppState per architecture.md §7 — state only, no behavior. Later phases fill
  * these signals: P05+ drive the slots, P14 drives pipeline/run, P16 shareables.
  * Signals hold immutable snapshots: always `set()` a fresh object.
+ *
+ * P14 additions beyond §7 (recorded in phase-14 Deferred notes): runArtifacts
+ * (the heavy per-run FlagStore/stats object the Report panels read) and
+ * applyCorrections (the run-panel toggle; assess-only when false).
  */
 import { signal } from './signals';
 import type { Signal } from './signals';
+import type { RunArtifacts } from '../core/pipeline';
 
 export type SlotId = 'data' | 'schema' | 'rules';
 
@@ -101,6 +106,10 @@ export interface AppStore {
   dataset: Signal<DatasetSession | null>;
   pipeline: Signal<PipelineState>;
   run: Signal<RunSummary | null>;
+  /** Heavy per-run artifacts (FlagStore + stats) — the Report panels' source. */
+  runArtifacts: Signal<RunArtifacts | null>;
+  /** "Apply corrections" run toggle (qc-rules-engine.md §2); false = assess-only. */
+  applyCorrections: Signal<boolean>;
   shareables: Signal<readonly ArtifactProvenance[]>;
 }
 
@@ -120,6 +129,8 @@ export function createAppStore(): AppStore {
       cancel: createCancelToken(),
     }),
     run: signal<RunSummary | null>(null),
+    runArtifacts: signal<RunArtifacts | null>(null),
+    applyCorrections: signal(true),
     shareables: signal<readonly ArtifactProvenance[]>([]),
   };
 }

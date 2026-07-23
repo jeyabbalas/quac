@@ -13,6 +13,7 @@ import { createSeverityPill } from '../ui/components/severityPill';
 import { mountLoadView } from '../ui/views/load/loadView';
 import { mountReportView } from '../ui/views/report/reportView';
 import { mountStudioView } from '../ui/views/studio/studioView';
+import { createCancelToken } from './store';
 import type { RouteId, Router } from './router';
 import type { AppStore } from './store';
 
@@ -153,6 +154,25 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   effect(() => {
     const run = ctx.store.run.get();
     pill.update(run?.flagsSummary ?? { errors: 0, warnings: 0, infos: 0 });
+  });
+
+  // P14 re-run semantics (architecture §6): replacing the dataset invalidates
+  // the previous run — summary/artifacts cleared (pill goes dark, Report
+  // panels return to their empty state) and any in-flight run is cancelled
+  // best-effort. The grid itself rebuilds off dataset.generation.
+  let runGeneration = 0;
+  effect(() => {
+    const generation = ctx.store.dataset.get()?.generation ?? 0;
+    if (generation === runGeneration) return;
+    runGeneration = generation;
+    ctx.store.pipeline.get().cancel.cancel();
+    ctx.store.run.set(null);
+    ctx.store.runArtifacts.set(null);
+    ctx.store.pipeline.set({
+      stage: 'idle',
+      progress: { done: 0, total: 0 },
+      cancel: createCancelToken(),
+    });
   });
 
   window.__quac = { openDemoModal };

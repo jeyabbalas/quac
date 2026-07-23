@@ -1,0 +1,19 @@
+rule_id,rule_type,rule_scope,target_variables,condition,update_language,update_expression,severity,comment,enabled
+Q011,validate,row,household_size|adult_count|child_count,"household_size >= 1 AND adult_count >= 0 AND child_count >= 0 AND adult_count + child_count <> household_size",,,error,"Roster arithmetic: adult_count + child_count must equal household_size (guards exclude sentinel-coded counts).",true
+Q021,validate,row,total_household_income_annual|wage_income_annual|selfemp_income_annual|interest_dividend_annual|retirement_income_annual|rental_income_annual|child_support_annual|alimony_annual|private_transfer_annual|other_income_annual,"total_household_income_annual >= 0
+AND wage_income_annual >= 0 AND selfemp_income_annual >= 0
+AND interest_dividend_annual >= 0 AND retirement_income_annual >= 0
+AND rental_income_annual >= 0 AND child_support_annual >= 0
+AND alimony_annual >= 0 AND private_transfer_annual >= 0
+AND other_income_annual >= 0
+AND ABS((wage_income_annual + selfemp_income_annual + interest_dividend_annual
+       + retirement_income_annual + rental_income_annual + child_support_annual
+       + alimony_annual + private_transfer_annual + other_income_annual)
+      - total_household_income_annual)
+    > GREATEST(50, 0.01 * total_household_income_annual)",,,warning,"Income components do not sum to total_household_income_annual within tolerance (larger of $50 or 1%). Rows with any sentinel-coded component are excluded by the guards.",true
+Q013,validate,row,partner_present|marital_status,"partner_present = 1 AND marital_status IN (3, 4, 5, 6)",,,warning,"Partner present but marital status is separated/divorced/widowed/never married. May be genuine (unmarried partner) — review, not an automatic error.",true
+Q008,validate,longitudinal,reference_age|household_id|wave,"reference_age >= 0
+AND LAG(reference_age) OVER (PARTITION BY household_id ORDER BY wave) >= 0
+AND wave - LAG(wave) OVER (PARTITION BY household_id ORDER BY wave) = 1
+AND reference_age - LAG(reference_age) OVER (PARTITION BY household_id ORDER BY wave) NOT BETWEEN 0 AND 2",,,warning,"Reference person age change between adjacent waves outside 0-2 years is implausible given interview timing.",true
+Q038,validate,row,monthly_rent,"monthly_rent > 0 AND monthly_rent > quantile_cont(CASE WHEN monthly_rent > 0 THEN monthly_rent END, 0.995) OVER (PARTITION BY wave)",,,warning,"Monthly rent above the 99.5th percentile of substantive rents in the same wave — extreme outlier; check units and data entry.",true

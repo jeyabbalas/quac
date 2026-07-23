@@ -348,8 +348,9 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     const summary = await (async (): Promise<ValidationSummary> => {
       let rowsDone = 0;
       let aborted = false;
+      let pending: Promise<unknown[][]> = Promise.resolve([]);
       try {
-        let pending = fetchBatch(0);
+        pending = fetchBatch(0);
         for (let start = 0, seq = 0; start < rowsTotal; start += batchRows, seq += 1) {
           const rows = await pending;
           const nextStart = start + batchRows;
@@ -378,6 +379,9 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
           throw err;
         }
       }
+      // An abort can leave the overlapped prefetch in flight; it rejects with
+      // the abort error once the bridge cancels it — swallow, never surface.
+      void pending.catch(() => undefined);
       post({ type: aborted ? 'abort' : 'flush' });
       const done = await channel.expect('done');
       return done.summary;

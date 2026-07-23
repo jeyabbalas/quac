@@ -6,7 +6,9 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@duckdb/duckdb-wasm'],
     // Pre-bundle upfront: late discovery mid-test-run makes Vite reload and flake.
-    include: ['@jeyabbalas/data-table'],
+    // ajv/ajv-formats reach the browser via dynamic import (meta-validate) and
+    // the validation worker (P09) — same late-discovery reload otherwise.
+    include: ['@jeyabbalas/data-table', 'ajv', 'ajv/dist/2019.js', 'ajv/dist/2020.js', 'ajv-formats'],
   },
   preview: { port: 4173, strictPort: true },
   test: {

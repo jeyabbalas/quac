@@ -1018,3 +1018,17 @@
 .q-runbar-button {
   font-weight: 700;
 }
+
+/* Example strip (Load view, P14 demo) */
+.q-example {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px dashed var(--q-gray-300, #d4d4d8);
+  border-radius: 8px;
+  background: var(--q-gray-50);
+  font-size: 0.875rem;
+}

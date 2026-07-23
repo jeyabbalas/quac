@@ -8,6 +8,8 @@
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
+import { addRuleUrls } from '../../../core/rules/rules-store';
+import { loadSchemaUrls } from '../../../core/schema/schema-store';
 import { mountDatasetCard } from './datasetCard';
 import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
 import { mountRulesSlotCard } from './rulesSlotCard';
@@ -15,10 +17,49 @@ import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import type { ShellContext } from '../../../app/shell';
 import type { SlotState } from '../../../app/store';
 
+interface ExampleIndex {
+  dataset: string;
+  schema: string[];
+  rules: string[];
+}
+
 export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const hint = document.createElement('p');
   hint.className = 'q-load-hint';
   hint.textContent = 'Uploads live only in this tab. Reload = re-upload. URLs reload themselves.';
+
+  // ---- Example strip (P14 demo affordance): one click fills all 3 slots ----
+  const example = document.createElement('section');
+  example.className = 'q-example';
+  const exampleText = document.createElement('span');
+  exampleText.textContent =
+    'New here? Try the bundled HESP example — dirty dataset, 14-file schema, 3 rules files.';
+  const exampleButton = document.createElement('button');
+  exampleButton.type = 'button';
+  exampleButton.className = 'q-btn q-example-load';
+  exampleButton.textContent = 'Load example files';
+  exampleButton.addEventListener('click', () => {
+    exampleButton.disabled = true;
+    void (async () => {
+      const base = `${import.meta.env.BASE_URL}examples/`;
+      const abs = (path: string): string => new URL(base + path, window.location.href).toString();
+      const response = await fetch(abs('index.json'));
+      if (!response.ok) throw new Error(`example manifest HTTP ${String(response.status)}`);
+      const manifest = (await response.json()) as ExampleIndex;
+      dataCard.fetchUrl(abs(manifest.dataset)); // dataset card owns its own progress UI
+      await Promise.all([
+        loadSchemaUrls(manifest.schema.map(abs)),
+        addRuleUrls(manifest.rules.map(abs)),
+      ]);
+    })()
+      .catch((err: unknown) => {
+        reportError(err, { fallbackCode: 'FETCH_HTTP' });
+      })
+      .finally(() => {
+        exampleButton.disabled = false;
+      });
+  });
+  example.append(exampleText, exampleButton);
 
   const grid = document.createElement('div');
   grid.className = 'q-slotgrid';
@@ -30,7 +71,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   rulesHost.dataset.slot = 'rules';
   grid.append(dataHost, schemaHost, rulesHost);
 
-  mountDatasetCard(dataHost, ctx);
+  const dataCard = mountDatasetCard(dataHost, ctx);
   mountSchemaSlotCard(schemaHost);
   mountRulesSlotCard(rulesHost, ctx);
 
@@ -75,7 +116,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   });
   runBar.append(reason, toggleLabel, runButton);
 
-  container.append(hint, grid, pertinenceHost, preview, runBar);
+  container.append(hint, example, grid, pertinenceHost, preview, runBar);
 
   const usable = (slot: SlotState): boolean =>
     slot.status === 'valid' || slot.status === 'warning';

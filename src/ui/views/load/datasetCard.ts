@@ -11,7 +11,12 @@ import { createSlotCard } from '../../components/slotCard';
 import { createUrlField } from '../../components/urlField';
 import type { ShellContext } from '../../../app/shell';
 
-export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): void {
+export interface DatasetCardHandle {
+  /** Programmatic URL ingest — the "Load example files" path (P14). */
+  fetchUrl: (url: string) => void;
+}
+
+export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): DatasetCardHandle {
   const card = createSlotCard('Dataset');
 
   const progress = createDuckProgress();
@@ -66,4 +71,10 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): voi
   effect(() => {
     card.update(ctx.store.slots.data.get());
   });
+
+  return {
+    fetchUrl: (url) => {
+      run('url', url);
+    },
+  };
 }

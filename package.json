@@ -7,9 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "predev": "node scripts/copy-duckdb-assets.mjs",
+    "predev": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-duckdb-assets.mjs",
+    "prebuild": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --project unit",

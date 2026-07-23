@@ -14,6 +14,7 @@ import { mountLoadView } from '../ui/views/load/loadView';
 import { mountReportView } from '../ui/views/report/reportView';
 import { mountStudioView } from '../ui/views/studio/studioView';
 import { createCancelToken } from './store';
+import { installTypedSync } from './typedSync';
 import type { RouteId, Router } from './router';
 import type { AppStore } from './store';
 
@@ -174,6 +175,8 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
       cancel: createCancelToken(),
     });
   });
+
+  installTypedSync(ctx);
 
   window.__quac = { openDemoModal };
 }

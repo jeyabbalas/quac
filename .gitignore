@@ -12,3 +12,4 @@ blob-report/
 *.local
 .vitest-attachments/
 __screenshots__/
+public/examples/

@@ -50,6 +50,23 @@ export interface EngineOptions {
     phase: 'correct' | 'validate';
   }) => void;
   onFlags?: (batch: QCFlag[]) => void; // incremental delivery to the FlagStore
+  /**
+   * Cooperative cancel (P14, architecture.md §6): checked before each rule and
+   * each js chunk. When it fires, phases end early with partial results kept —
+   * completed rules' stats/flags stand, the in-flight rule is discarded (never
+   * recorded broken), and RunResult.aborted is true. The signal is NOT bound
+   * into individual bridge calls: post-abort cleanup (staging DROPs, view
+   * refresh) must still execute.
+   */
+  signal?: AbortSignal;
+  /**
+   * runQC only (ignored by runValidations): awaited once between the
+   * corrections and validations phases — the slot qc-rules-engine.md §3
+   * reserves for schema validation of the corrected `data`. Skipped when the
+   * signal is already aborted. Exceptions propagate out of runQC; callers
+   * needing containment catch inside the hook.
+   */
+  betweenPhases?: () => Promise<void>;
 }
 
 export type RuleRunStatus =
@@ -74,6 +91,8 @@ export interface RunResult {
   flags: QCFlag[];
   perRule: RuleRunStat[];
   correctedCells: number;
+  /** True when EngineOptions.signal cut the run short (partial results kept). */
+  aborted?: boolean;
 }
 
 export interface JSSandbox {

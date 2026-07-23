@@ -175,6 +175,13 @@ function renderRowPairs(row: Record<string, unknown>): string {
 
 const countFmt = (n: number): string => n.toLocaleString('en-US');
 
+/**
+ * Cooperative-cancel probe. A function boundary on purpose: TS control-flow
+ * narrowing otherwise pins `signal.aborted` to its loop-top value across the
+ * awaits inside the rule try-block, flagging the catch guard as impossible.
+ */
+const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
 function skipStat(rule: QCRule, status: RuleRunStat['status']): RuleRunStat {
   return {
     ruleId: rule.ruleId,
@@ -358,6 +365,7 @@ interface PhaseCtx {
   jsChunkTimeoutMs: number;
   jsRuleTimeoutMs: number;
   onProgress?: EngineOptions['onProgress'];
+  signal?: AbortSignal;
 }
 
 /** DISTINCT targets (§7) + the P11 applicability gate shared by both phases. */
@@ -401,6 +409,7 @@ async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<v
   let index = 0;
 
   for (const rule of allRules) {
+    if (isAborted(ctx.signal)) return; // partial: stop before stats/flags
     if (rule.ruleType === 'correct') continue; // the corrections phase stats these
     if (rule.ruleType === 'external') {
       ctx.perRule.push(skipStat(rule, 'skipped-external'));
@@ -450,6 +459,12 @@ async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<v
         durationMs: performance.now() - started,
       });
     } catch (err) {
+      if (isAborted(ctx.signal)) {
+        // Abort-rejected work is a cancel, not a broken rule (validation-run
+        // precedent): discard the in-flight buffer, keep completed stats.
+        ctx.sink.discardRule();
+        return;
+      }
       recordBrokenRule(ctx, rule, err, started);
     }
   }
@@ -483,10 +498,11 @@ export async function runValidations(
       jsChunkTimeoutMs: opts.jsChunkTimeoutMs ?? JS_CHUNK_TIMEOUT_MS_DEFAULT,
       jsRuleTimeoutMs: opts.jsRuleTimeoutMs ?? JS_RULE_TIMEOUT_MS_DEFAULT,
       onProgress: opts.onProgress,
+      signal: opts.signal,
     },
     ruleFiles.flatMap((f) => f.rules),
   );
-  return { flags: sink.all(), perRule, correctedCells: 0 };
+  return { flags: sink.all(), perRule, correctedCells: 0, aborted: isAborted(opts.signal) };
 }
 
 // ---- the corrections phase (engine §3 phase 1; P12) ------------------------
@@ -617,6 +633,9 @@ async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome
     const updates: { row: number; val: string | null }[] = [];
     let lastRow: number | bigint = -1;
     for (;;) {
+      // Chunk-boundary cancel (§6): throws signal.reason → the corrections
+      // catch sees an aborted signal and discards this rule (never broken).
+      ctx.signal?.throwIfAborted();
       const chunk: Record<string, unknown>[] = await ctx.runner.query(
         jsChunkFetchSQL(pair.condition, lastRow, JS_CHUNK_SIZE),
       );
@@ -769,6 +788,7 @@ async function runCorrectionsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<n
   let correctedCells = 0;
 
   for (const rule of correctRules) {
+    if (isAborted(ctx.signal)) return correctedCells; // partial: keep completed swaps
     if (!rule.enabled) {
       ctx.perRule.push(skipStat(rule, 'skipped-disabled'));
       continue;
@@ -810,6 +830,12 @@ async function runCorrectionsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<n
         durationMs: performance.now() - started,
       });
     } catch (err) {
+      if (isAborted(ctx.signal)) {
+        // Cancel, not a broken rule: the in-flight rule's merge never ran
+        // (single-CTAS invariant), so quac_work reflects only completed rules.
+        ctx.sink.discardRule();
+        return correctedCells;
+      }
       recordBrokenRule(ctx, rule, err, started);
     }
   }
@@ -860,13 +886,18 @@ export async function runQC(
     jsChunkTimeoutMs: opts.jsChunkTimeoutMs ?? JS_CHUNK_TIMEOUT_MS_DEFAULT,
     jsRuleTimeoutMs: opts.jsRuleTimeoutMs ?? JS_RULE_TIMEOUT_MS_DEFAULT,
     onProgress: opts.onProgress,
+    signal: opts.signal,
   };
 
+  const aborted = (): boolean => isAborted(opts.signal);
   let correctedCells = 0;
-  if (opts.applyCorrections !== false) {
+  if (opts.applyCorrections !== false && !aborted()) {
     correctedCells = await runCorrectionsPhase(ctx, allRules);
   }
-  await runValidationsPhase(ctx, allRules);
+  // The §3 "phase 2" slot: schema validation of the corrected `data` runs
+  // here when the caller provides the hook (P14 pipeline).
+  if (!aborted()) await opts.betweenPhases?.();
+  if (!aborted()) await runValidationsPhase(ctx, allRules);
 
-  return { flags: sink.all(), perRule, correctedCells };
+  return { flags: sink.all(), perRule, correctedCells, aborted: aborted() };
 }

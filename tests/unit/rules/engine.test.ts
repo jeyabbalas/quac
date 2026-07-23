@@ -7,10 +7,10 @@ import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import type { QCFlag } from '../../../src/core/flags/flag';
-import { createBridgeRunner, runValidations } from '../../../src/core/rules/engine';
+import { createBridgeRunner, runQC, runValidations } from '../../../src/core/rules/engine';
 import { parseRuleFile } from '../../../src/core/rules/parse';
-import type { QCRule, RuleFile } from '../../../src/core/rules/types';
-import { openDuckDb, openQcFixture, type QcFixtureDb } from './support';
+import type { JSSandbox, QCRule, RuleFile, SQLRunner } from '../../../src/core/rules/types';
+import { openDuckDb, openQcFixture, openQcTyped, type QcFixtureDb } from './support';
 
 const FIXTURES = resolve(__dirname, '..', '..', 'fixtures');
 
@@ -474,5 +474,228 @@ describe('createBridgeRunner', () => {
     expect(calls).toEqual(['SELECT 1']);
     runner.clearCache();
     expect(cleared).toBe(1);
+  });
+});
+
+// ---- P14 additions: EngineOptions.signal + betweenPhases -------------------
+// The pipeline composes runQC(corrections → [hook: schema] → validations) and
+// cancels cooperatively at rule/chunk boundaries. These pin the contract the
+// pipeline (and its mocked-executor tests) rely on.
+describe('P14 engine additions: signal + betweenPhases', () => {
+  /** Inline correction: harmonize the row-8 legacy sentinel 999 → -999. */
+  const sentinelFix = makeRule({
+    ruleId: 'C1',
+    ruleType: 'correct',
+    targetVariables: ['wage_income_annual'],
+    condition: 'wage_income_annual = 999',
+    updateExpression: '-999',
+    severity: 'info',
+    comment: 'Legacy sentinel harmonized.',
+  });
+  /** Validate rule that can ONLY fire on post-correction data. */
+  const findsCorrected = makeRule({
+    ruleId: 'V1',
+    targetVariables: ['wage_income_annual'],
+    condition: 'wage_income_annual = -999',
+    comment: 'Sees the corrected value.',
+  });
+
+  it('betweenPhases — awaited exactly once between phases, over the corrected data', async () => {
+    const db = await openQcTyped();
+    try {
+      const events: string[] = [];
+      let hookWage: unknown;
+      const result = await runQC(db.runner, inline(sentinelFix, findsCorrected), {
+        onProgress: (p) => events.push(`${p.phase}:${p.ruleId}`),
+        betweenPhases: async () => {
+          events.push('hook');
+          const rows = await db.runner.query('SELECT wage_income_annual AS w FROM data WHERE __row__ = 8');
+          hookWage = rows[0]?.w;
+        },
+      });
+      expect(events).toEqual(['correct:C1', 'hook', 'validate:V1']);
+      expect(hookWage).toBe(-999); // the hook runs AFTER corrections landed
+      expect(cellRows(result.flags, 'V1', 'wage_income_annual')).toEqual([8]);
+      expect(result.correctedCells).toBe(1);
+      expect(result.aborted).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('betweenPhases — still awaited in assess-only mode (corrections skipped)', async () => {
+    const db = await openQcTyped();
+    try {
+      let hookWage: unknown;
+      const result = await runQC(db.runner, inline(sentinelFix, findsCorrected), {
+        applyCorrections: false,
+        betweenPhases: async () => {
+          const rows = await db.runner.query('SELECT wage_income_annual AS w FROM data WHERE __row__ = 8');
+          hookWage = rows[0]?.w;
+        },
+      });
+      expect(hookWage).toBe(999); // untouched work table
+      expect(result.correctedCells).toBe(0);
+      expect(result.perRule).toEqual([
+        expect.objectContaining({ ruleId: 'V1', status: 'ok', violationCount: 0 }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('betweenPhases — exceptions propagate out of runQC; validations never run', async () => {
+    const db = await openQcTyped();
+    try {
+      const phases: string[] = [];
+      await expect(
+        runQC(db.runner, inline(findsCorrected), {
+          onProgress: (p) => phases.push(p.phase),
+          betweenPhases: () => Promise.reject(new Error('schema stage failed')),
+        }),
+      ).rejects.toThrow('schema stage failed');
+      expect(phases).not.toContain('validate');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('signal — pre-aborted run executes no phases and skips the hook', async () => {
+    const db = await openQcTyped();
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      let hookCalled = false;
+      const result = await runQC(db.runner, inline(sentinelFix, findsCorrected), {
+        signal: controller.signal,
+        betweenPhases: () => {
+          hookCalled = true;
+          return Promise.resolve();
+        },
+      });
+      expect(hookCalled).toBe(false);
+      expect(result.perRule).toEqual([]);
+      expect(result.flags).toEqual([]);
+      expect(result.aborted).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('signal — abort during corrections stops before the next rule; partial swaps kept, nothing broken', async () => {
+    const db = await openDuckDb([
+      'CREATE TABLE quac_typed AS SELECT range AS __row__, 0 AS a, 0 AS b FROM range(5)',
+    ]);
+    try {
+      const controller = new AbortController();
+      let hookCalled = false;
+      const first = makeRule({
+        ruleId: 'CA',
+        ruleType: 'correct',
+        targetVariables: ['a'],
+        condition: 'a = 0',
+        updateExpression: '1',
+        severity: 'info',
+      });
+      const second = makeRule({
+        ruleId: 'CB',
+        ruleType: 'correct',
+        targetVariables: ['b'],
+        condition: 'b = 0',
+        updateExpression: '1',
+        severity: 'info',
+      });
+      const result = await runQC(db.runner, inline(first, second, findsCorrected), {
+        signal: controller.signal,
+        onProgress: (p) => {
+          // CA is already past its rule boundary — it completes; CB's
+          // loop-top check sees the abort and the phase ends.
+          if (p.ruleId === 'CA') controller.abort();
+        },
+        betweenPhases: () => {
+          hookCalled = true;
+          return Promise.resolve();
+        },
+      });
+      expect(result.aborted).toBe(true);
+      expect(hookCalled).toBe(false);
+      expect(result.perRule).toEqual([
+        expect.objectContaining({ ruleId: 'CA', status: 'ok', changedCells: 5 }),
+      ]);
+      const rows = await db.runner.query<{ a: number; b: number }>(
+        'SELECT a, b FROM quac_work WHERE __row__ = 0',
+      );
+      expect(rows[0]).toEqual({ a: 1, b: 0 }); // CA landed, CB never ran
+    } finally {
+      db.close();
+    }
+  });
+
+  it('signal — abort during validations keeps completed rules and stops the loop', async () => {
+    const db = await openQcTyped();
+    try {
+      const controller = new AbortController();
+      const v2 = makeRule({ ruleId: 'V2', condition: 'TRUE', comment: 'Never runs.' });
+      const result = await runQC(db.runner, inline(findsCorrected, v2), {
+        signal: controller.signal,
+        onProgress: (p) => {
+          if (p.ruleId === 'V1') controller.abort();
+        },
+      });
+      expect(result.aborted).toBe(true);
+      expect(result.perRule).toEqual([expect.objectContaining({ ruleId: 'V1', status: 'ok' })]);
+      expect(result.flags.filter((f) => f.ruleId === 'V2')).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('signal — js chunk boundary: abort between chunks discards the rule (not broken), work table untouched', async () => {
+    const db = await openDuckDb([
+      'CREATE TABLE quac_typed AS SELECT range AS __row__, CAST(range AS VARCHAR) AS v FROM range(12000)',
+    ]);
+    try {
+      const controller = new AbortController();
+      // Abort as soon as the first keyset chunk fetch returns — the loop's
+      // next-iteration throwIfAborted() is the checkpoint under test.
+      const runner: SQLRunner = {
+        query: async <T = Record<string, unknown>>(sql: string): Promise<T[]> => {
+          const rows = await db.runner.query<T>(sql);
+          if (sql.includes('__qc_hit__')) controller.abort();
+          return rows;
+        },
+      };
+      let sandboxCalls = 0;
+      const sandbox: JSSandbox = {
+        compileCheck: () => Promise.resolve({ ok: true }),
+        runCorrection: (_src, batch) => {
+          sandboxCalls += 1;
+          return Promise.resolve(batch.map((b) => ({ row: b.row, value: 'x', changed: true })));
+        },
+      };
+      const jsRule = makeRule({
+        ruleId: 'XJS',
+        ruleType: 'correct',
+        updateLanguage: 'js',
+        updateExpression: '(value) => value',
+        targetVariables: ['v'],
+        condition: 'TRUE',
+        severity: 'info',
+      });
+      const result = await runQC(runner, inline(jsRule), {
+        signal: controller.signal,
+        jsSandbox: sandbox,
+      });
+      expect(sandboxCalls).toBe(1); // chunk 1 of 3 (12000 rows / 5000)
+      expect(result.aborted).toBe(true);
+      expect(result.perRule).toEqual([]); // discarded, never recorded broken
+      expect(result.flags).toEqual([]);
+      const changed = await db.runner.query<{ n: number }>(
+        "SELECT count(*) AS n FROM quac_work WHERE v = 'x'",
+      );
+      expect(changed[0]?.n).toBe(0); // merge never ran
+    } finally {
+      db.close();
+    }
   });
 });

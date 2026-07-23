@@ -33,7 +33,7 @@ import {
 } from './worker-protocol';
 import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
-import type { SqlRunner } from './casting';
+import type { CastPlan, SqlRunner } from './casting';
 import type { ColumnDigest } from './column-meta';
 import type { SchemaFile, SchemaSet } from './types';
 import type {
@@ -58,6 +58,14 @@ export interface ValidationRunDeps {
   flagStore: FlagStore;
   /** Table the row loop and dataset checks read (P14 points this at the corrected data). */
   sourceTable?: string;
+  /**
+   * Pre-applied cast plan from the pipeline's prepare stage (P14): quac_typed
+   * already holds this plan's CTAS (applied BEFORE corrections so rules see
+   * typed columns), so describe/build/apply are skipped here. The cast-failure
+   * scan still runs here either way — this function stays the single writer of
+   * `schema:prop:*:cast` flags (a second writer would inflate dedupe counts).
+   */
+  castPlan?: CastPlan;
   onProgress?: (progress: ValidationProgress) => void;
   signal?: AbortSignal;
   config?: ValidationRunConfig;
@@ -270,9 +278,14 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
 
   // ---- Casting into quac_typed + cast-failure scan (§C) ----
   emitProgress('casting', 0, true);
-  const rawTypes = await describeColumns(runner);
-  const plan = buildCastPlan(meta, datasetColumns, rawTypes);
-  await applyCastPlan(runner, plan);
+  let plan: CastPlan;
+  if (deps.castPlan !== undefined) {
+    plan = deps.castPlan; // prepare already ran this plan's CTAS (P14)
+  } else {
+    const rawTypes = await describeColumns(runner);
+    plan = buildCastPlan(meta, datasetColumns, rawTypes);
+    await applyCastPlan(runner, plan);
+  }
   const scan = await scanCastFailures(runner, plan, ordinalByName);
   addFlags(scan.flags);
 

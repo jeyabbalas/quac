@@ -50,6 +50,8 @@ export interface FlagStore {
   datasetScope(): readonly FlagEntry[];
   /** Every materialized entry in deterministic order (annotations, export). */
   all(): readonly FlagEntry[];
+  /** Exact flags-ever-added count (== summary().totalCount, without the build). */
+  totalCount(): number;
   summary(rowsTotal?: number): FlagStoreSummary;
   /** Called once per mutating add()/clear(); returns an unsubscribe fn. */
   subscribe(listener: () => void): () => void;
@@ -245,6 +247,8 @@ export function createFlagStore(opts: { cap?: number } = {}): FlagStore {
       ensureIndexes();
       return allEntries;
     },
+
+    totalCount: (): number => totalCount,
 
     summary(rowsTotal?: number): FlagStoreSummary {
       const perRule: RuleAggregate[] = [...countsByRuleId.entries()]

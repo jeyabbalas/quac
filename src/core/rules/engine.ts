@@ -22,9 +22,11 @@
 //   and one dataset-scope error flag `Rule failed to execute: …` is emitted;
 //   the run continues (§5). Correction swaps are single-statement
 //   CREATE OR REPLACE CTAS (V14 — no quac_work_next dance), so a failed rule
-//   leaves quac_work untouched with nothing to clean up.
-// - js correct rules are broken in P12 regardless of opts.jsSandbox (the
-//   QuickJS execution path arrives in P13).
+//   leaves quac_work untouched with nothing to clean up. The js path (P13)
+//   preserves the same invariant by deferring its merge: all pairs collect
+//   updates against the stable pre-rule `data` (single-pass, like SQL's one
+//   CTAS), captures/counts run BEFORE the swap, then ONE all-targets merge
+//   CTAS — a failure anywhere leaves quac_work untouched.
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { parseAssertion, expandAssertion } from './assertions';
 import {
@@ -33,11 +35,27 @@ import {
   datasetCountSQL,
   datasetFetchSQL,
   expandValueToken,
+  jsCaptureSQL,
+  jsChunkFetchSQL,
+  jsCountSQL,
+  jsMergeSelectSQL,
+  jsStageCreateSQL,
+  jsStageInsertSQL,
+  jsStageTableName,
   rebuildSelectSQL,
   violCountSQL,
   violFetchSQL,
 } from './sql';
-import type { EngineOptions, QCRule, RuleFile, RuleRunStat, RunResult, SQLRunner } from './types';
+import type { JsMergePart } from './sql';
+import type {
+  EngineOptions,
+  JSSandbox,
+  QCRule,
+  RuleFile,
+  RuleRunStat,
+  RunResult,
+  SQLRunner,
+} from './types';
 import { computePertinence } from '../pertinence';
 import type { QCFlag } from '../flags/flag';
 
@@ -45,6 +63,16 @@ export const ROW_CAP_PER_RULE_DEFAULT = 10_000;
 export const DATASET_ROW_CAP_DEFAULT = 200;
 /** Mirrors FLAG_CAP_DEFAULT in flags/flagStore.ts (architecture.md §5). */
 export const GLOBAL_FLAG_CAP_DEFAULT = 200_000;
+
+// ---- js-correction policy (engine §3/§5, format §6) ----
+/** Keyset page size for js-correction match fetches (spec constant, no knob). */
+export const JS_CHUNK_SIZE = 5000;
+export const JS_CHUNK_TIMEOUT_MS_DEFAULT = 2000;
+export const JS_RULE_TIMEOUT_MS_DEFAULT = 30_000;
+/** Individual `JS error on row N` flags per rule before the overflow summary. */
+export const JS_ERROR_FLAG_CAP = 50;
+/** Rule breaks when row failures exceed this share of processed rows (§5 "1%"). */
+export const JS_ERROR_RATE_LIMIT = 0.01;
 
 /**
  * Browser SQLRunner over the real bridge (phase task 5; exercised in P12).
@@ -326,6 +354,9 @@ interface PhaseCtx {
   datasetCap: number;
   sink: FlagSink;
   perRule: RuleRunStat[];
+  jsSandbox: JSSandbox | null;
+  jsChunkTimeoutMs: number;
+  jsRuleTimeoutMs: number;
   onProgress?: EngineOptions['onProgress'];
 }
 
@@ -441,7 +472,18 @@ export async function runValidations(
   const sink = createFlagSink(globalCap, opts.onFlags);
   const perRule: RuleRunStat[] = [];
   await runValidationsPhase(
-    { runner, datasetColumns, rowCap, datasetCap, sink, perRule, onProgress: opts.onProgress },
+    {
+      runner,
+      datasetColumns,
+      rowCap,
+      datasetCap,
+      sink,
+      perRule,
+      jsSandbox: opts.jsSandbox ?? null,
+      jsChunkTimeoutMs: opts.jsChunkTimeoutMs ?? JS_CHUNK_TIMEOUT_MS_DEFAULT,
+      jsRuleTimeoutMs: opts.jsRuleTimeoutMs ?? JS_RULE_TIMEOUT_MS_DEFAULT,
+      onProgress: opts.onProgress,
+    },
     ruleFiles.flatMap((f) => f.rules),
   );
   return { flags: sink.all(), perRule, correctedCells: 0 };
@@ -508,6 +550,218 @@ async function runSqlCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcom
   return { violationCount: changed, truncated };
 }
 
+// ---- js corrections (P13; engine §3 js branch, format §6) ------------------
+
+/** JSON-safe view of a DuckDB cell for the sandbox boundary (format §6). */
+function marshalJsValue(v: unknown): unknown {
+  if (typeof v === 'bigint') return Number(v); // precision loss past 2^53 accepted
+  if (v instanceof Date) return v.toISOString();
+  return v;
+}
+
+/**
+ * VARCHAR staging text for a sandbox-returned value (CAST at merge time).
+ * Inputs are JSON-parsed sandbox output, so objects always stringify.
+ */
+function stageText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'bigint' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
+interface JsRowError {
+  row: number;
+  target: string;
+  value: unknown;
+  error: string;
+}
+
+/**
+ * Executes one js correction rule (format §6): per pair, keyset-paginated
+ * match fetch → QuickJS chunks; then staging tables, pre-merge count/capture
+ * (no-op suppression via `CAST(u.val AS T) IS DISTINCT FROM col` — the CAST
+ * makes the SQL side authoritative), and ONE all-targets merge CTAS in the
+ * V14 shape. Every read happens against the stable pre-rule `data`, so
+ * multi-target js rules keep SQL corrections' single-pass semantics AND a
+ * failure anywhere (budget, error rate, un-castable value) leaves quac_work
+ * untouched — engine §3's per-pair merge sketch is superseded the same way
+ * `ctasRebuildSQL` was (phase-13 Deferred notes).
+ */
+async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome> {
+  const sandbox = ctx.jsSandbox;
+  if (sandbox === null) {
+    throw new Error('JS corrections require the QuickJS sandbox; rule not executed');
+  }
+  await ctx.runner.query('SELECT setseed(0.42)');
+  // Declared types re-read per rule: an earlier correction's CTAS may have
+  // retyped a column, so a run-start snapshot could stage a stale CAST.
+  const columnTypes = new Map(
+    (await ctx.runner.query<{ column_name: string; column_type: string }>('DESCRIBE data')).map(
+      (r) => [r.column_name, r.column_type],
+    ),
+  );
+  const pairs = expandValueToken(rule);
+  const message = flagMessage(rule);
+
+  // ---- phase A (read-only): sandbox every pair over the pre-rule data ----
+  const pending: { part: JsMergePart; updates: { row: number; val: string | null }[] }[] = [];
+  const rowErrors: JsRowError[] = [];
+  let processedRows = 0;
+  let sandboxMs = 0;
+  for (const [pairIndex, pair] of pairs.entries()) {
+    const castType = columnTypes.get(pair.target);
+    if (castType === undefined) {
+      // applicableTargets gates this; defensive for direct callers.
+      throw new Error(`target column ${pair.target} is not present in the dataset`);
+    }
+    const updates: { row: number; val: string | null }[] = [];
+    let lastRow: number | bigint = -1;
+    for (;;) {
+      const chunk: Record<string, unknown>[] = await ctx.runner.query(
+        jsChunkFetchSQL(pair.condition, lastRow, JS_CHUNK_SIZE),
+      );
+      if (chunk.length === 0) break;
+      const batch = chunk.map((row) => {
+        const rowData: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(row)) {
+          if (key === '__qc_hit__') continue;
+          rowData[key] = marshalJsValue(value);
+        }
+        return { row: Number(row.__row__), value: marshalJsValue(row[pair.target]), rowData };
+      });
+      const started = performance.now();
+      const results = await sandbox.runCorrection(rule.updateExpression, batch, {
+        timeoutMs: ctx.jsChunkTimeoutMs,
+      });
+      sandboxMs += performance.now() - started;
+      if (sandboxMs > ctx.jsRuleTimeoutMs) {
+        throw new Error(
+          `JS correction exceeded the ${String(ctx.jsRuleTimeoutMs)} ms per-rule sandbox budget`,
+        );
+      }
+      processedRows += batch.length;
+      for (const [i, result] of results.entries()) {
+        if (result.error !== undefined) {
+          rowErrors.push({
+            row: result.row,
+            target: pair.target,
+            value: batch[i]?.value,
+            error: result.error,
+          });
+          continue;
+        }
+        // `value === undefined` covers JSON-unrepresentable returns
+        // (function/symbol) — treated as unchanged, like `undefined` itself.
+        if (!result.changed || result.value === undefined) continue;
+        updates.push({ row: result.row, val: result.value === null ? null : stageText(result.value) });
+      }
+      if (rowErrors.length > processedRows * JS_ERROR_RATE_LIMIT) {
+        throw new Error(
+          `JS correction failed on ${String(rowErrors.length)} of ` +
+            `${String(processedRows)} rows (over the 1% limit); ` +
+            `first error: ${rowErrors[0]?.error ?? 'unknown'}`,
+        );
+      }
+      const tail = chunk.at(-1);
+      if (tail === undefined || chunk.length < JS_CHUNK_SIZE) break;
+      lastRow = Number(tail.__row__);
+    }
+    if (updates.length > 0) {
+      pending.push({
+        part: { target: pair.target, castType, table: jsStageTableName(pairIndex) },
+        updates,
+      });
+    }
+  }
+
+  // ---- phases B–D: stage, capture (pre-merge), one atomic merge ----
+  let changed = 0;
+  let truncated = false;
+  try {
+    for (const { part, updates } of pending) {
+      await ctx.runner.query(jsStageCreateSQL(part.table));
+      for (const stmt of jsStageInsertSQL(part.table, updates)) {
+        await ctx.runner.query(stmt);
+      }
+    }
+    // The staging INSERTs are mutations the bridge SELECT cache cannot see,
+    // and count/capture SQL text repeats across rules (V2 discipline).
+    ctx.runner.clearCache?.();
+
+    const merge: JsMergePart[] = [];
+    for (const { part } of pending) {
+      const n = firstScalar(await ctx.runner.query(jsCountSQL(part)));
+      if (n === 0) continue; // every staged value was a cast-normalization no-op
+      changed += n;
+      merge.push(part);
+      const rows = await ctx.runner.query(jsCaptureSQL(part, ctx.rowCap));
+      for (const row of rows) {
+        ctx.sink.emit({
+          source: 'rules',
+          ruleId: rule.ruleId,
+          scope: 'cell',
+          row: Number(row.__row__),
+          column: part.target,
+          severity: rule.severity,
+          message,
+          value: row.before,
+          correction: { before: row.before, after: row.after },
+        });
+      }
+      if (n > ctx.rowCap) {
+        truncated = true;
+        ctx.sink.emitSummary({
+          source: 'rules',
+          ruleId: rule.ruleId,
+          scope: 'column',
+          column: part.target,
+          severity: rule.severity,
+          message: `…and ${countFmt(n - ctx.rowCap)} more rows corrected by this rule`,
+        });
+      }
+    }
+
+    if (merge.length > 0) {
+      // Atomic all-targets swap (V14) + the cheap-insurance view refresh.
+      await ctx.runner.query(`CREATE OR REPLACE TABLE quac_work AS ${jsMergeSelectSQL(merge)}`);
+      await ctx.runner.query('CREATE OR REPLACE VIEW data AS SELECT * FROM quac_work');
+      ctx.runner.clearCache?.();
+    }
+  } finally {
+    for (const { part } of pending) {
+      await ctx.runner.query(`DROP TABLE IF EXISTS ${part.table}`);
+    }
+    if (pending.length > 0) ctx.runner.clearCache?.();
+  }
+
+  // Row-failure flags (§5): individual flags up to the cap, then a summary.
+  // Reached only when the rule survived the 1% policy above.
+  for (const err of rowErrors.slice(0, JS_ERROR_FLAG_CAP)) {
+    ctx.sink.emit({
+      source: 'rules',
+      ruleId: rule.ruleId,
+      scope: 'cell',
+      row: err.row,
+      column: err.target,
+      severity: 'warning',
+      message: `JS error on row ${String(err.row)}: ${err.error}`,
+      value: err.value,
+    });
+  }
+  if (rowErrors.length > JS_ERROR_FLAG_CAP) {
+    ctx.sink.emitSummary({
+      source: 'rules',
+      ruleId: rule.ruleId,
+      scope: 'column',
+      column: rowErrors[JS_ERROR_FLAG_CAP]?.target ?? rule.targetVariables[0] ?? '',
+      severity: 'warning',
+      message: `…and ${countFmt(rowErrors.length - JS_ERROR_FLAG_CAP)} more JS errors from this rule`,
+    });
+  }
+
+  return { violationCount: changed, truncated };
+}
+
 async function runCorrectionsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<number> {
   const correctRules = allRules.filter((r) => r.ruleType === 'correct');
   const total = correctRules.filter((r) => r.enabled).length;
@@ -530,10 +784,10 @@ async function runCorrectionsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<n
 
     const started = performance.now();
     try {
-      if (rule.updateLanguage === 'js') {
-        throw new Error('JS corrections require the QuickJS sandbox (P13); rule not executed');
-      }
-      const outcome = await runSqlCorrection(ctx, rule);
+      const outcome =
+        rule.updateLanguage === 'js'
+          ? await runJsCorrection(ctx, rule)
+          : await runSqlCorrection(ctx, rule);
       const suppressed = ctx.sink.suppressed();
       if (suppressed > 0) {
         ctx.sink.emitSummary({
@@ -602,6 +856,9 @@ export async function runQC(
     datasetCap,
     sink,
     perRule,
+    jsSandbox: opts.jsSandbox ?? null,
+    jsChunkTimeoutMs: opts.jsChunkTimeoutMs ?? JS_CHUNK_TIMEOUT_MS_DEFAULT,
+    jsRuleTimeoutMs: opts.jsRuleTimeoutMs ?? JS_RULE_TIMEOUT_MS_DEFAULT,
     onProgress: opts.onProgress,
   };
 

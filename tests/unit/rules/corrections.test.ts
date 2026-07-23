@@ -161,7 +161,7 @@ describe('runQC corrections on qc_fixture (seeded as quac_typed)', () => {
     }
   });
 
-  it('js corrections are broken until P13 (H006) — table untouched, run continues', async () => {
+  it('js corrections without a sandbox are broken (H006) — table untouched, run continues', async () => {
     const db = await openQcTyped();
     try {
       const { flags, perRule } = await runQC(db.runner, pick('H006', 'Q047'));
@@ -169,7 +169,7 @@ describe('runQC corrections on qc_fixture (seeded as quac_typed)', () => {
         expect.objectContaining({
           ruleId: 'H006',
           status: 'broken',
-          error: 'JS corrections require the QuickJS sandbox (P13); rule not executed',
+          error: 'JS corrections require the QuickJS sandbox; rule not executed',
         }),
         expect.objectContaining({ ruleId: 'Q047', status: 'ok', changedCells: 1 }),
       ]);
@@ -180,7 +180,7 @@ describe('runQC corrections on qc_fixture (seeded as quac_typed)', () => {
           scope: 'dataset',
           severity: 'error',
           message:
-            'Rule failed to execute: JS corrections require the QuickJS sandbox (P13); rule not executed',
+            'Rule failed to execute: JS corrections require the QuickJS sandbox; rule not executed',
         },
       ]);
       expect(await scalar(db, "SELECT household_id FROM quac_work WHERE __row__ = 13")).toBe(
@@ -225,7 +225,7 @@ describe('runQC corrections on qc_fixture (seeded as quac_typed)', () => {
         ['Q050', 'ok', 1], // rent 150000 → 1500 at row 7 (row 9 already -666)
         ['Q052', 'skipped-inapplicable', 0], // 3 debt columns absent from qc_fixture
         ['Q055', 'ok', 1], // education -999 → 4 at row 11
-        ['H006', 'broken', 0], // js — sandbox arrives in P13
+        ['H006', 'broken', 0], // js — this run passes no sandbox
         ['Q057', 'skipped-disabled', 0],
         // Phase 3 — validations (P11 shape; counts unchanged post-correction):
         ['Q001', 'ok', 2],

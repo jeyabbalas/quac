@@ -13,8 +13,14 @@ import {
   datasetCountSQL,
   datasetFetchSQL,
   expandValueToken,
+  escapeSqlLiteral,
+  jsCaptureSQL,
   jsChunkFetchSQL,
-  jsMergeCtasSQL,
+  jsCountSQL,
+  jsMergeSelectSQL,
+  jsStageCreateSQL,
+  jsStageInsertSQL,
+  jsStageTableName,
   stripTrailingSemicolon,
   substituteValueToken,
   violCountSQL,
@@ -229,15 +235,61 @@ describe('wrapper builders (engine §3 pseudocode, byte-pinned)', () => {
     );
   });
 
-  it('js keyset chunk fetch + provisional staged-merge CTAS', () => {
-    expect(jsChunkFetchSQL('hit_cond', 'household_id', 4999n, 5000)).toBe(
-      'SELECT __row__, "household_id" AS value, * FROM (SELECT *, (hit_cond) AS hit FROM data) ' +
-        'WHERE hit AND __row__ > 4999 ORDER BY __row__ LIMIT 5000',
+  it('js keyset chunk fetch — single reserved alias, collision-proof', () => {
+    expect(jsChunkFetchSQL('hit_cond', 4999n, 5000)).toBe(
+      'SELECT * FROM (SELECT *, (hit_cond) AS __qc_hit__ FROM data) ' +
+        'WHERE __qc_hit__ AND __row__ > 4999 ORDER BY __row__ LIMIT 5000',
     );
-    expect(jsMergeCtasSQL('household_id', 'VARCHAR')).toBe(
-      'CREATE TABLE quac_work_next AS SELECT data.* REPLACE ' +
-        '(CASE WHEN u.__row__ IS NOT NULL THEN CAST(u.val AS VARCHAR) ELSE "household_id" END ' +
-        'AS "household_id") FROM data LEFT JOIN __qc_updates u ON data.__row__ = u.__row__',
+  });
+
+  it('js staging — literal escaping and double-capped INSERT batching', () => {
+    expect(escapeSqlLiteral(null)).toBe('NULL');
+    expect(escapeSqlLiteral("O'Brien")).toBe("'O''Brien'");
+    expect(jsStageTableName(1)).toBe('__qc_updates_1');
+    expect(jsStageCreateSQL('__qc_updates_0')).toBe(
+      'CREATE OR REPLACE TABLE __qc_updates_0 ("__row__" BIGINT, val VARCHAR)',
+    );
+    expect(jsStageInsertSQL('__qc_updates_0', [{ row: 3, val: 'HH00000042' }])).toEqual([
+      "INSERT INTO __qc_updates_0 VALUES (3, 'HH00000042')",
+    ]);
+    // 1000-tuple cap: 2500 updates → 1000 + 1000 + 500.
+    const many = Array.from({ length: 2500 }, (_, i) => ({ row: i, val: 'x' }));
+    expect(jsStageInsertSQL('__qc_updates_0', many).map((s) => s.match(/\(/g)?.length)).toEqual([
+      1000, 1000, 500,
+    ]);
+    // ~1 MB text cap flushes early: 3 half-MB strings → 2 statements.
+    const big = Array.from({ length: 3 }, (_, i) => ({ row: i, val: 'y'.repeat(512 * 1024) }));
+    expect(jsStageInsertSQL('__qc_updates_0', big)).toHaveLength(2);
+  });
+
+  it('js pre-merge count/capture — CAST-normalized no-op suppression', () => {
+    const part = { target: 'household_id', castType: 'VARCHAR', table: '__qc_updates_0' };
+    expect(jsCountSQL(part)).toBe(
+      'SELECT COUNT(*) FROM data JOIN __qc_updates_0 u ON data.__row__ = u.__row__ ' +
+        'WHERE CAST(u.val AS VARCHAR) IS DISTINCT FROM "household_id"',
+    );
+    expect(jsCaptureSQL(part, 10)).toBe(
+      'SELECT data.__row__ AS __row__, "household_id" AS before, ' +
+        'CAST(u.val AS VARCHAR) AS after ' +
+        'FROM data JOIN __qc_updates_0 u ON data.__row__ = u.__row__ ' +
+        'WHERE CAST(u.val AS VARCHAR) IS DISTINCT FROM "household_id" ' +
+        'ORDER BY data.__row__ LIMIT 10',
+    );
+  });
+
+  it('js staged-merge SELECT — one atomic all-targets rebuild (V14 wrap)', () => {
+    expect(
+      jsMergeSelectSQL([
+        { target: 'a', castType: 'BIGINT', table: '__qc_updates_0' },
+        { target: 'b', castType: 'VARCHAR', table: '__qc_updates_1' },
+      ]),
+    ).toBe(
+      'SELECT data.* REPLACE (' +
+        'CASE WHEN u0.__row__ IS NOT NULL THEN CAST(u0.val AS BIGINT) ELSE "a" END AS "a", ' +
+        'CASE WHEN u1.__row__ IS NOT NULL THEN CAST(u1.val AS VARCHAR) ELSE "b" END AS "b") ' +
+        'FROM data' +
+        ' LEFT JOIN __qc_updates_0 u0 ON data.__row__ = u0.__row__' +
+        ' LEFT JOIN __qc_updates_1 u1 ON data.__row__ = u1.__row__',
     );
   });
 });

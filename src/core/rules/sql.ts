@@ -285,31 +285,110 @@ export function ctasRebuildSQL(pairs: ValueExpansion[]): string {
   return `CREATE TABLE quac_work_next AS ${rebuildSelectSQL(pairs)}`;
 }
 
-/** Keyset-paginated match fetch for js corrections (engine §3, 5000-row chunks). */
-export function jsChunkFetchSQL(
-  condition: string,
-  target: string,
-  lastRow: number | bigint,
-  limit: number,
-): string {
+/**
+ * Keyset-paginated match fetch for js corrections (engine §3, 5000-row
+ * chunks). The single injected alias is `__qc_hit__` — `__`-prefixed dataset
+ * columns are rejected at ingestion, so it can never shadow user data (the
+ * engine reads the target's current value straight from the `*` projection).
+ */
+export function jsChunkFetchSQL(condition: string, lastRow: number | bigint, limit: number): string {
   return (
-    `SELECT __row__, ${quoteIdentifier(target)} AS value, * ` +
-    `FROM (SELECT *, (${condition}) AS hit FROM data) ` +
-    `WHERE hit AND __row__ > ${String(lastRow)} ORDER BY __row__ LIMIT ${String(limit)}`
+    `SELECT * FROM (SELECT *, (${condition}) AS __qc_hit__ FROM data) ` +
+    `WHERE __qc_hit__ AND __row__ > ${String(lastRow)} ORDER BY __row__ LIMIT ${String(limit)}`
+  );
+}
+
+/** SQL literal for a sandbox-returned value staged into an updates table. */
+export function escapeSqlLiteral(value: string | null): string {
+  if (value === null) return 'NULL';
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** One staged-updates table per (rule, pair index); engine-internal name. */
+export function jsStageTableName(pairIndex: number): string {
+  return `__qc_updates_${String(pairIndex)}`;
+}
+
+export function jsStageCreateSQL(table: string): string {
+  return `CREATE OR REPLACE TABLE ${table} ("__row__" BIGINT, val VARCHAR)`;
+}
+
+/**
+ * Batched INSERTs for the staged updates: ≤ 1000 tuples AND ≤ ~1 MB of literal
+ * text per statement (long string cells must not balloon one parse).
+ */
+export function jsStageInsertSQL(
+  table: string,
+  updates: readonly { row: number; val: string | null }[],
+): string[] {
+  const statements: string[] = [];
+  let tuples: string[] = [];
+  let textLength = 0;
+  const flush = (): void => {
+    if (tuples.length === 0) return;
+    statements.push(`INSERT INTO ${table} VALUES ${tuples.join(', ')}`);
+    tuples = [];
+    textLength = 0;
+  };
+  for (const u of updates) {
+    const tuple = `(${String(u.row)}, ${escapeSqlLiteral(u.val)})`;
+    tuples.push(tuple);
+    textLength += tuple.length;
+    if (tuples.length >= 1000 || textLength >= 1_000_000) flush();
+  }
+  flush();
+  return statements;
+}
+
+export interface JsMergePart {
+  target: string;
+  /** Declared column type from DESCRIBE — engine-supplied, never user text. */
+  castType: string;
+  table: string;
+}
+
+/**
+ * Exact changed-cell count for one staged pair: CAST back to the declared type
+ * FIRST so cast-normalization no-ops (e.g. '042' → 42) are suppressed exactly
+ * like SQL corrections' `after IS DISTINCT FROM before`. A non-castable staged
+ * value throws HERE — before any merge ran — so a broken js rule leaves
+ * quac_work untouched.
+ */
+export function jsCountSQL(part: JsMergePart): string {
+  const t = quoteIdentifier(part.target);
+  return (
+    `SELECT COUNT(*) FROM data JOIN ${part.table} u ON data.__row__ = u.__row__ ` +
+    `WHERE CAST(u.val AS ${part.castType}) IS DISTINCT FROM ${t}`
+  );
+}
+
+/** Before/after capture rows for one staged pair (pre-merge `data` state). */
+export function jsCaptureSQL(part: JsMergePart, rowCap: number): string {
+  const t = quoteIdentifier(part.target);
+  return (
+    `SELECT data.__row__ AS __row__, ${t} AS before, CAST(u.val AS ${part.castType}) AS after ` +
+    `FROM data JOIN ${part.table} u ON data.__row__ = u.__row__ ` +
+    `WHERE CAST(u.val AS ${part.castType}) IS DISTINCT FROM ${t} ` +
+    `ORDER BY data.__row__ LIMIT ${String(rowCap)}`
   );
 }
 
 /**
- * Staged-merge CTAS for js corrections: LEFT JOIN the __qc_updates temp table and
- * CAST staged values to the target's declared type. PROVISIONAL — engine §3 only
- * sketches this statement; P13 (QuickJS integration) owns the final shape.
- * `castType` is a declared column type from the engine, never user text.
+ * The staged-merge rebuild SELECT covering ALL targets of a js rule — ONE
+ * atomic `CREATE OR REPLACE TABLE quac_work AS …` swap (V14; `rebuildSelectSQL`
+ * symmetry), so a broken rule can never leave a partial multi-target merge.
+ * Engine §3's per-pair merge sketch is superseded the same way `ctasRebuildSQL`
+ * was (phase-12 Deferred notes) — see phase-13 notes.
  */
-export function jsMergeCtasSQL(target: string, castType: string): string {
-  const t = quoteIdentifier(target);
-  return (
-    `CREATE TABLE quac_work_next AS SELECT data.* REPLACE ` +
-    `(CASE WHEN u.__row__ IS NOT NULL THEN CAST(u.val AS ${castType}) ELSE ${t} END AS ${t}) ` +
-    `FROM data LEFT JOIN __qc_updates u ON data.__row__ = u.__row__`
-  );
+export function jsMergeSelectSQL(parts: readonly JsMergePart[]): string {
+  const replaces = parts
+    .map((p, i) => {
+      const t = quoteIdentifier(p.target);
+      return `CASE WHEN u${String(i)}.__row__ IS NOT NULL THEN CAST(u${String(i)}.val AS ${p.castType}) ELSE ${t} END AS ${t}`;
+    })
+    .join(', ');
+  const joins = parts
+    .map((p, i) => ` LEFT JOIN ${p.table} u${String(i)} ON data.__row__ = u${String(i)}.__row__`)
+    .join('');
+  return `SELECT data.* REPLACE (${replaces}) FROM data${joins}`;
 }

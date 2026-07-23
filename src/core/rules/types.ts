@@ -41,6 +41,8 @@ export interface EngineOptions {
   globalFlagCap?: number; // default 200_000
   applyCorrections?: boolean; // false = assess-only mode
   jsSandbox?: JSSandbox | null; // null ⇒ js rules marked broken, run continues
+  jsChunkTimeoutMs?: number; // sandbox interrupt deadline per chunk (default 2000)
+  jsRuleTimeoutMs?: number; // cumulative sandbox budget per rule (default 30000)
   onProgress?: (p: {
     ruleId: string;
     index: number;

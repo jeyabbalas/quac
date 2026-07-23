@@ -38,3 +38,99 @@
   padding: 20px;
   min-height: 60vh;
 }
+
+/* Toast */
+.q-toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.q-toast {
+  background: var(--q-paper);
+  border: 2px solid var(--q-ink);
+  border-left-width: 6px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgb(17 17 17 / 0.15);
+  cursor: pointer;
+}
+
+.q-toast--info {
+  border-left-color: var(--q-info);
+}
+
+.q-toast--success {
+  border-left-color: var(--q-success);
+}
+
+.q-toast--error {
+  border-left-color: var(--q-error);
+}
+
+.q-toast-msg {
+  font-weight: 500;
+}
+
+.q-toast-hint {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--q-gray-600);
+}
+
+/* Modal */
+.q-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(17 17 17 / 0.5);
+}
+
+.q-modal {
+  background: var(--q-paper);
+  border: 3px solid var(--q-ink);
+  border-radius: 12px;
+  min-width: min(320px, 100%);
+  max-width: 560px;
+  max-height: 80dvh;
+  overflow: auto;
+}
+
+.q-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--q-gray-200);
+}
+
+.q-modal-title {
+  font-size: 1.125rem;
+}
+
+.q-modal-close {
+  border: none;
+  background: none;
+  padding: 2px 8px;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.q-modal-close:hover {
+  background: var(--q-gray-100);
+}
+
+.q-modal-body {
+  padding: 16px;
+}

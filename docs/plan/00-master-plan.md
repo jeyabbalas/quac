@@ -60,7 +60,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
 | [x] 2026-07-23 · 5ce8a79 | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
 | [x] 2026-07-23 · 43e0c31 | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
-| [ ] | P13 | QuickJS sandbox & JS corrections | P12 |
+| [x] 2026-07-23 · 3cf097e | P13 | QuickJS sandbox & JS corrections | P12 |
 | [ ] | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
 | [ ] | P15 | Excel QC report export | P14 |
 | [ ] | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
@@ -72,6 +72,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P13 · QuickJS sandbox shipped on main: core/rules/{sandbox,sandbox-loader}.ts (quickjs-emscripten-core+wasmfile variant
+0.32.0 exact, optimizeDeps.exclude'd; wasm = same-origin Vite asset), engine runJsCorrection (keyset __qc_hit__ fetch → per-chunk fresh
+context → staged __qc_updates_<i> → pre-merge CAST-aware capture → ONE all-targets V14 merge), lint stage 5 real compileCheck (dataset-
+independent, pending fallback), store/devHooks threading. Deviations: §3's per-pair merge deferred to one CTAS (broken-rule invariant
+beats pseudocode); JSSandbox result gains error?; OOM catchable in-guest → driver rethrows InternalError (spike-pinned). H006 in parity
+manifest (Q003 row-13 interplay pinned both engines). Unit 414 + browser 44 + e2e 32 green; entry 22.1 KB gz (quickjs lazy). P14 unblocked.
 
 2026-07-23 · P12 · Corrections + integrated lint + rules slot shipped on main: engine runQC (shared-sink corrections→validations,
 correctedCells), lint stages 4–6 (EXPLAIN dry-run of exact wrappers, pertinence, pending-data), rules-store + QC Rules SlotCard +

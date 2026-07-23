@@ -1,13 +1,19 @@
-// T-LINT — one test per static LintCode (stages 1–3) asserting the exact
-// file/ruleId/rowNumber/csvColumn/severity/message shape, the external-rule
-// exemptions, cross-file duplicate-id attribution, and the fixtures-lint-clean
-// regression (zero issues at ANY severity).
+// T-LINT — one test per LintCode asserting the exact file/ruleId/rowNumber/
+// csvColumn/severity/message shape: static stages 1–3 (P10), the external-rule
+// exemptions, cross-file duplicate-id attribution, the fixtures-lint-clean
+// regression (zero issues at ANY severity), and the P12 dataset-dependent
+// stages 4–6 (EXPLAIN dry-run on @duckdb/node-api, pertinence, pending-data).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { lintRuleFiles } from '../../../src/core/rules/lint';
+import {
+  lintRuleFiles,
+  lintRuleFilesWithDataset,
+  type DatasetLintContext,
+} from '../../../src/core/rules/lint';
 import { parseRuleFile, type ParsedRuleFile } from '../../../src/core/rules/parse';
 import type { RuleFileLintResult } from '../../../src/core/rules/types';
+import { openDuckDb, openQcFixture, type QcFixtureDb } from './support';
 
 const HEADER = 'rule_id,rule_type,rule_scope,target_variables,condition,comment\n';
 const FULL_HEADER =
@@ -420,5 +426,247 @@ describe('fixtures lint clean (regression)', () => {
       [7, 6], // Q057 (disclosure top-code) ships disabled
       [6, 6],
     ]);
+  });
+});
+
+describe('stages 4–6 — dataset-dependent lint (P12)', () => {
+  const openScratch = (): Promise<QcFixtureDb> =>
+    openDuckDb([
+      // __row__ is always present on the real view (injected at ingest);
+      // datasetColumns below mirrors DatasetSession.columns (excludes it).
+      'CREATE TABLE t (__row__ BIGINT, a INTEGER, b INTEGER, "Age" INTEGER)',
+      'CREATE VIEW data AS SELECT * FROM t',
+    ]);
+  const scratchCtx = (db: QcFixtureDb): DatasetLintContext => ({
+    runner: db.runner,
+    datasetColumns: ['a', 'b', 'Age'],
+  });
+  const withScratch = async (
+    fn: (ctx: DatasetLintContext) => Promise<void>,
+  ): Promise<void> => {
+    const db = await openScratch();
+    try {
+      await fn(scratchCtx(db));
+    } finally {
+      db.close();
+    }
+  };
+  const lintWith = async (
+    text: string,
+    ctx: DatasetLintContext | null,
+  ): Promise<RuleFileLintResult> => {
+    const result = (await lintRuleFilesWithDataset([parse(text)], ctx))[0];
+    if (!result) throw new Error('no lint result');
+    return result;
+  };
+
+  it('pending-data — reported without a dataset, resolved when one arrives', async () => {
+    const csv = `${HEADER}R1,validate,row,a,a > 1,c\n`;
+    const before = await lintWith(csv, null);
+    expect(before.issues).toEqual([
+      {
+        severity: 'info',
+        code: 'pending-data',
+        file: 'test.quac.csv',
+        message: 'SQL checks are pending until a dataset is loaded.',
+      },
+    ]);
+    await withScratch(async (ctx) => {
+      const after = await lintWith(csv, ctx);
+      expect(after.issues).toEqual([]); // resolved — clean dry-run, targets present
+      expect(after.pertinence).toEqual({ targetsFound: 1, targetsTotal: 1, missing: [] });
+    });
+  });
+
+  it('pending-data — external-only files have nothing pending', async () => {
+    const csv = `${HEADER}R1,external,row,a,free text describing a linkage check,c\n`;
+    const result = await lintWith(csv, null);
+    expect(result.issues).toEqual([]);
+  });
+
+  it('sql-error — binder error surfaced with exact location and raw detail', async () => {
+    await withScratch(async (ctx) => {
+      const { issues, executable } = await lintWith(`${HEADER}R1,validate,row,a,no_col > 1,c\n`, ctx);
+      expect(issues).toHaveLength(1);
+      expect(issues[0]).toMatchObject({
+        severity: 'error',
+        code: 'sql-error',
+        file: 'test.quac.csv',
+        ruleId: 'R1',
+        rowNumber: 1,
+        csvColumn: 'condition',
+      });
+      expect(issues[0]?.message).toMatch(/^condition failed the SQL dry-run: /);
+      expect(issues[0]?.message).toContain('no_col');
+      expect(issues[0]?.detail).toContain('no_col'); // raw DuckDB message
+      expect(executable).toBe(0); // sql-error excludes the rule from runs
+    });
+  });
+
+  it('sql-error — smart-quote hint appended when the SQL contains smart quotes', async () => {
+    await withScratch(async (ctx) => {
+      const { issues } = await lintWith(`${HEADER}R1,validate,row,a,"a > ’1’",c\n`, ctx);
+      const sqlError = issues.find((i) => i.code === 'sql-error');
+      expect(sqlError?.message).toContain('smart quotes — did you paste from a word processor?');
+      expect(issues.some((i) => i.code === 'smart-quotes')).toBe(true); // stage-2 static warning stays
+    });
+  });
+
+  it('sql-error — correct rules attribute condition vs update_expression separately', async () => {
+    await withScratch(async (ctx) => {
+      const badUpdate = await lintWith(
+        `${FULL_HEADER}R1,correct,row,a,a > 1,sql,no_col + 1,info,c,true\n`,
+        ctx,
+      );
+      expect(badUpdate.issues.map((i) => [i.code, i.csvColumn])).toEqual([
+        ['sql-error', 'update_expression'],
+      ]);
+      const badCondition = await lintWith(
+        `${FULL_HEADER}R2,correct,row,a,no_col > 1,sql,a + 1,info,c,true\n`,
+        ctx,
+      );
+      // Condition failure reports once — the rebuild SELECT is not also run.
+      expect(badCondition.issues.map((i) => [i.code, i.csvColumn])).toEqual([
+        ['sql-error', 'condition'],
+      ]);
+    });
+  });
+
+  it('sql-error — dataset rule carrying its own LIMIT breaks under the appended cap (P11 known edge)', async () => {
+    await withScratch(async (ctx) => {
+      const { issues } = await lintWith(
+        `${HEADER}R1,validate,dataset,,"SELECT a FROM data LIMIT 5",c\n`,
+        ctx,
+      );
+      expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+    });
+  });
+
+  it('sql-error — assertion arguments are dry-run too (monotonic order_by)', async () => {
+    await withScratch(async (ctx) => {
+      const { issues } = await lintWith(
+        `${HEADER}R1,validate,column,a,"monotonic(increasing, order_by=no_col)",c\n`,
+        ctx,
+      );
+      expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+    });
+  });
+
+  it('sql-error — disabled rules are still dry-run (one toggle from running)', async () => {
+    await withScratch(async (ctx) => {
+      const { issues, executable } = await lintWith(
+        `${FULL_HEADER}R1,validate,row,a,no_col > 1,,,error,c,false\n`,
+        ctx,
+      );
+      expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+      expect(executable).toBe(0);
+    });
+  });
+
+  it('unknown-target — missing targets warn, mark the rule inapplicable, and fill pertinence', async () => {
+    await withScratch(async (ctx) => {
+      const csv = `${HEADER}R1,validate,row,a|nope,a > 1 AND nope > 2,c\nR2,validate,row,a,a > 1,c\n`;
+      const { issues, executable, pertinence } = await lintWith(csv, ctx);
+      expect(issues).toEqual([
+        {
+          severity: 'warning',
+          code: 'unknown-target',
+          file: 'test.quac.csv',
+          ruleId: 'R1',
+          rowNumber: 1,
+          csvColumn: 'target_variables',
+          message:
+            'target columns missing from the dataset: nope — rule is inapplicable and will be skipped at run.',
+        },
+      ]);
+      expect(executable).toBe(1); // R1 enabled but inapplicable; R2 runs
+      expect(pertinence).toEqual({ targetsFound: 1, targetsTotal: 2, missing: ['nope'] });
+    });
+  });
+
+  it('unknown-target — case near-miss adds the dataset spelling as a hint', async () => {
+    await withScratch(async (ctx) => {
+      const { issues } = await lintWith(`${HEADER}R1,validate,row,age,age > 1,c\n`, ctx);
+      const missing = issues.find((i) => i.code === 'unknown-target');
+      expect(missing?.message).toContain('case mismatch? dataset has: Age');
+      // 0/1 targets present → the file-level pertinence banner fires too.
+      expect(issues.some((i) => i.code === 'pertinence')).toBe(true);
+    });
+  });
+
+  it('pertinence — file-level banner below 50% target coverage', async () => {
+    await withScratch(async (ctx) => {
+      const csv = `${HEADER}R1,validate,row,x,x > 1,c\nR2,validate,row,y,y > 1,c\nR3,validate,row,a,a > 1,c\n`;
+      const { issues } = await lintWith(csv, ctx);
+      const banner = issues.find((i) => i.code === 'pertinence');
+      expect(banner).toMatchObject({ severity: 'warning', file: 'test.quac.csv' });
+      expect(banner?.message).toContain('only 1 of 3 rule target columns are present');
+      expect(banner?.rowNumber).toBeUndefined(); // file-level
+    });
+  });
+
+  it('js rules — condition is dry-run; compile check stays pending with a dataset loaded', async () => {
+    await withScratch(async (ctx) => {
+      const csv = `${FULL_HEADER}R1,correct,row,a,a > 1,js,"(value, row) => value",info,c,true\n`;
+      const { issues } = await lintWith(csv, ctx);
+      expect(issues).toEqual([
+        {
+          severity: 'info',
+          code: 'pending-data',
+          file: 'test.quac.csv',
+          ruleId: 'R1',
+          rowNumber: 1,
+          csvColumn: 'update_expression',
+          message: 'JS compile check pending — the QuickJS sandbox arrives in a later phase.',
+        },
+      ]);
+      const badCond = await lintWith(
+        `${FULL_HEADER}R2,correct,row,a,no_col > 1,js,"(value, row) => value",info,c,true\n`,
+        ctx,
+      );
+      expect(badCond.issues.map((i) => i.code).sort()).toEqual(['pending-data', 'sql-error']);
+    });
+  });
+
+  it('HESP fixtures + qc_fixture — inapplicable rules flagged, everything else dry-runs clean', async () => {
+    const db = await openQcFixture();
+    try {
+      const FIXTURES = resolve(__dirname, '..', '..', 'fixtures');
+      const load = (rel: string): ParsedRuleFile => {
+        const name = rel.split('/').pop() ?? rel;
+        return parseRuleFile(readFileSync(resolve(FIXTURES, rel), 'utf8'), name);
+      };
+      const columns = await db.runner.query<{ column_name: string }>('DESCRIBE qc_fixture');
+      const results = await lintRuleFilesWithDataset(
+        [
+          load('hesp/rules/hesp_keys_and_structure.quac.csv'),
+          load('hesp/rules/hesp_consistency.quac.csv'),
+          load('hesp/rules/hesp_corrections.quac.csv'),
+        ],
+        {
+          runner: db.runner,
+          datasetColumns: columns
+            .map((c) => c.column_name)
+            .filter((name) => name !== '__row__'),
+        },
+      );
+      const allIssues = results.flatMap((r) => r.issues);
+      expect(allIssues.filter((i) => i.code === 'sql-error')).toEqual([]);
+      // Q021 (7 income components) and Q052 (3 debt balances) target columns
+      // qc_fixture does not carry; H006 is the js compile-check pending.
+      expect(
+        allIssues.filter((i) => i.code === 'unknown-target').map((i) => i.ruleId),
+      ).toEqual(['Q021', 'Q052']);
+      expect(
+        allIssues.filter((i) => i.code === 'pending-data').map((i) => i.ruleId),
+      ).toEqual(['H006']);
+      expect(results.map((r) => [r.file, r.executable])).toEqual([
+        ['hesp_keys_and_structure.quac.csv', 10],
+        ['hesp_consistency.quac.csv', 4], // Q021 inapplicable
+        ['hesp_corrections.quac.csv', 5], // Q052 inapplicable + Q057 disabled
+      ]);
+    } finally {
+      db.close();
+    }
   });
 });

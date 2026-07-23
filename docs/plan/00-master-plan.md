@@ -59,7 +59,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 445b63b | P09 | Schema validation engine | P05, P08 |
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
 | [x] 2026-07-23 · 5ce8a79 | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
-| [ ] | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
+| [x] 2026-07-23 · 43e0c31 | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
 | [ ] | P13 | QuickJS sandbox & JS corrections | P12 |
 | [ ] | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
 | [ ] | P15 | Excel QC report export | P14 |
@@ -72,6 +72,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P12 · Corrections + integrated lint + rules slot shipped on main: engine runQC (shared-sink corrections→validations,
+correctedCells), lint stages 4–6 (EXPLAIN dry-run of exact wrappers, pertinence, pending-data), rules-store + QC Rules SlotCard +
+strip rules line, devHooks.runRules hardening wiring. MAJOR deviation: swap = single CREATE-OR-REPLACE CTAS per V14 (phase file's
+quac_work_next dance superseded — destructive DROP→RENAME window); via-view variant pinned on wasm in rulesExec.browser. Node⇄browser
+parity manifest green (tests/shared/qcFixtureSql.ts); "lock_configuration holds" wording predates V6 — tests assert V6 invariants.
+Spec-silent calls → phase Deferred notes. Unit 377 + browser 38 + e2e 32 green; entry 22.0 KB gz. P13/P14/P16/P17 unblocked.
 
 2026-07-23 · merge · P09+P11 merged to main (df1c01d, 47494fe). Conflicts: master-plan progress-log union only (phase-table ticks
 auto-merged; entries stacked P11-over-P09). No V-number collision — P11 claimed none; V19 stands, doc-map V-range → V1–V19, stale

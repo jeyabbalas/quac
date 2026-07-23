@@ -61,17 +61,13 @@ test('V6: non-vendored extensions cannot be loaded', async () => {
 
 test('V6: plain SELECTs on pre-harden tables still work', async () => {
   expect(await b().query(`SELECT count(*)::INTEGER AS n FROM ${QUAC_TYPED}`)).toEqual([{ n: 1 }]);
-  expect(await b().query('SELECT count(*)::INTEGER AS n FROM pre_harden_csv')).toEqual([
-    { n: 2 },
-  ]);
+  expect(await b().query('SELECT count(*)::INTEGER AS n FROM pre_harden_csv')).toEqual([{ n: 2 }]);
 });
 
 test('V6: loadData() of new bytes still works post-harden (no config lock)', async () => {
   const result = await b().loadData('c\n5\n7\n', { format: 'csv', tableName: 'post_harden_csv' });
   expect(result.rowCount).toBe(2);
-  expect(await b().query('SELECT count(*)::INTEGER AS n FROM post_harden_csv')).toEqual([
-    { n: 2 },
-  ]);
+  expect(await b().query('SELECT count(*)::INTEGER AS n FROM post_harden_csv')).toEqual([{ n: 2 }]);
 });
 
 test('V6: the annotate sequence works post-harden (COPY export → loadData bytes)', async () => {

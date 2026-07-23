@@ -50,7 +50,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 |---|---|---|---|
 | [x] 2026-07-23 · dcec6c1 | P01 | Scaffold, CI, deployed shell | — |
 | [ ] | P02 | Fixtures & deterministic generator | P01 |
-| [ ] | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
+| [x] 2026-07-23 · p03-bridge | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
 | [ ] | P04 | App shell, router, signals, design tokens | P01 |
 | [ ] | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [ ] | P06 | Schema loading & root detection | P02, P04 |
@@ -72,6 +72,8 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P03 · Bridge layer shipped on branch `p03-bridge`: core/bridge/{bridge,harden,tables}.ts, copy-duckdb-assets.mjs (predev/prebuild/pretest:browser), 4 browser spike regressions + unit URL test, all green; `vite preview` serves every `/quac/duckdb/*` asset 200 (verified). MAJOR deviations recorded in Verified facts V5–V8 + new V11–V14: no `bridge.export()` → `exportToBuffer`; every SQL hardening gate unusable in duckdb-wasm → hardening moved to a generated worker prelude (same-origin exact-file allowlist) + vendored parquet/icu/json extensions (NOT statically linked — they silently fetch from extensions.duckdb.org otherwise!) + `custom_extension_repository`; specs §2/§6/§8/§9 updated to match. Successors: bundle URLs must be absolute (blob worker), vite has `optimizeDeps.include:['@jeyabbalas/data-table']`, V-fact numbering may collide with parallel P02/P04 branches at merge.
 
 2026-07-23 · P01 · Scaffold shipped: Vite 8.1.5 + TS ~6.0.3 (typescript-eslint caps TS <6.1.0; TS 7 native port unsupported),
 ESLint 10 flat (explicit `@eslint/js` devDep — eslint 10 dropped it), Vitest 4 projects (unit node + browser Chromium via

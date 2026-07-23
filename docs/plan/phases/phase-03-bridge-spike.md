@@ -31,4 +31,17 @@ Ingestion formats (P05), any UI.
 - **UI/UX:** n/a (headless). Confirm `vite build && vite preview` serves duckdb assets under `/quac/duckdb/` (note in log).
 
 ## Deferred notes
-*(agent fills in — especially any data-table library change that would simplify this, for the author to consider)*
+
+**data-table library suggestions (for the author):**
+- An attach-to-existing-table API (`createDataTable({bridge, tableName})` without `source`, V3) would eliminate the whole byte round trip.
+- Auto-invalidate the query cache on DDL/DML through `query()` — every QuaC mutating helper must remember `clearQueryCache()` (V2); alternatively expose `cache: false` per query.
+- Document `exportToBuffer(sql, 'parquet')` publicly (it is the linchpin of the refresh loop; `data-table-api.md §3` guessed `bridge.export()`), and consider `'csv'`/`'json'` formats.
+- Make the loaders' per-load `SET TimeZone` optional or lazy: it forces the icu extension (a hidden CDN fetch for library users) and breaks under `lock_configuration`.
+- Document that duckdb-wasm autoloads parquet/icu/json from `extensions.duckdb.org` at first use — a privacy/reliability footgun for any self-hosting consumer (QuaC vendors them; V11).
+
+**For later QuaC phases:**
+- P05: re-ingest of a new dataset works on the same worker (no config lock is used); no worker recreation needed.
+- P12/P14: pass per-run caps (e.g. memory limit) as `hardenBridge(bridge, appSets)`; the annotate stage needs no access toggling — exportToBuffer/loadData work post-harden.
+- P19/P20: add an e2e assertion that `/quac/duckdb/*` (wasm, quac-workers, extensions) all serve 200 from the deployed site; P20's network-isolation Playwright test should assert zero non-origin requests during a full QC run (the worker prelude makes any attempt fail locally — V6).
+- P20: consider a GitHub Actions cache for `public/duckdb/extensions/` (the copy script downloads ~20 MB from extensions.duckdb.org on a cold run) and pinning extension file hashes for supply-chain integrity.
+- Unify `joinBase` (duplicated in `src/app/urlBase.ts` and privately in `src/core/bridge/bridge.ts` because core must not import from app) into a shared non-app module, e.g. `src/lib/`.

@@ -25,7 +25,7 @@ src/
   core/                       # framework-free; no document/window except bridge/ + lazy loaders
     bridge/
       bridge.ts               # getBridge(): lazy singleton WorkerBridge; terminate on unload
-      harden.ts               # SET enable_external_access=false + lock_configuration sequencing
+      harden.ts               # per-run SQL prep: app SETs, LOAD vendored extensions, autoload off (V6: network is killed in the worker prelude, not via SQL)
       tables.ts               # table-name registry + lifecycle helpers (CTAS swap, COPY, clearQueryCache)
     ingest/                   # see ingestion.md
       sniff.ts csv.ts tsv.ts excel.ts json.ts parquet.ts ingest.ts guardrails.ts
@@ -114,7 +114,7 @@ rules        validation rules (SQL/JS), file order; cancellable between rules
 annotate     COPY display bytes → loadData → re-apply annotations + tooltips + panels
 ```
 
-- Cancel = cooperative token checked at chunk/rule boundaries (DuckDB statement interrupt not assumed; `bridge.cancel()` behavior is a P03 note).
+- Cancel = cooperative token checked at chunk/rule boundaries (DuckDB statement interrupt not assumed; P03 verdict V12: there is no `bridge.cancel()` — per-call `AbortSignal` on `query()`/`loadData()`/`exportToBuffer()`).
 - Re-run semantics: artifacts persist; new data upload invalidates flags + `quac_*` tables; every run starts from a fresh CTAS so corrections are idempotent per run. Determinism: a run is a pure function of (source bytes, schema set, rule files); `SELECT setseed(0.42)` before each correction.
 - Progress: `core/pipeline.ts` owns an emitter (`onStage`, `onTick`); UI binds DuckProgress. Per-rule failures are never fatal (broken-rule policy in `qc-rules-engine.md`).
 
@@ -136,7 +136,7 @@ annotate     COPY display bytes → loadData → re-apply annotations + tooltips
 
 Threat model: **shared rule URLs make rule SQL/JS untrusted code** running against the user's private data. Channels closed:
 
-1. **DuckDB network exfiltration** (httpfs URL reads): after ingest and BEFORE the first rule statement of every run, `core/bridge/harden.ts` executes, in order: all app-level `SET`s (e.g. memory limit) → `SET enable_external_access=false` → `SET lock_configuration=true` (rules cannot re-enable). P03 verifies interactions with registered file buffers and records the working sequencing.
+1. **DuckDB network exfiltration** (httpfs URL reads, extension fetches): closed at the **platform level**, not via SQL. The DuckDB worker ships as a generated `quac-*.worker.js` (hardening prelude + upstream source, built by `scripts/copy-duckdb-assets.mjs`) whose prelude removes network access from the worker scope: sync-XHR/fetch pass only for the exact same-origin vendored files (boot wasm + parquet/icu/json extensions); everything else is refused locally with no request made. Active from bridge creation — before any data exists — and neither reachable nor reversible from SQL. `core/bridge/harden.ts` (run at prepare) applies app-level `SET`s, pre-loads the vendored extensions, and disables extension auto-install/auto-load. The SQL gates this item originally specified are unusable in duckdb-wasm (`enable_external_access=false` kills the COPY/loadData round trip and is one-way; `lock_configuration` breaks data-table's per-load `SET TimeZone`) — verdict and evidence in Verified facts V6.
 2. **Rule SQL is single-statement**: lint rejects top-level `;` (string/comment-aware scan) so a cell cannot smuggle a second statement into the engine's wrappers. Rule text is never `eval`ed and never interpolated anywhere except the documented SQL wrappers and QuickJS.
 3. **JS rules run only in QuickJS-WASM** (lazy chunk): no fetch/DOM by construction; ~128 MB memory cap; interrupt budget ~2 s/chunk, 30 s/rule. Values cross as JSON.
 4. **WASM + fonts self-hosted** — after page load QuaC makes **zero third-party requests** (README claim, asserted by a Playwright network test in P20). Only user-initiated fetches of user-provided URLs (schema/rules/data) leave the origin, and schema-ref auto-crawl fetches schemas only, never data.
@@ -153,7 +153,7 @@ COPY (SELECT * EXCLUDE (__row__) FROM data ORDER BY __row__) TO 'corrected.parqu
 retrieve bytes → table.loadData(bytes) → loadComplete → re-apply annotations (rowId = flag.row) + tooltips
 ```
 
-P03 verifies the byte-retrieval step (`bridge.export()` vs alternatives) and records it below. Documented fallback if no path exists: chunked `SELECT` → JSON text → `loadData(jsonString)`, 250k-row cap + UI notice.
+P03 verdict (V5): the byte-retrieval step is `bridge.exportToBuffer(sql, 'parquet') → Promise<Uint8Array>` — the worker wraps the SQL in `COPY (…) TO` and returns the file bytes; there is no `bridge.export()`. Wrapped as `core/bridge/tables.ts → copyToParquetBytes()`. The JSON-serialization fallback (chunked `SELECT` → JSON text → `loadData(jsonString)`, 250k-row cap) was NOT needed and stays unimplemented.
 
 ## 10. Verified facts (append-only; updated by phases, trusted over everything else)
 
@@ -163,11 +163,15 @@ P03 verifies the byte-retrieval step (`bridge.export()` vs alternatives) and rec
 | V2 | SELECT cache is NOT invalidated by mutations → `bridge.clearQueryCache()` required after every DDL/DML | ✅ confirmed | author, 2026-07-23 |
 | V3 | `createDataTable({bridge, tableName})` without `source` does not attach to an existing table | ✅ confirmed (not supported) | author, 2026-07-23 |
 | V4 | `__rowid__` stable within a load (materialized `row_number() OVER () - 1`; sort tie-breaker); reassigned per `loadData()` | ✅ confirmed | author, 2026-07-23 |
-| V5 | Byte-retrieval path for `COPY ... TO 'file.parquet'` output through the bridge (`bridge.export()`?) | ⏳ P03 | — |
-| V6 | `SET enable_external_access=false` + `lock_configuration=true` via `bridge.query()`: effective, and registered-buffer reads/`loadData` still work afterward | ⏳ P03 | — |
-| V7 | `loadData(parquet bytes ordered by __row__)` yields `__rowid__ === __row__` | ⏳ P03 | — |
-| V8 | Exact self-hosted duckdb-wasm dist filenames + `bridgeOptions` wiring under `/quac/` base | ⏳ P03 | — |
+| V5 | Byte-retrieval path for `COPY ... TO 'file.parquet'` output through the bridge (`bridge.export()`?) | ✅ `bridge.exportToBuffer(sql, 'parquet') → Promise<Uint8Array>` (worker wraps SQL in `COPY (…) TO` + `copyFileToBuffer`); there is no `bridge.export()`; JSON fallback not needed | P03 `roundtrip.browser.test.ts`, 2026-07-23 |
+| V6 | `SET enable_external_access=false` + `lock_configuration=true` via `bridge.query()`: effective, and registered-buffer reads/`loadData` still work afterward | ❌ unusable, design replaced (§8.1): `enable_external_access=false` disables ALL file ops ("file system operations are disabled") — COPY export AND registered-buffer loadData die — and is one-way ("Cannot enable external access while database is running"); `lock_configuration=true` rejects data-table's per-load `SET TimeZone` (csv AND parquet paths), killing every later display refresh; `SET disabled_filesystems='HTTPFileSystem'` does not stop wasm's XHR. Verdict: network removed by the worker prelude (same-origin exact-file allowlist, local 404 otherwise) + vendored extensions; `hardenBridge()` = app SETs → `LOAD parquet/icu/json` → autoinstall/autoload off; loadData/exportToBuffer proven working post-harden | P03 `harden.browser.test.ts`, 2026-07-23 |
+| V7 | `loadData(parquet bytes ordered by __row__)` yields `__rowid__ === __row__` | ✅ confirmed (5-row spike: `val = 'r'||__row__` matches `'r'+__rowid__` for all rows; `__row__` absent from display schema; cell annotation at rowId 3 renders on the `r3` cell, class `dt-cell--annotated`) | P03 `roundtrip.browser.test.ts`, 2026-07-23 |
+| V8 | Exact self-hosted duckdb-wasm dist filenames + `bridgeOptions` wiring under `/quac/` base | ✅ `public/duckdb/`: `duckdb-{mvp,eh}.wasm` (copied), `quac-duckdb-browser-{mvp,eh}.worker.js` (generated: prelude + upstream), `extensions/v1.5.4/wasm_{eh,mvp}/{parquet,icu,json}.duckdb_extension.wasm` (vendored). Wiring: `new WorkerBridge({ duckdbBundles })` — options are FLAT (no `bridgeOptions` nesting as §8 once showed; no `workerUrl` — the dispatcher worker is Vite-bundled from node_modules); bundle URLs must be ABSOLUTE (origin-qualified: the duckdb worker boots via blob-`importScripts`, whose opaque base can't resolve path-absolute URLs) — `buildDuckDBBundles()` derives them from `BASE_URL`; `createBridge()` then `SET custom_extension_repository='<origin+base>duckdb/extensions'`. Vite needs `optimizeDeps.include: ['@jeyabbalas/data-table']` (late optimization mid-test reloads and flakes) | P03 `bridgeOptions.test.ts` + `vite preview` check (all 200 under `/quac/duckdb/`), 2026-07-23 |
 | V9 | Vitest 4 node env reports `import.meta.env.BASE_URL` as `'/'` regardless of vite `base` (vitest-dev/vitest#8895, open) → unit tests assert base-join invariants, never the literal `/quac/`; e2e owns the deployed-base truth | ✅ confirmed | P01, 2026-07-23 |
 | V10 | GH Pages deploy actions current majors: `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5` (Node-24 runtime-only bumps over the v5/v4 named in `testing-strategy.md §4`) | ✅ confirmed | P01, 2026-07-23 |
+| V11 | duckdb-wasm 1.33.1-dev57.0 (DuckDB v1.5.4) does NOT statically link parquet/icu/json — each autoloads from `extensions.duckdb.org` at first use (parquet: any `COPY TO … parquet`; icu: data-table's `SET TimeZone` on EVERY `loadData`; json: `read_json`), a hidden third-party fetch. QuaC vendors all three per platform at build time and serves them same-origin | ✅ confirmed | P03 harden spike (extension-URL errors) + `scripts/copy-duckdb-assets.mjs`, 2026-07-23 |
+| V12 | `bridge.cancel()` does not exist (despite `data-table-api.md §3`); cancellation is per-call `AbortSignal` on `query()` / `loadData()` / `exportToBuffer()` — resolves §6's "P03 note" on pipeline cancel | ✅ confirmed | P03, v0.5.1 `WorkerBridge.d.ts`, 2026-07-23 |
+| V13 | `bridge.query()` result shapes: DDL (CREATE/DROP) → `[]`; DML (INSERT/UPDATE/DELETE) → `[{Count: n}]` with `n` a JS number (refines V1's "generally []") | ✅ confirmed | P03 `bridge.browser.test.ts`, 2026-07-23 |
+| V14 | Self-referential `CREATE OR REPLACE TABLE quac_work AS SELECT … FROM quac_work` works in DuckDB — the corrections CTAS-swap needs no tmp-table/rename dance | ✅ confirmed | P03 `bridge.browser.test.ts`, 2026-07-23 |
 
 Phases append rows here (with date + evidence) whenever reality is tested against a spec claim.

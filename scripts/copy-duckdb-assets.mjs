@@ -24,7 +24,14 @@
  *
  * Bundle URLs are built in src/core/bridge/bridge.ts.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -226,6 +233,4 @@ for (const platform of EXTENSION_PLATFORMS) {
   }
 }
 
-console.log(
-  `copy-duckdb-assets: OK — ${written} written, ${fresh} up to date in public/duckdb/`,
-);
+console.log(`copy-duckdb-assets: OK — ${written} written, ${fresh} up to date in public/duckdb/`);

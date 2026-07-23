@@ -36,6 +36,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@jeyabbalas/data-table": "0.5.1",
     "@lezer/highlight": "^1.2.3",
+    "ajv": "^8.20.0",
     "papaparse": "^5.5.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },

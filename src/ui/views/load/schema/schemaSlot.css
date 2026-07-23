@@ -1,0 +1,187 @@
+/* Schema slot card + IndexPickerModal. Scoped q-schemaslot / q-idxpick class
+   prefixes on purpose — the generic SlotCard family is P05's; consolidation
+   into components.css is deferred to the merge. */
+
+.q-schemaslot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+  padding: 16px;
+  border: 2px solid var(--q-ink);
+  border-radius: 12px;
+  background: var(--q-paper);
+}
+
+.q-schemaslot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.q-schemaslot-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.q-schemaslot-detail {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.875rem;
+  color: var(--q-gray-700);
+}
+
+.q-schemaslot-drop {
+  padding: 20px 12px;
+  border: 2px dashed var(--q-gray-400);
+  border-radius: 10px;
+  background: var(--q-gray-50);
+  color: var(--q-gray-700);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.q-schemaslot-drop:hover,
+.q-schemaslot--dragging .q-schemaslot-drop {
+  border-color: var(--q-orange);
+  background: var(--q-gray-100);
+}
+
+.q-schemaslot-browse {
+  display: flex;
+  gap: 8px;
+}
+
+.q-btn--small {
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+}
+
+.q-schemaslot-url {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.q-schemaslot-urllabel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--q-gray-700);
+}
+
+.q-schemaslot-url input {
+  padding: 5px 8px;
+  border: 1.5px solid var(--q-gray-400);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.q-schemaslot-details {
+  font-size: 0.8125rem;
+}
+
+.q-schemaslot-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.q-schemaslot-detailsbody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.q-schemaslot-detailsbody ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.q-schemaslot-subhead {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+
+.q-schemaslot-finding--fatal {
+  color: var(--q-error);
+}
+
+.q-schemaslot-finding--warning {
+  color: var(--q-warning);
+}
+
+.q-schemaslot-finding--info {
+  color: var(--q-gray-700);
+}
+
+/* IndexPickerModal */
+
+.q-idxpick-note {
+  margin: 0 0 12px;
+}
+
+.q-idxpick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.q-idxpick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--q-gray-300);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.q-idxpick-row:has(input:checked) {
+  border-color: var(--q-ink);
+  background: var(--q-gray-50);
+}
+
+.q-idxpick-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.q-idxpick-title {
+  font-size: 0.8125rem;
+  color: var(--q-gray-700);
+}
+
+.q-idxpick-id {
+  overflow: hidden;
+  font-family: var(--q-font-mono);
+  font-size: 0.75rem;
+  color: var(--q-gray-600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-idxpick-actions {
+  display: flex;
+  justify-content: end;
+  margin-top: 14px;
+}
+
+/* Slot row shared by the three cards (dataset P05 · schema · rules P12) */
+.q-slot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}

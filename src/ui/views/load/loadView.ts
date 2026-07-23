@@ -1,13 +1,14 @@
 /**
  * Load view (ingestion.md §1): persistent hint line, the three input slot
- * cards, and the plain 50-row preview under them. Only the Dataset card is
- * live in P05 — the Schema (P06) and Rules (P12) cards are inert placeholder
- * frames each parallel phase replaces with a single mount call.
+ * cards, and the plain 50-row preview under them. Dataset (P05) and JSON
+ * Schema (P06) cards are live — the Rules card is an inert placeholder frame
+ * P12 replaces with a single mount call.
  */
 import { effect } from '../../../app/signals';
 import { createSlotCard } from '../../components/slotCard';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { mountDatasetCard } from './datasetCard';
+import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import type { ShellContext } from '../../../app/shell';
 
 export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
@@ -26,7 +27,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   grid.append(dataHost, schemaHost, rulesHost);
 
   mountDatasetCard(dataHost, ctx);
-  mountPlaceholderCard(schemaHost, 'JSON Schema', 'Schema loading arrives in a later phase.');
+  mountSchemaSlotCard(schemaHost);
   mountPlaceholderCard(rulesHost, 'QC Rules', 'Rules loading arrives in a later phase.');
 
   const preview = document.createElement('section');

@@ -114,6 +114,15 @@ test('Report tab shows the display grid without __row__', async ({ page }) => {
   });
   await expect(grid).toContainText('person_id', { timeout: INGEST_TIMEOUT });
   await expect(grid).not.toContainText('__row__');
+
+  // P04 handoff check: QuaC's body-level --dt-annotation-* mapping must win
+  // over data-table.css's :root defaults on a MOUNTED grid (nearer-ancestor
+  // inheritance beats import order). --q-error-fill is #ffc7ce in tokens.css.
+  const annotationBg = await grid
+    .locator('[class*="dt-"]')
+    .first()
+    .evaluate((el) => getComputedStyle(el).getPropertyValue('--dt-annotation-error-bg').trim());
+  expect(annotationBg.toLowerCase()).toBe('#ffc7ce');
 });
 
 test('oversized file is rejected before any read', async ({ page }) => {

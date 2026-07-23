@@ -52,7 +52,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · d6476ef | P02 | Fixtures & deterministic generator | P01 |
 | [x] 2026-07-23 · 20f361b | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
 | [x] 2026-07-23 · f037f2a | P04 | App shell, router, signals, design tokens | P01 |
-| [ ] | P05 | Dataset ingestion & display | P02, P03, P04 |
+| [x] 2026-07-23 · b9763bc | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [ ] | P06 | Schema loading & root detection | P02, P04 |
 | [ ] | P07 | Column digests & pertinence | P06 |
 | [ ] | P08 | FlagStore & schema translator | P07 |
@@ -72,6 +72,16 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P05 · Dataset slot end-to-end on branch p05-ingestion: all 5 formats → `quac_raw`(__row__)→typed→work→`data`, Load-view
+Dataset SlotCard + SheetPicker + 50-row preview, Report grid via the V5/V7 byte round-trip. MAJOR deviation (V17/V18): no
+`registerFileBuffer` on the bridge and `loadData` whitelists its RPC options → delimited text goes PapaParse → wrapped-JSON
+(`{"j":…}`, defeats read_json date-detection AND 266-col MAP inference) → `json_extract_string` CTAS; ingestion.md §2 rewritten.
+New deps: papaparse, xlsx@SheetJS-CDN-tarball 0.20.3 (npm stale; CI fetches cdn.sheetjs.com, lockfile-pinned), CodeMirror peers
+(build needs them resolvable for data-table's lazy editor chunk). Appended `tiny/two_sheets.xlsx` to the generator (default runs
+only; fixtures:check green). Shared-surface edits isolated in one commit (ba40ef7: view mounters get ctx; store gains `dataset`
+signal). Entry 6.8 KB gz. Unit 93 + browser 27 + e2e 20 green. P04's `--dt-annotation-*` body-mapping CONFIRMED on a mounted
+grid (e2e asserts `--dt-annotation-error-bg` computes to `#ffc7ce` inside the Report grid).
 
 2026-07-23 · P02 · Post-merge CI hotfix (first Linux run of the generator): DuckDB-native parquet bytes are platform-dependent →
 `hesp_dirty_100.parquet` failed CI byte-equality vs the macOS-committed fixture. Contract scoped per **V16**: parquet byte-stable

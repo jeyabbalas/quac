@@ -34,7 +34,7 @@ const TAB_LABELS: Record<RouteId, string> = {
   studio: 'Rule Studio',
 };
 
-const VIEW_MOUNTERS: Record<RouteId, (container: HTMLElement) => void> = {
+const VIEW_MOUNTERS: Record<RouteId, (container: HTMLElement, ctx: ShellContext) => void> = {
   load: mountLoadView,
   report: mountReportView,
   studio: mountStudioView,
@@ -142,7 +142,7 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
       const isActive = id === current;
       if (isActive && !mounted.has(id)) {
         mounted.add(id);
-        VIEW_MOUNTERS[id](sections[id]);
+        VIEW_MOUNTERS[id](sections[id], ctx);
       }
       sections[id].hidden = !isActive;
       if (isActive) tabs[id].setAttribute('aria-current', 'page');

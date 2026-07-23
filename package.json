@@ -25,16 +25,26 @@
     "fixtures:check": "npm run fixtures && git diff --exit-code -- tests/fixtures && node -e \"const{execSync}=require('node:child_process');const s=execSync('git ls-files --others --exclude-standard -- tests/fixtures').toString().trim();if(s){console.error('untracked fixture files:\\n'+s);process.exit(1)}\""
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.6",
     "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
-    "@jeyabbalas/data-table": "0.5.1"
+    "@jeyabbalas/data-table": "0.5.1",
+    "@lezer/highlight": "^1.2.3",
+    "papaparse": "^5.5.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@duckdb/node-api": "1.5.5-r.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^24.10.13",
+    "@types/papaparse": "^5.5.2",
     "@vitest/browser-playwright": "^4.1.10",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",

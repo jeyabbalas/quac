@@ -75,8 +75,28 @@ export interface RunSummary {
 /** Per artifact: an upload (never shareable) or the URL it was fetched from. */
 export type ArtifactProvenance = 'upload' | { url: string };
 
+/**
+ * The ingested dataset (P05+). Source bytes stay in memory for the session
+ * only (re-ingest on schema change; never persisted — ingestion.md §6).
+ */
+export interface DatasetSession {
+  name: string;
+  format: 'csv' | 'tsv' | 'json' | 'xlsx' | 'parquet';
+  byteSize: number;
+  rowCount: number;
+  columnCount: number;
+  renames: readonly { from: string; to: string; reason: string }[];
+  parseWarnings: readonly string[];
+  /** Original source bytes, kept for the session (reruns / schema change). */
+  source: Blob;
+  sheetName?: string;
+  /** Bumped on every (re)ingest — the Report view rebuilds when it changes. */
+  generation: number;
+}
+
 export interface AppStore {
   slots: Readonly<Record<SlotId, Signal<SlotState>>>;
+  dataset: Signal<DatasetSession | null>;
   pipeline: Signal<PipelineState>;
   run: Signal<RunSummary | null>;
   shareables: Signal<readonly ArtifactProvenance[]>;
@@ -91,6 +111,7 @@ export function createAppStore(): AppStore {
       schema: signal(emptySlot()),
       rules: signal(emptySlot()),
     },
+    dataset: signal<DatasetSession | null>(null),
     pipeline: signal<PipelineState>({
       stage: 'idle',
       progress: { done: 0, total: 0 },

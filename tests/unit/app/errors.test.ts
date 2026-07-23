@@ -59,6 +59,22 @@ describe('toQuacError', () => {
     expect(err.cause).toBe(boom);
   });
 
+  it('preserves a core-side structural { code, hint } (IngestError contract)', () => {
+    const core = Object.assign(new Error('File too big.'), {
+      code: 'INGEST_TOO_LARGE',
+      hint: 'Convert to Parquet.',
+    });
+    const err = toQuacError(core, 'BRIDGE_FAILED');
+    expect(err.code).toBe('INGEST_TOO_LARGE');
+    expect(err.hint).toBe('Convert to Parquet.');
+    expect(err.cause).toBe(core);
+  });
+
+  it('ignores a code property outside the closed set', () => {
+    const foreign = Object.assign(new Error('nope'), { code: 'ENOENT' });
+    expect(toQuacError(foreign, 'BRIDGE_FAILED').code).toBe('BRIDGE_FAILED');
+  });
+
   it('uses a non-empty string as the message', () => {
     const err = toQuacError('plain failure text', 'RULES_PARSE');
     expect(err.code).toBe('RULES_PARSE');

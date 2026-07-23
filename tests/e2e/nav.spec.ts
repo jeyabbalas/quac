@@ -14,7 +14,7 @@ test('default view is Load with the privacy line and hidden siblings', async ({ 
   await page.goto('/quac/');
 
   await expect(page.getByRole('link', { name: 'Load' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByText('Load your inputs')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dataset' })).toBeVisible();
   await expect(page.getByText('No flags yet.')).toBeHidden();
   await expect(page.getByText('Compose, test, and export QC rules')).toBeHidden();
   // Exactly one instance in the DOM (strict mode) — it lives in the footer.
@@ -30,7 +30,7 @@ test('tab clicks update the hash and the visible view', async ({ page }) => {
   expect(await rawHash(page)).toBe('#/report');
   await expect(page.getByText('No flags yet.')).toBeVisible();
   await expect(page.getByText('Run QC and see what floats up.')).toBeVisible();
-  await expect(page.getByText('Load your inputs')).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Dataset' })).toBeHidden();
   await expect(page.getByRole('link', { name: 'QC Report' })).toHaveAttribute(
     'aria-current',
     'page',
@@ -58,7 +58,7 @@ test('deep link #/studio lands on Studio', async ({ page }) => {
 test('unknown routes render Load without rewriting the address bar', async ({ page }) => {
   await page.goto('/quac/#/nope?keep=1');
 
-  await expect(page.getByText('Load your inputs')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dataset' })).toBeVisible();
   expect(await rawHash(page)).toBe('#/nope?keep=1'); // read-only: no normalization
 
   await page.getByRole('link', { name: 'QC Report' }).click();
@@ -154,9 +154,11 @@ test('reduced motion hides the duck but keeps the progress bar', async ({ page }
     window.__quac?.openDemoModal();
   });
 
-  await expect(page.getByRole('dialog', { name: 'QuaC preview' })).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'QuaC preview' });
+  await expect(dialog).toBeVisible();
   await expect(page.getByRole('progressbar')).toHaveCount(2);
-  const ducks = page.locator('.q-duckprogress-duck');
+  // Scoped to the dialog: the Load view's slot card owns another (hidden) DuckProgress.
+  const ducks = dialog.locator('.q-duckprogress-duck');
   await expect(ducks).toHaveCount(2);
   for (const duck of await ducks.all()) {
     await expect(duck).toBeHidden();

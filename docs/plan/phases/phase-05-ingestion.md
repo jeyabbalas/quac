@@ -28,4 +28,28 @@ Schema/rules slots (P06/P12), pertinence strip (P07), Run QC (P14).
 - **UI/UX:** Playwright `tests/e2e/ingest.spec.ts` — drag-drop CSV shows Valid badge + preview; xlsx flow opens SheetPickerModal (Sheet 1 preselected), picking sheet 2 ingests it; TSV/JSON/Parquet via browse; Report tab shows the grid; oversized-file message (fixture served with fake size header or a generated big file, implementer's choice).
 
 ## Deferred notes
-*(agent fills in)*
+
+- **Verification numbers were stale:** the committed dirty fixture is **101 rows × 266 cols** (P02's
+  duplicate-row + extra-column injections; `seeded-violations.json` is authoritative) — tests assert
+  manifest-driven dims, not this file's "100 × 265".
+- **V17/V18 (route deviation):** no `registerFileBuffer` on the v0.5.1 bridge and the `loadData` RPC
+  whitelist blocks all reader options → delimited text ingests via PapaParse → wrapped-JSON
+  (`{"j": "<row json>"}` — one VARCHAR field defeats both read_json date-detection and ≥ ~200-field
+  MAP inference) → `json_extract_string` CTAS. Upstream option (for the data-table author): an
+  `allVarchar`/reader-options passthrough on `loadData` would let a future phase delete
+  `wrappedJson.ts` entirely.
+- **Chunked ingestion for >100 MB delimited files** (PapaParse streaming → multiple loadData batches →
+  UNION ALL CTAS) deferred; current route holds whole-file text + wrapped JSON in memory
+  simultaneously (~3–4× file size). The 100 MB warn / 500 MB stop guardrails bound it.
+- **User parquet already containing `__rowid__`** collides inside the engine loader (its injected
+  column) — loader errors before QuaC sees it; acceptable, hygiene can't reach it.
+- **Excel serial dates:** `{cellDates:true}` + `sheet_to_csv` renders date cells as strings; raw
+  serials/preformatted text pass through untouched — normalization is P09 casting's job.
+- **CORS UX polish** (host table popover, retry affordance) → P16; `fetchArtifact` ships with typed
+  FETCH_HTTP/FETCH_CORS only.
+- **Report-grid annotations/tooltips/panels** → P14 (grid rebuilds on dataset `generation` change and
+  only while the report route is visible — data-table mis-measures in hidden containers).
+- **SlotCard/DropZone/UrlField are generic** (`src/ui/components/`) — P06/P12 replace one
+  `mountPlaceholderCard()` call each in `loadView.ts` (per-slot containers keyed `data-slot=`).
+- **CI note:** `xlsx` resolves to the SheetJS CDN tarball (npm registry is stale at 0.18.5) —
+  `npm ci` fetches cdn.sheetjs.com; lockfile pins the integrity hash.

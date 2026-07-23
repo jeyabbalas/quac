@@ -1494,6 +1494,37 @@ async function buildXlsx(rows, header) {
   return normalizeZipTimestamps(buf);
 }
 
+/**
+ * P05 append: tests/fixtures/tiny/two_sheets.xlsx — the SheetPickerModal e2e
+ * fixture (the HESP workbook is single-sheet). Sheet names and cell values
+ * are distinctive so the test can assert WHICH sheet was ingested. Written
+ * only on default runs (fixtures:check gates drift); the `--out` determinism
+ * harness in generator.test.ts keeps covering the hesp set untouched.
+ * @returns {Promise<Buffer>}
+ */
+async function buildTwoSheetsXlsx() {
+  const workbook = new ExcelJS.Workbook();
+  const fixed = new Date(Date.UTC(2026, 6, 23));
+  workbook.creator = 'QuaC fixtures';
+  workbook.lastModifiedBy = 'QuaC fixtures';
+  workbook.created = fixed;
+  workbook.modified = fixed;
+
+  const notes = workbook.addWorksheet('notes');
+  notes.addRow(['about']);
+  notes.addRow(['decoy sheet — the data lives on the second sheet']);
+
+  const people = workbook.addWorksheet('people');
+  people.addRow(['pet_id', 'pet_name', 'species']);
+  people.addRow(['D001', 'Quackers', 'duck']);
+  people.addRow(['D002', 'Waddles', 'duck']);
+  people.addRow(['D003', 'Bill', 'duck']);
+  people.addRow(['D004', 'Puddle', 'goose']);
+
+  const buf = Buffer.from(await workbook.xlsx.writeBuffer());
+  return normalizeZipTimestamps(buf);
+}
+
 // -- Parquet ------------------------------------------------------------------
 
 /**
@@ -1662,6 +1693,11 @@ async function main() {
   const outFlag = process.argv.indexOf('--out');
   const outDir = outFlag !== -1 ? resolve(req(process.argv[outFlag + 1], '--out needs a path')) : DEFAULT_OUT;
   const { columns, conditionals, validRows, dirtyRows, injections } = await generateAll(outDir);
+  if (outDir === DEFAULT_OUT) {
+    const tinyDir = join(REPO_ROOT, 'tests', 'fixtures', 'tiny');
+    mkdirSync(tinyDir, { recursive: true });
+    writeFileSync(join(tinyDir, 'two_sheets.xlsx'), await buildTwoSheetsXlsx());
+  }
   console.log(
     `fixtures: ${validRows.length} valid rows, ${dirtyRows.length} dirty rows, ` +
       `${columns.length} columns, ${conditionals.length} conditionals, ${injections.length} injections -> ${outDir}`,

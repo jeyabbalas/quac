@@ -22,16 +22,23 @@ The **pertinence strip** appears under the cards once Dataset + (Schema or Rules
 
 Everything lands in `quac_raw` with `__row__ = row_number() OVER () - 1` injected (original file order). Delimited text is read **all-VARCHAR** to preserve raw fidelity (leading zeros, big ids); typing happens later via the schema-driven `CastPlan` into `quac_typed` (`json-schema-subsystem.md §C`), or a plain copy when no schema is loaded.
 
+> **P05 reality (Verified facts V17/V18):** the original design here assumed `registerFileBuffer` +
+> `read_csv(all_varchar=true)`. The v0.5.1 `WorkerBridge` exposes NO buffer registration (its worker
+> registers-then-drops files internally) and the `loadData` RPC whitelists `{data, format, tableName}`,
+> so no reader option is reachable. The table below is the implemented routing (`core/ingest/ingest.ts`).
+
 | Input | Path |
 |---|---|
-| CSV | bytes → `registerFileBuffer` → `CREATE TABLE quac_raw AS SELECT row_number() OVER () - 1 AS __row__, * FROM read_csv('<buf>', all_varchar=true)` |
-| TSV | same with `delim='\t'` (no text rewriting) |
-| JSON array | streamed prefix sanity check (top-level `[` of objects) → `read_json('<buf>')`; typed values kept (skip all_varchar) |
+| CSV | main-thread **PapaParse** (strings only) → column hygiene → **wrapped JSON** (`wrappedJson.ts`: top-level array of `{"j": "<row json>"}` records, positional keys `c0..cN`) → `bridge.loadData(format:'json')` → `CREATE OR REPLACE TABLE quac_raw AS SELECT __rowid__ AS __row__, json_extract_string(j, '$.cN') AS "<name>", … ORDER BY __rowid__` — extraction always yields VARCHAR (raw fidelity: `'007'` stays text) |
+| TSV | same with `delimiter='\t'` (no text rewriting) |
+| JSON array | streamed prefix sanity check (top-level `[` of objects) → `loadData(format:'json')`; typed values kept → rename-aware CTAS from `__rowid__` |
 | Excel .xlsx | lazy **SheetJS** chunk → `XLSX.read(arrayBuffer, {cellDates:true})` → if >1 sheet, **SheetPickerModal** (Sheet 1 preselected per brief) → `sheet_to_csv` → CSV path. Document the serial-date caveat (dates may arrive as strings/serials; schema casting + rules handle) |
-| Parquet | `registerFileBuffer` → `read_parquet('<buf>')`; native types kept |
+| Parquet | `loadData(format:'parquet')`; native types kept → rename-aware CTAS from `__rowid__` |
 
 Notes:
-- Unknown extension: content-sniff (`sniff.ts`): leading `PAR1` → parquet; `PK\x03\x04` → xlsx; leading `[`/`{` → JSON; tab count heuristic → TSV; else CSV.
+- Why wrapped: plain per-column JSON loses fidelity twice — `read_json_auto` date-detects ISO-looking strings (`'2020-01-01'` → DATE) and collapses ≥ ~200 uniformly-typed fields into one `MAP(VARCHAR, VARCHAR)` (HESP has 266); both knobs are unreachable through the RPC whitelist. One VARCHAR field (`j`) can never trip either heuristic (V18 evidence tests in `ingest.browser.test.ts`).
+- Both engine loaders inject a physical `__rowid__` (0-based insertion order) — it becomes `__row__` in the CTAS; header-only delimited files skip the loader entirely (`read_json` cannot infer from `[]`).
+- Unknown extension: content-sniff (`sniff.ts`): leading `PAR1` → parquet; `PK\x03\x04` → xlsx; leading `[`/`{` → JSON; tab count heuristic → TSV; else CSV. Binary magics override spoofed text extensions.
 - Column-name hygiene at `quac_raw` creation: reject/rename columns starting with `__` (reserved) and deduplicate case-identical duplicates with a warning flag.
 - Keep the original source bytes (Blob) in memory for the session: reruns re-CTAS from `quac_typed`; a schema change re-runs typing from `quac_raw` (or re-ingests from bytes if raw was dropped).
 - After every table creation: `bridge.clearQueryCache()`.

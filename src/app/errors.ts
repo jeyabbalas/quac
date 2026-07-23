@@ -46,7 +46,18 @@ export class QuacError extends Error {
 /** Coerce any thrown value into a QuacError without losing the original. */
 export function toQuacError(err: unknown, fallbackCode: QuacErrorCode): QuacError {
   if (err instanceof QuacError) return err;
-  if (err instanceof Error) return new QuacError(fallbackCode, err.message, { cause: err });
+  if (err instanceof Error) {
+    // Core-side errors (e.g. core/ingest IngestError) can't import this
+    // module; they carry a structural { code, hint? } instead — preserve it.
+    const { code, hint } = err as { code?: unknown; hint?: unknown };
+    if (typeof code === 'string' && (QUAC_ERROR_CODES as readonly string[]).includes(code)) {
+      return new QuacError(code as QuacErrorCode, err.message, {
+        cause: err,
+        ...(typeof hint === 'string' ? { hint } : {}),
+      });
+    }
+    return new QuacError(fallbackCode, err.message, { cause: err });
+  }
   if (typeof err === 'string' && err !== '') return new QuacError(fallbackCode, err);
   return new QuacError(fallbackCode, 'Unexpected error', { cause: err });
 }

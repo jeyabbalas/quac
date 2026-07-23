@@ -55,7 +55,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · b9763bc | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [x] 2026-07-23 · ff9551c | P06 | Schema loading & root detection | P02, P04 |
 | [x] 2026-07-23 · 95993f0 | P07 | Column digests & pertinence | P06 |
-| [ ] | P08 | FlagStore & schema translator | P07 |
+| [x] 2026-07-23 · fb7d11b | P08 | FlagStore & schema translator | P07 |
 | [ ] | P09 | Schema validation engine | P05, P08 |
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
 | [ ] | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
@@ -72,6 +72,15 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P08 · Flag layer + translator shipped on main: core/flags/{flagStore,messages}.ts + core/schema/{rule-ids,translator}.ts
++ recorded-Ajv fixtures (scripts/record-ajv-errors.mjs → synthetic/ajv-errors/, standalone, NOT in fixtures:check). §D.7 goldens pinned
+character-exact with golden #2 → selfemp -6000000 (V15) and #8 title from schema ("Household net worth"); goldens beat §D prose on
+trailer scope / conditional column naming / string-pattern collapse — all in phase Deferred notes. Readability spot-check: "schema:cond:12:move_reason:
+when baseline_record = 1, move_reason must be -666 (Not applicable / structural skip). Found 3. [Schema note: Skip pattern: baseline records
+have no prior-wave move comparison.]" · "schema:prop:record_id:value: 'HH1234_W01' does not match the expected format (pattern
+^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$ — Household identifier followed by '_W' and a two-digit wave number)." Unit 307 + browser 27 + e2e 29
+green; entry 19.1 KB gz unchanged. P09/P11 unblocked.
 
 2026-07-23 · P07 · Digest layer shipped on main: core/schema/{deref,value-spec,conditionals,column-meta,tooltips}.ts +
 shared core/pertinence.ts + PertinenceStrip/block-modal under the Load slot cards. HESP goldens pinned: 265 cols /

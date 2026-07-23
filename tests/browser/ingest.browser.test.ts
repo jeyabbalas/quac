@@ -40,7 +40,7 @@ test('V18 evidence: without the sentinel, read_json_auto turns ISO strings into 
   await loadNdjsonAsRaw(b(), bytes, headers);
   // Pins the upstream behavior that forced the sentinel-row contingency:
   // JSON *strings* are not enough — read_json_auto date-detects them.
-  expect((await describeTypes(QUAC_RAW))['d']).toBe('DATE');
+  expect((await describeTypes(QUAC_RAW)).d).toBe('DATE');
 });
 
 test('V17/V18: sentinel-row NDJSON lands every column as VARCHAR with exact fidelity', async () => {
@@ -57,22 +57,22 @@ test('V17/V18: sentinel-row NDJSON lands every column as VARCHAR with exact fide
   expect(result.columns).toEqual(headers);
 
   const types = await describeTypes(QUAC_RAW);
-  expect(types['__row__']).toBe('BIGINT');
+  expect(types.__row__).toBe('BIGINT');
   for (const h of headers) {
     expect(types[h], `column ${h} must stay VARCHAR`).toBe('VARCHAR');
   }
 
-  const data = await b().query<Record<string, unknown>>(
+  const data = await b().query(
     `SELECT * FROM ${QUAC_RAW} ORDER BY __row__`,
   );
-  expect(data.map((r) => Number(r['__row__']))).toEqual([0, 1, 2]);
-  expect(data[0]?.['id']).toBe('007');
-  expect(data[0]?.['big_id']).toBe('0012345678901234567');
-  expect(data[0]?.['birth_date']).toBe('2020-01-01');
-  expect(data[0]?.['seen_at']).toBe('2020-01-01T05:00:00Z');
+  expect(data.map((r) => Number(r.__row__))).toEqual([0, 1, 2]);
+  expect(data[0]?.id).toBe('007');
+  expect(data[0]?.big_id).toBe('0012345678901234567');
+  expect(data[0]?.birth_date).toBe('2020-01-01');
+  expect(data[0]?.seen_at).toBe('2020-01-01T05:00:00Z');
   // '' and null both normalize to SQL NULL (read_csv all_varchar parity).
-  expect(data[1]?.['note']).toBeNull();
-  expect(data[2]?.['note']).toBeNull();
+  expect(data[1]?.note).toBeNull();
+  expect(data[2]?.note).toBeNull();
 });
 
 test('fixture serving: ?url import of tiny/people.csv fetches real bytes', async () => {

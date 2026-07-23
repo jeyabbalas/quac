@@ -7,11 +7,16 @@
 // ground-truth violation log. Byte-determinism contract: two runs produce
 // identical bytes (CI gate `fixtures:check`), so the only randomness is
 // mulberry32 seeded 20260723 and no timestamps are embedded anywhere.
+// One scoping (Verified fact V16): DuckDB's native parquet writer emits
+// platform-dependent bytes (macOS arm64 vs Linux x64 differ for identical
+// data), so the parquet is byte-stable per platform and content-stable across
+// platforms — regeneration keeps the committed file untouched when a DuckDB
+// read-back comparison (schema + ordered rows) finds no difference.
 //
 // Valid-file invariant: zero findings under BOTH the JSON Schema and every
 // enabled rule in tests/fixtures/hesp/rules/*.quac.csv (golden journey 7).
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -1532,6 +1537,62 @@ async function writeParquet(rows, header, columns, outFile) {
 }
 
 /**
+ * Content equality of two parquet files: identical column schema (DESCRIBE)
+ * and identical ordered rows (row_number-paired EXCEPT ALL in both
+ * directions). Needed because DuckDB's native parquet bytes differ across
+ * platform builds for the same data (V16), so `fixtures:check` cannot rely on
+ * byte equality for this one format.
+ * @param {string} fileA
+ * @param {string} fileB
+ * @returns {Promise<boolean>}
+ */
+export async function parquetFilesEqual(fileA, fileB) {
+  const instance = await duckdb.DuckDBInstance.create(':memory:');
+  const conn = await instance.connect();
+  try {
+    await conn.run('SET threads=1');
+    const a = fileA.replace(/\\/g, '/').replace(/'/g, "''");
+    const b = fileB.replace(/\\/g, '/').replace(/'/g, "''");
+    const schemaA = await conn.runAndReadAll(`DESCRIBE SELECT * FROM read_parquet('${a}')`);
+    const schemaB = await conn.runAndReadAll(`DESCRIBE SELECT * FROM read_parquet('${b}')`);
+    if (JSON.stringify(schemaA.getRows()) !== JSON.stringify(schemaB.getRows())) return false;
+    await conn.run(`CREATE TABLE ta AS SELECT row_number() OVER () AS __rn, * FROM read_parquet('${a}')`);
+    await conn.run(`CREATE TABLE tb AS SELECT row_number() OVER () AS __rn, * FROM read_parquet('${b}')`);
+    const diff = await conn.runAndReadAll(
+      'SELECT count(*) FROM ((SELECT * FROM ta EXCEPT ALL SELECT * FROM tb) UNION ALL (SELECT * FROM tb EXCEPT ALL SELECT * FROM ta))',
+    );
+    return Number(diff.getRows()[0]?.[0]) === 0;
+  } finally {
+    conn.closeSync();
+    instance.closeSync();
+  }
+}
+
+/**
+ * Writes the parquet but leaves an existing target untouched when the fresh
+ * output is content-identical (V16: bytes legitimately differ across
+ * platforms; a byte rewrite would permanently dirty `fixtures:check` for
+ * every platform except the one that committed the file).
+ * @param {Row[]} rows
+ * @param {string[]} header
+ * @param {Column[]} columns
+ * @param {string} outFile
+ */
+async function writeParquetStable(rows, header, columns, outFile) {
+  if (!existsSync(outFile)) {
+    await writeParquet(rows, header, columns, outFile);
+    return;
+  }
+  const freshFile = `${outFile}.fresh`;
+  await writeParquet(rows, header, columns, freshFile);
+  if (await parquetFilesEqual(freshFile, outFile)) {
+    rmSync(freshFile);
+    return;
+  }
+  renameSync(freshFile, outFile);
+}
+
+/**
  * @param {Cell} v
  * @param {string} sqlType
  */
@@ -1591,7 +1652,7 @@ export async function generateAll(outDir) {
   writeFileSync(join(outDir, 'hesp_dirty_100.tsv'), serializeDelimited(dirtyRows, dirtyHeader, '\t'));
   writeFileSync(join(outDir, 'hesp_dirty_100.json'), serializeJson(dirtyRows, dirtyHeader));
   writeFileSync(join(outDir, 'hesp_dirty_100.xlsx'), await buildXlsx(dirtyRows, dirtyHeader));
-  await writeParquet(dirtyRows, dirtyHeader, columns, join(outDir, 'hesp_dirty_100.parquet'));
+  await writeParquetStable(dirtyRows, dirtyHeader, columns, join(outDir, 'hesp_dirty_100.parquet'));
   writeFileSync(join(outDir, 'seeded-violations.json'), JSON.stringify(violationLog(injections, dirtyRows.length, dirtyHeader.length), null, 2) + '\n');
 
   return { columns, conditionals, validRows, dirtyRows, injections };

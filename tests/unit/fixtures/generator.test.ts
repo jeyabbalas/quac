@@ -20,6 +20,7 @@ import {
   deriveColumns,
   deriveConditionals,
   loadSchemaSet,
+  parquetFilesEqual,
   parseDelimited,
   typeCsvRows,
 } from '../../../scripts/generate-fixtures.mjs';
@@ -80,7 +81,7 @@ function readLog(): ViolationLog {
 }
 
 describe('generate-fixtures.mjs', () => {
-  it('produces byte-identical output across two runs', { timeout: 240_000 }, () => {
+  it('produces byte-identical output across two runs', { timeout: 240_000 }, async () => {
     const dirA = mkdtempSync(join(tmpdir(), 'quac-fixtures-a-'));
     const dirB = mkdtempSync(join(tmpdir(), 'quac-fixtures-b-'));
     try {
@@ -96,7 +97,17 @@ describe('generate-fixtures.mjs', () => {
         expect(a.equals(b), `${name} differs between runs`).toBe(true);
       }
       // The committed fixtures are themselves a third run of the same code.
+      // Parquet is compared by content, not bytes: DuckDB's native writer
+      // emits platform-dependent bytes for identical data (V16), and the
+      // generator deliberately keeps the committed file when content matches.
       for (const name of filesA) {
+        if (name.endsWith('.parquet')) {
+          expect(
+            await parquetFilesEqual(join(dirA, name), join(DATA_DIR, name)),
+            `${name} content differs from committed fixture`,
+          ).toBe(true);
+          continue;
+        }
         const fresh = readFileSync(join(dirA, name));
         const committed = readFileSync(join(DATA_DIR, name));
         expect(fresh.equals(committed), `${name} differs from committed fixture`).toBe(true);

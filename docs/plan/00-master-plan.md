@@ -73,6 +73,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-23 · P02 · Post-merge CI hotfix (first Linux run of the generator): DuckDB-native parquet bytes are platform-dependent →
+`hesp_dirty_100.parquet` failed CI byte-equality vs the macOS-committed fixture. Contract scoped per **V16**: parquet byte-stable
+per platform, content-stable across platforms — generator now keeps the committed file when `parquetFilesEqual` (DuckDB DESCRIBE
++ ordered EXCEPT ALL read-back) matches; unit test compares parquet by content, remaining 4 formats stay byte-gated. Committed
+parquet bytes unchanged.
+
 2026-07-23 · merge · P02+P03+P04 merged to main (1e1b629, 41231fd, 1939c7c). Conflicts: master-plan table/log unions; P02's
 Verified fact V11 renumbered to **V15** (P03 claimed V11–V14) with cross-refs updated in phase-02-fixtures.md; package-lock
 regenerated from the union package.json. Full suite green on the integrated tree: verify (47 unit) + fixtures:check (byte-clean)

@@ -12,6 +12,7 @@ import { hardenBridge } from '../../src/core/bridge/harden';
 import { createBridgeRunner, runQC } from '../../src/core/rules/engine';
 import { lintRuleFilesWithDataset } from '../../src/core/rules/lint';
 import { parseRuleFile, type ParsedRuleFile } from '../../src/core/rules/parse';
+import { createQuickJSSandbox } from '../../src/core/rules/sandbox';
 import type { RuleFile } from '../../src/core/rules/types';
 import {
   PARITY_RULE_IDS,
@@ -80,7 +81,9 @@ test('EXPLAIN round-trips through the hardened WorkerBridge (lint stage-4 founda
 
 test('parity: runQC on the hardened bridge produces the node manifest exactly', async () => {
   const runner = createBridgeRunner(b());
-  const run = await runQC(runner, pick(...PARITY_RULE_IDS));
+  const run = await runQC(runner, pick(...PARITY_RULE_IDS), {
+    jsSandbox: createQuickJSSandbox(), // H006 (js) is in the parity set since P13
+  });
 
   const comments = Object.fromEntries(allRules().map((r) => [r.ruleId, r.comment]));
   const expected = expectedParityResult(comments);
@@ -103,6 +106,13 @@ test('parity: runQC on the hardened bridge produces the node manifest exactly', 
     { r: 9, wage: 64000, rent: -666, edu: 4 },
     { r: 11, wage: 46000, rent: -666, edu: 4 },
   ]);
+  // The js staged merge landed on wasm too, and its staging tables are gone.
+  const h006 = await b().query('SELECT household_id AS h FROM quac_work WHERE __row__ = 13');
+  expect(h006).toEqual([{ h: 'HH00000042' }]);
+  const staged = await b().query(
+    "SELECT COUNT(*)::INTEGER AS n FROM duckdb_tables() WHERE table_name LIKE '__qc_updates%'",
+  );
+  expect(staged).toEqual([{ n: 0 }]);
   // The durable baseline is untouched (determinism contract).
   const typed = await b().query(
     'SELECT wage_income_annual AS wage FROM quac_typed WHERE __row__ = 8',

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { QCFlag } from '../../../src/core/flags/flag';
 import { runQC } from '../../../src/core/rules/engine';
 import { parseRuleFile } from '../../../src/core/rules/parse';
+import { createQuickJSSandbox } from '../../../src/core/rules/sandbox';
 import type { QCRule, RuleFile } from '../../../src/core/rules/types';
 import {
   PARITY_RULE_IDS,
@@ -269,7 +270,9 @@ describe('runQC corrections on qc_fixture (seeded as quac_typed)', () => {
   it('parity manifest — the shared node⇄browser expectation holds on the node tier', async () => {
     const db = await openQcTyped();
     try {
-      const run = await runQC(db.runner, pick(...PARITY_RULE_IDS));
+      const run = await runQC(db.runner, pick(...PARITY_RULE_IDS), {
+        jsSandbox: createQuickJSSandbox(), // H006 is in the parity set since P13
+      });
       const comments = Object.fromEntries(ALL_RULES.map((r) => [r.ruleId, r.comment]));
       const expected = expectedParityResult(comments);
       expect(run.flags).toEqual(expected.flags);

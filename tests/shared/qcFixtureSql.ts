@@ -369,19 +369,24 @@ export const sqlLiteral = (v: string | number | null): string =>
   v === null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v.replace(/'/g, "''")}'`;
 
 // ---- runQC parity manifest (node ⇄ browser) --------------------------------
-// The P12 phase gate: representative fixture rules through the real hardened
-// bridge produce the SAME flags as the node run. Both tiers run runQC over the
-// qc-fixture rows seeded as quac_typed with this pick list, and assert this
-// exact result. Expectations hand-derived from the seed rows above:
+// The P12 phase gate (P13 adds H006): representative fixture rules through the
+// real hardened bridge produce the SAME flags as the node run. Both tiers run
+// runQC over the qc-fixture rows seeded as quac_typed with this pick list —
+// WITH a QuickJS sandbox since P13 — and assert this exact result.
+// Expectations hand-derived from the seed rows above:
 //   Q047 row 8  wage_income_annual 999 → -999 (the only positive sentinel)
 //   Q048 row 9  monthly_rent 950 → -666 (tenure 2; other tenure-hit rows
 //               already sit at -666, no-op suppressed)
 //   Q050 row 7  monthly_rent 150000 → 1500 (row 9 is -666 by now — file order)
 //   Q055 row 11 reference_education -999 → 4 (LAG from wave 1)
-//   Q001 rows 3,4 duplicate record_id · Q003 row 5 (×3 targets) · H004 rows 6,15
+//   H006 row 13 household_id 'hh-42' → 'HH00000042' (js, QuickJS sandbox)
+//   Q001 rows 3,4 duplicate record_id · H004 rows 6,15
+//   Q003 rows 5 AND 13 (×3 targets): the H006 correction fixes household_id
+//   but record_id keeps the legacy prefix, so key decomposition now fails
+//   at row 13 too — validations run on post-correction data.
 
 /** Rule ids for the parity run, in execution-relevant file order. */
-export const PARITY_RULE_IDS = ['Q047', 'Q048', 'Q050', 'Q055', 'Q001', 'Q003', 'H004'];
+export const PARITY_RULE_IDS = ['Q047', 'Q048', 'Q050', 'Q055', 'H006', 'Q001', 'Q003', 'H004'];
 
 export interface ParityExpectation {
   flags: QCFlag[];
@@ -395,8 +400,8 @@ export function expectedParityResult(comments: Record<string, string>): ParityEx
     ruleId: string,
     row: number,
     column: string,
-    before: number,
-    after: number,
+    before: unknown,
+    after: unknown,
   ): QCFlag => ({
     source: 'rules',
     ruleId,
@@ -424,11 +429,15 @@ export function expectedParityResult(comments: Record<string, string>): ParityEx
       correction('Q048', 9, 'monthly_rent', 950, -666),
       correction('Q050', 7, 'monthly_rent', 150000, 1500),
       correction('Q055', 11, 'reference_education', -999, 4),
+      correction('H006', 13, 'household_id', 'hh-42', 'HH00000042'),
       violation('Q001', 3, 'record_id', 'HH00000002_W01'),
       violation('Q001', 4, 'record_id', 'HH00000002_W01'),
       violation('Q003', 5, 'record_id', 'HH00000003_W02'),
       violation('Q003', 5, 'household_id', 'HH00000003'),
       violation('Q003', 5, 'wave', 1),
+      violation('Q003', 13, 'record_id', 'hh-42_W01'),
+      violation('Q003', 13, 'household_id', 'HH00000042'),
+      violation('Q003', 13, 'wave', 1),
       violation('H004', 6, 'interview_date', '2023-02-30'),
       violation('H004', 15, 'interview_date', '   '),
     ],
@@ -437,11 +446,12 @@ export function expectedParityResult(comments: Record<string, string>): ParityEx
       ['Q048', 'ok', 1],
       ['Q050', 'ok', 1],
       ['Q055', 'ok', 1],
+      ['H006', 'ok', 1],
       ['Q001', 'ok', 2],
-      ['Q003', 'ok', 1],
+      ['Q003', 'ok', 2],
       ['H004', 'ok', 2],
     ],
-    correctedCells: 4,
+    correctedCells: 5,
   };
 }
 

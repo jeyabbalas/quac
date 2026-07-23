@@ -1,15 +1,31 @@
 /* Component styles. Sections: shell → tabs → buttons → footer → badge → pill →
    empty state → toast → modal → duck progress → responsive → reduced motion. */
 
-/* Shell (P01 placeholder layout; replaced by the full shell later in P04) */
+/* Shell */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
 .q-header {
+  display: grid;
+  grid-template-areas:
+    'brand actions'
+    'tabs tabs';
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  padding: 12px 20px 0;
+  background: var(--q-sky); /* black text on sky, never white */
+  color: var(--q-ink);
+  border-bottom: 3px solid var(--q-ink);
+}
+
+.q-brand {
+  grid-area: brand;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
-  background: var(--q-sky);
-  color: var(--q-ink);
-  border-bottom: 3px solid var(--q-ink);
 }
 
 .q-logo {
@@ -27,16 +43,104 @@
   font-size: 0.875rem;
 }
 
-.q-privacy {
-  padding: 6px 20px;
-  font-size: 0.875rem;
-  background: var(--q-gray-50);
-  border-bottom: 1px solid var(--q-gray-200);
+.q-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.q-btn {
+  padding: 6px 16px;
+  border: 2px solid var(--q-ink);
+  border-radius: 8px;
+  background: var(--q-yellow);
+  color: var(--q-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.q-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.q-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.q-gh {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+/* Tabs — the active tab fuses into the white main area through the header's
+   3px ink stroke (negative margin + matching border) */
+.q-tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.q-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 3px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  color: var(--q-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.q-tab:hover:not([aria-current='page']) {
+  background: rgb(255 255 255 / 0.45);
+}
+
+.q-tab[aria-current='page'] {
+  background: var(--q-paper);
+  border-color: var(--q-ink);
+  margin-bottom: -3px;
+  padding-bottom: 11px;
 }
 
 .q-main {
-  padding: 20px;
-  min-height: 60vh;
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: 24px;
+}
+
+.q-footer {
+  padding: 8px 24px;
+  font-size: 0.8125rem;
+  color: var(--q-gray-600);
+  background: var(--q-gray-50);
+  border-top: 1px solid var(--q-gray-200);
+}
+
+/* Below the desktop-first breakpoint: stack header rows, tabs scroll */
+@media (max-width: 1023px) {
+  .q-header {
+    grid-template-areas:
+      'brand'
+      'actions'
+      'tabs';
+    grid-template-columns: 1fr;
+  }
+
+  .q-tabs {
+    overflow-x: auto;
+  }
+
+  .q-main {
+    padding: 16px;
+  }
 }
 
 /* Toast */

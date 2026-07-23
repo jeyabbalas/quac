@@ -7,9 +7,10 @@
  *
  * Route per format (Verified facts V17/V18 — the spec's registerFileBuffer +
  * read_csv(all_varchar) path does not exist on the v0.5.1 bridge):
- *   csv/tsv  main-thread PapaParse → all-string NDJSON (+ sentinel row that
- *            defeats read_json_auto's DATE/TIMESTAMP detection, V18) →
- *            loadData(format:'json') → CTAS; every column lands VARCHAR
+ *   csv/tsv  main-thread PapaParse → wrapped JSON (wrappedJson.ts — sidesteps
+ *            read_json_auto's date detection AND MAP inference, V18) →
+ *            loadData(format:'json') → json_extract_string CTAS; every
+ *            column lands VARCHAR with exact text fidelity
  *   xlsx     SheetJS sheet_to_csv (sheet chosen upstream) → csv route
  *   json     prefix check → loadData(format:'json'); typed values kept
  *   parquet  loadData(format:'parquet'); native types kept
@@ -24,7 +25,7 @@ import { parseDelimited } from './csv';
 import { openWorkbook } from './excel';
 import { sanitizeColumnNames } from './hygiene';
 import { checkJsonArrayPrefix } from './json';
-import { buildNdjsonBytes } from './ndjson';
+import { buildWrappedJsonBytes } from './wrappedJson';
 import type { Rename } from './hygiene';
 import type { IngestFormat } from './sniff';
 
@@ -106,11 +107,15 @@ async function buildRawTable(
   onStage('parsing', null);
   const parsed = await parseDelimited(text, input.format === 'tsv' ? '\t' : ',');
   const { names, renames } = sanitizeColumnNames(parsed.headers);
-  const ndjson = buildNdjsonBytes(names, parsed.rows, { sentinelRow: true });
-  const result = await loadNdjsonAsRaw(bridge, ndjson, names, {
-    sentinelRow: true,
-    onStage,
-  });
+  const result =
+    parsed.rows.length === 0
+      ? await createEmptyRaw(bridge, names) // read_json_auto cannot infer from []
+      : await loadWrappedJsonAsRaw(
+          bridge,
+          buildWrappedJsonBytes(names.length, parsed.rows),
+          names,
+          onStage,
+        );
   return {
     ...base,
     ...result,
@@ -129,26 +134,38 @@ export async function buildTypedTable(bridge: WorkerBridge): Promise<void> {
 }
 
 /**
- * Load all-string NDJSON bytes (buildNdjsonBytes output) as quac_raw.
- * `columns` is the sanitized header list — it must match the NDJSON keys.
- * `sentinelRow: true` mirrors the buildNdjsonBytes option: the first NDJSON
- * record is a type-defeating sentinel that is excluded here.
+ * Load wrapped JSON bytes (buildWrappedJsonBytes output) as quac_raw.
+ * The temp table holds one VARCHAR column `j` per row; the CTAS extracts
+ * positional keys c0..cN and aliases them to the sanitized column names —
+ * json_extract_string always returns VARCHAR, so raw fidelity is guaranteed
+ * regardless of read_json_auto's inference heuristics (V18).
  */
-export async function loadNdjsonAsRaw(
+export async function loadWrappedJsonAsRaw(
   bridge: WorkerBridge,
   ndjsonBytes: Uint8Array,
   columns: readonly string[],
-  options: { sentinelRow?: boolean; onStage?: IngestStageFn } = {},
+  onStage?: IngestStageFn,
 ): Promise<RawTableResult> {
   const buffer = ndjsonBytes.buffer.slice(
     ndjsonBytes.byteOffset,
     ndjsonBytes.byteOffset + ndjsonBytes.byteLength,
   ) as ArrayBuffer;
-  await loadTmp(bridge, buffer, 'json', options.onStage);
+  await loadTmp(bridge, buffer, 'json', onStage);
   try {
-    return await ctasRawFromTmp(bridge, columns.map((name) => ({ from: name, to: name })), {
-      skipSentinelRow: options.sentinelRow ?? false,
-    });
+    const selectList = columns
+      .map((name, i) => `json_extract_string(j, '$.c${String(i)}') AS ${quoteIdentifier(name)}`)
+      .join(', ');
+    await bridge.query(
+      `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
+        `SELECT ${quoteIdentifier(ROWID)} AS __row__, ${selectList} ` +
+        `FROM ${quoteIdentifier(QUAC_INGEST_TMP)} ` +
+        `ORDER BY ${quoteIdentifier(ROWID)}`,
+    );
+    bridge.clearQueryCache();
+    return {
+      rowCount: await countRawRows(bridge),
+      columns: [...columns],
+    };
   } finally {
     await dropTmp(bridge);
   }
@@ -191,6 +208,22 @@ async function dropTmp(bridge: WorkerBridge): Promise<void> {
   bridge.clearQueryCache();
 }
 
+/** Header-only delimited file: an all-VARCHAR quac_raw with zero rows. */
+async function createEmptyRaw(
+  bridge: WorkerBridge,
+  columns: readonly string[],
+): Promise<RawTableResult> {
+  const selectList = columns
+    .map((name) => `CAST(NULL AS VARCHAR) AS ${quoteIdentifier(name)}`)
+    .join(', ');
+  await bridge.query(
+    `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
+      `SELECT CAST(NULL AS BIGINT) AS __row__, ${selectList} WHERE false`,
+  );
+  bridge.clearQueryCache();
+  return { rowCount: 0, columns: [...columns] };
+}
+
 /**
  * CREATE OR REPLACE quac_raw from the loader temp table: __rowid__ becomes
  * __row__ (original file order), columns are selected explicitly in order
@@ -199,28 +232,28 @@ async function dropTmp(bridge: WorkerBridge): Promise<void> {
 export async function ctasRawFromTmp(
   bridge: WorkerBridge,
   columns: readonly { from: string; to: string }[],
-  options: { skipSentinelRow?: boolean } = {},
 ): Promise<RawTableResult> {
-  const skip = options.skipSentinelRow ?? false;
-  const rowExpr = skip ? `${quoteIdentifier(ROWID)} - 1` : quoteIdentifier(ROWID);
   const selectList = columns
     .map(({ from, to }) =>
       from === to ? quoteIdentifier(from) : `${quoteIdentifier(from)} AS ${quoteIdentifier(to)}`,
     )
     .join(', ');
-  const where = skip ? ` WHERE ${quoteIdentifier(ROWID)} > 0` : '';
   await bridge.query(
     `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
-      `SELECT ${rowExpr} AS __row__, ${selectList} ` +
-      `FROM ${quoteIdentifier(QUAC_INGEST_TMP)}${where} ` +
+      `SELECT ${quoteIdentifier(ROWID)} AS __row__, ${selectList} ` +
+      `FROM ${quoteIdentifier(QUAC_INGEST_TMP)} ` +
       `ORDER BY ${quoteIdentifier(ROWID)}`,
   );
   bridge.clearQueryCache();
+  return {
+    rowCount: await countRawRows(bridge),
+    columns: columns.map((c) => c.to),
+  };
+}
+
+async function countRawRows(bridge: WorkerBridge): Promise<number> {
   const [count] = await bridge.query<{ n: number | bigint }>(
     `SELECT count(*)::INT AS n FROM ${quoteIdentifier(QUAC_RAW)}`,
   );
-  return {
-    rowCount: Number(count?.n ?? 0),
-    columns: columns.map((c) => c.to),
-  };
+  return Number(count?.n ?? 0);
 }

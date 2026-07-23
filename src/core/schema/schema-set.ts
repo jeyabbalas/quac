@@ -12,6 +12,7 @@ import {
   nonSchemaIgnoredMessage,
   parseMessage,
 } from './messages';
+import { metaValidate } from './meta-validate';
 import { resolveRefGraph } from './ref-graph';
 import { applyRootSelection, detectRoot, resolveIndexParam } from './root-detection';
 import type {
@@ -387,9 +388,11 @@ export async function buildSchemaSet(
     set = applyRootSelection(set, detect.root.rootFileId);
   }
 
+  const rootDraft = set.files.find((f) => f.fileId === set.root.rootFileId)?.draft ?? 'unknown';
+  set.errors.push(...(await metaValidate(schemas, rootDraft)));
+
   const drafts = [...new Set(schemas.map((f) => f.draft).filter((d) => d !== 'unknown'))];
   if (drafts.length > 1) {
-    const rootDraft = set.files.find((f) => f.fileId === set.root.rootFileId)?.draft ?? 'unknown';
     set.errors.push(loadError('E_MIXED_DRAFT', mixedDraftMessage(drafts, rootDraft)));
   }
 

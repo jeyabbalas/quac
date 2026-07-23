@@ -301,6 +301,87 @@ describe('runValidations on qc_fixture', () => {
     // Skip stats are fully zeroed.
     expect(perRule[1]).toMatchObject({ violationCount: 0, flagsEmitted: 0, truncated: false, durationMs: 0 });
   });
+
+  it('global flag cap — rules keep running and emit count-only summaries', async () => {
+    // Rule 1 (13 wave-1 rows): cap 10 admits 10 cells, suppresses 3.
+    // Rule 2 (all 16 rows): zero capacity left — count-only summary flag.
+    const r1 = makeRule({ ruleId: 'X_G1', condition: 'wave = 1', severity: 'info', comment: 'First.' });
+    const r2 = makeRule({ ruleId: 'X_G2', condition: 'wave >= 1', severity: 'info', comment: 'Second.' });
+    const { flags, perRule } = await runValidations(db.runner, inline(r1, r2), {
+      globalFlagCap: 10,
+    });
+    expect(perRule[0]).toMatchObject({
+      ruleId: 'X_G1',
+      status: 'ok',
+      violationCount: 13,
+      flagsEmitted: 11,
+      truncated: true,
+    });
+    expect(perRule[1]).toMatchObject({
+      ruleId: 'X_G2',
+      status: 'ok',
+      violationCount: 16,
+      flagsEmitted: 1,
+      truncated: true,
+    });
+    expect(flags.filter((f) => f.scope === 'cell')).toHaveLength(10);
+    expect(flags.find((f) => f.ruleId === 'X_G1' && f.scope === 'dataset')?.message).toBe(
+      '…and 3 more flags from this rule suppressed (global flag cap reached)',
+    );
+    expect(flags.at(-1)).toMatchObject({
+      ruleId: 'X_G2',
+      scope: 'dataset',
+      message: '…and 16 more flags from this rule suppressed (global flag cap reached)',
+    });
+  });
+
+  it('onProgress fires before each enabled validate rule (0-based); onFlags batches per rule', async () => {
+    const progress: { ruleId: string; index: number; total: number; phase: string }[] = [];
+    const batches: QCFlag[][] = [];
+    const files = [
+      ...pick('Q001', 'Q044', 'Q021', 'Q013'),
+      ...inline(makeRule({ ruleId: 'X_OFF', enabled: false })),
+    ];
+    const { flags } = await runValidations(db.runner, files, {
+      onProgress: (p) => progress.push({ ...p }),
+      onFlags: (batch) => batches.push([...batch]),
+    });
+    // Enabled validate rules only — the inapplicable Q021 is still loop work;
+    // external Q044 and disabled X_OFF never appear.
+    expect(progress).toEqual([
+      { ruleId: 'Q001', index: 0, total: 3, phase: 'validate' },
+      { ruleId: 'Q021', index: 1, total: 3, phase: 'validate' },
+      { ruleId: 'Q013', index: 2, total: 3, phase: 'validate' },
+    ]);
+    // One non-empty batch per rule (only Q001 flags anything here), and
+    // RunResult.flags is exactly the concatenation of the batches.
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.map((f) => f.ruleId)).toEqual(['Q001', 'Q001']);
+    expect(flags).toEqual(batches.flat());
+  });
+
+  it('manifest — the full fixture rule files produce the expected perRule table', async () => {
+    const corrections = loadRules('hesp/rules/hesp_corrections.quac.csv');
+    const { perRule } = await runValidations(db.runner, [KEYS, CONSISTENCY, corrections]);
+    expect(perRule.map((s) => [s.ruleId, s.status, s.violationCount])).toEqual([
+      ['Q001', 'ok', 2],
+      ['Q002', 'ok', 2],
+      ['Q003', 'ok', 1],
+      ['Q007', 'ok', 0],
+      ['H001', 'ok', 1],
+      ['H002', 'ok', 1],
+      ['H003', 'ok', 0],
+      ['H004', 'ok', 2], // '2023-02-30' AND the whitespace date (support.ts knock-on)
+      ['H005', 'ok', 1],
+      ['Q044', 'skipped-external', 0],
+      ['Q011', 'ok', 1],
+      ['Q021', 'skipped-inapplicable', 0], // 7 income columns absent from qc_fixture
+      ['Q013', 'ok', 0],
+      ['Q008', 'ok', 1],
+      ['Q038', 'ok', 1],
+    ]);
+    // The corrections file contributes NO stats in the validations phase (P12).
+  });
 });
 
 describe('runValidations on scratch tables', () => {
@@ -334,6 +415,39 @@ describe('runValidations on scratch tables', () => {
       // sentinel row is excluded by the >= 0 guard (not flagged, not an error).
       expect(cellRows(flags, 'T021', 'wage_income_annual')).toEqual([0]);
       expect(perRule[0]).toMatchObject({ status: 'ok', violationCount: 1, flagsEmitted: 3 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('T-CAPS — 25k violations, cap 10k: cap×targets cells + per-target summaries + exact count', async () => {
+    const db = await openDuckDb([
+      'CREATE TABLE big AS SELECT range AS __row__, range % 100 AS a, range % 7 AS b FROM range(25000)',
+      'CREATE VIEW data AS SELECT * FROM big',
+    ]);
+    const rule = makeRule({
+      ruleId: 'X_CAP',
+      targetVariables: ['a', 'b'],
+      condition: 'a >= 0',
+      severity: 'warning',
+      comment: 'Cap test.',
+    });
+    try {
+      const { flags, perRule } = await runValidations(db.runner, inline(rule));
+      expect(perRule[0]).toMatchObject({
+        status: 'ok',
+        violationCount: 25_000, // EXACT, from COUNT(*), never truncated
+        flagsEmitted: 20_002,
+        truncated: true,
+      });
+      const cells = flags.filter((f) => f.scope === 'cell');
+      expect(cells).toHaveLength(20_000);
+      expect(cells[0]).toMatchObject({ row: 0, column: 'a', value: 0 });
+      expect(cells[1]).toMatchObject({ row: 0, column: 'b', value: 0 });
+      expect(cells[19_999]).toMatchObject({ row: 9_999, column: 'b' });
+      const summaries = flags.filter((f) => f.scope === 'column');
+      expect(summaries.map((f) => f.column)).toEqual(['a', 'b']);
+      expect(summaries[0]?.message).toBe('…and 15,000 more rows flagged by this rule');
     } finally {
       db.close();
     }

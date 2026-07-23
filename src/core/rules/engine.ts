@@ -21,7 +21,7 @@
 //   and one dataset-scope error flag `Rule failed to execute: …` is emitted;
 //   the run continues (§5).
 import { parseAssertion, expandAssertion } from './assertions';
-import { violCountSQL, violFetchSQL } from './sql';
+import { datasetCountSQL, datasetFetchSQL, violCountSQL, violFetchSQL } from './sql';
 import type { EngineOptions, QCRule, RuleFile, RuleRunStat, RunResult, SQLRunner } from './types';
 import { computePertinence } from '../pertinence';
 import type { QCFlag } from '../flags/flag';
@@ -99,6 +99,21 @@ function firstScalar(rows: Record<string, unknown>[]): number {
 /** Blank comments get the format-§2 fallback so flag messages stay self-contained. */
 function flagMessage(rule: QCRule): string {
   return rule.comment.trim() !== '' ? rule.comment : 'Rule condition matched.';
+}
+
+/** Message values render like correction values do (flags/messages.ts). */
+function formatValue(v: unknown): string {
+  if (typeof v === 'string') return `'${v}'`;
+  if (v === null || v === undefined) return 'null';
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  return JSON.stringify(v);
+}
+
+/** `wave=1; n_rows=13`-style rendering of a dataset-rule result row (format §9). */
+function renderRowPairs(row: Record<string, unknown>): string {
+  return Object.entries(row)
+    .map(([key, value]) => `${key}=${formatValue(value)}`)
+    .join('; ');
 }
 
 const countFmt = (n: number): string => n.toLocaleString('en-US');
@@ -196,11 +211,70 @@ async function runRowBool(
   return { violationCount, truncated };
 }
 
+async function runColumnAggregate(
+  runner: SQLRunner,
+  rule: QCRule,
+  aggs: { target: string; countSql: string; lo: number; hi: number }[],
+  sink: FlagSink,
+): Promise<ExecOutcome> {
+  let violating = 0;
+  const message = flagMessage(rule);
+  for (const agg of aggs) {
+    const n = firstScalar(await runner.query(agg.countSql));
+    if (n < agg.lo || n > agg.hi) {
+      violating += 1;
+      sink.emit({
+        source: 'rules',
+        ruleId: rule.ruleId,
+        scope: 'column',
+        column: agg.target,
+        severity: rule.severity,
+        message: `${message} Found ${String(n)} distinct values.`,
+      });
+    }
+  }
+  return { violationCount: violating, truncated: false };
+}
+
+async function runDatasetSelect(
+  runner: SQLRunner,
+  rule: QCRule,
+  datasetCap: number,
+  sink: FlagSink,
+): Promise<ExecOutcome> {
+  const message = flagMessage(rule);
+  const rows = await runner.query(datasetFetchSQL(rule.condition, datasetCap + 1));
+  for (const row of rows.slice(0, datasetCap)) {
+    sink.emit({
+      source: 'rules',
+      ruleId: rule.ruleId,
+      scope: 'dataset',
+      severity: rule.severity,
+      message: `${message} — ${renderRowPairs(row)}`,
+    });
+  }
+  if (rows.length <= datasetCap) {
+    return { violationCount: rows.length, truncated: false };
+  }
+  // Fetch overflowed the cap: get the exact total for the §5 truncation flag
+  // (when the fetch fits, its length already IS the exact count — no 2nd query).
+  const exact = firstScalar(await runner.query(datasetCountSQL(rule.condition)));
+  sink.emitSummary({
+    source: 'rules',
+    ruleId: rule.ruleId,
+    scope: 'dataset',
+    severity: rule.severity,
+    message: `…and ${countFmt(exact - datasetCap)} more result rows`,
+  });
+  return { violationCount: exact, truncated: true };
+}
+
 async function runValidateRule(
   runner: SQLRunner,
   rule: QCRule,
   targets: string[],
   rowCap: number,
+  datasetCap: number,
   sink: FlagSink,
 ): Promise<ExecOutcome> {
   const interpretation = interpret(rule, targets);
@@ -208,8 +282,9 @@ async function runValidateRule(
     case 'rowBool':
       return runRowBool(runner, rule, interpretation.conds, rowCap, sink);
     case 'columnAggregate':
+      return runColumnAggregate(runner, rule, interpretation.aggs, sink);
     case 'datasetSelect':
-      throw new Error(`${interpretation.kind} path lands in a later P11 commit`);
+      return runDatasetSelect(runner, rule, datasetCap, sink);
   }
 }
 
@@ -221,6 +296,7 @@ export async function runValidations(
   opts: EngineOptions = {},
 ): Promise<RunResult> {
   const rowCap = opts.rowCapPerRule ?? ROW_CAP_PER_RULE_DEFAULT;
+  const datasetCap = opts.datasetRowCap ?? DATASET_ROW_CAP_DEFAULT;
   const globalCap = opts.globalFlagCap ?? GLOBAL_FLAG_CAP_DEFAULT;
 
   // No `data` view (or no runner) is caller error — propagate, not per-rule broken.
@@ -261,7 +337,7 @@ export async function runValidations(
 
     const started = performance.now();
     try {
-      const outcome = await runValidateRule(runner, rule, targets, rowCap, sink);
+      const outcome = await runValidateRule(runner, rule, targets, rowCap, datasetCap, sink);
       const suppressed = sink.suppressed();
       if (suppressed > 0) {
         sink.emitSummary({

@@ -190,6 +190,91 @@ describe('runValidations on qc_fixture', () => {
     expect(count?.n).toBe(16);
   });
 
+  it('column asserts — per-target expansion sums counts (H002 no_nulls over 4 columns)', async () => {
+    const { flags, perRule } = await runValidations(db.runner, pick('H002'));
+    // Only interview_date has a NULL (__row__ 14); the other 3 targets are clean.
+    expect(perRule[0]).toMatchObject({ status: 'ok', violationCount: 1, flagsEmitted: 1 });
+    expect(flags[0]).toMatchObject({
+      scope: 'cell',
+      row: 14,
+      column: 'interview_date',
+      value: null,
+    });
+  });
+
+  it('count_distinct_in_range — in-range silent; violation is one column flag with the count', async () => {
+    const inRange = await runValidations(db.runner, pick('H003'));
+    expect(inRange.flags).toEqual([]);
+    expect(inRange.perRule[0]).toMatchObject({ status: 'ok', violationCount: 0, flagsEmitted: 0 });
+
+    const out = await runValidations(
+      db.runner,
+      inline(
+        makeRule({
+          ruleId: 'X_CDR',
+          ruleScope: 'column',
+          targetVariables: ['wave'],
+          condition: 'count_distinct_in_range(5, 20)',
+          severity: 'warning',
+          comment: 'Too few distinct waves for a longitudinal extract.',
+        }),
+      ),
+    );
+    expect(out.perRule[0]).toMatchObject({ status: 'ok', violationCount: 1, flagsEmitted: 1 });
+    expect(out.flags[0]).toEqual({
+      source: 'rules',
+      ruleId: 'X_CDR',
+      scope: 'column',
+      column: 'wave',
+      severity: 'warning',
+      message: 'Too few distinct waves for a longitudinal extract. Found 3 distinct values.',
+    });
+  });
+
+  it('dataset SELECT — one flag per returned row with col=val rendering (H005)', async () => {
+    const { flags, perRule } = await runValidations(db.runner, pick('H005'));
+    // Only wave 1 contains duplicate household rows (the Q002 pair).
+    expect(perRule[0]).toMatchObject({
+      status: 'ok',
+      violationCount: 1,
+      flagsEmitted: 1,
+      truncated: false,
+    });
+    expect(flags[0]).toEqual({
+      source: 'rules',
+      ruleId: 'H005',
+      scope: 'dataset',
+      severity: 'error',
+      message:
+        'Wave contains more rows than distinct households; per-wave duplicate household ' +
+        'extractions listed. — wave=1; n_rows=13; n_households=12; n_duplicate_household_rows=1',
+    });
+  });
+
+  it('dataset SELECT — cap + exact-count truncation flag', async () => {
+    const rule = makeRule({
+      ruleId: 'X_DS',
+      ruleScope: 'dataset',
+      targetVariables: [],
+      condition: 'SELECT __row__, wave FROM data ORDER BY __row__;',
+      severity: 'info',
+      comment: 'Every row, for cap testing.',
+    });
+    const { flags, perRule } = await runValidations(db.runner, inline(rule), {
+      datasetRowCap: 5,
+    });
+    expect(perRule[0]).toMatchObject({
+      status: 'ok',
+      violationCount: 16,
+      flagsEmitted: 6,
+      truncated: true,
+    });
+    const messages = flags.map((f) => f.message);
+    expect(messages[0]).toBe('Every row, for cap testing. — __row__=0; wave=1');
+    expect(messages[5]).toBe('…and 11 more result rows');
+    expect(flags.filter((f) => f.scope === 'dataset')).toHaveLength(6);
+  });
+
   it('skip statuses — external (even disabled), disabled, inapplicable; correct unstatted', async () => {
     const files = [
       // Q044 external; Q021 inapplicable on qc_fixture (7 income columns absent)

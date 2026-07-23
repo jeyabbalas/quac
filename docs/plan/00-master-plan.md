@@ -53,7 +53,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 20f361b | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
 | [x] 2026-07-23 · f037f2a | P04 | App shell, router, signals, design tokens | P01 |
 | [ ] | P05 | Dataset ingestion & display | P02, P03, P04 |
-| [ ] | P06 | Schema loading & root detection | P02, P04 |
+| [x] 2026-07-23 · ff9551c | P06 | Schema loading & root detection | P02, P04 |
 | [ ] | P07 | Column digests & pertinence | P06 |
 | [ ] | P08 | FlagStore & schema translator | P07 |
 | [ ] | P09 | Schema validation engine | P05, P08 |
@@ -72,6 +72,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P06 · Schema subsystem §A shipped on branch p06-schema: core/schema/{types,messages,schema-set,ref-graph,root-detection,
+meta-validate,fetch-json,schema-store}.ts + schema SlotCard/IndexPickerModal (scoped q-schemaslot/q-idxpick classes; generic SlotCard names
+left for P05 — consolidate post-merge). E_META wired NOW via ajv ^8.20 (dynamic import, lazy chunks; entry 12.8 KB gz): one instance per set
+by root draft; other-known-draft files skipped (E_MIXED_DRAFT covers). AppStore slots.schema NOT bridged (views get no store ctx —
+`bindSlotSignal` ships for P14's one-liner). Unit 113 + browser 13 + e2e 17 green; nav.spec Load marker now the schema-card heading.
 
 2026-07-23 · P02 · Post-merge CI hotfix (first Linux run of the generator): DuckDB-native parquet bytes are platform-dependent →
 `hesp_dirty_100.parquet` failed CI byte-equality vs the macOS-committed fixture. Contract scoped per **V16**: parquet byte-stable

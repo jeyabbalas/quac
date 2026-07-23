@@ -28,4 +28,22 @@ Row validation, casting, digests (P07/P09); `index=` URL parsing (P16 — but th
 - **UI/UX:** Playwright `tests/e2e/schemaLoad.spec.ts` — drop the 14 HESP files (and separately the folder) → Valid badge "root: core.schema.json"; drop the two-roots fixture → IndexPickerModal appears, selection resolves the slot; malformed JSON shows the `E_PARSE` copy.
 
 ## Deferred notes
-*(agent fills in)*
+
+- **AppStore `slots.schema` not bridged.** Views receive no store context (`VIEW_MOUNTERS` pass only a container — P05
+  touches that plumbing too). Schema slot state lives in `src/core/schema/schema-store.ts` (module-scoped signal);
+  `bindSlotSignal(store.slots.schema)` is exported and unit-tested for P14's one-line wiring.
+- **Component consolidation.** The slot card is self-contained (`q-schemaslot-*` classes, view-local `schemaSlot.css`)
+  so P05 can claim the generic `SlotCard`/`DropZone`/`UrlField` names. Whoever merges second (or P19) should consolidate
+  and fold the CSS into `components.css`. `loadView.ts` is the single shared-edit file (slot row + mount call).
+- **E_META under mixed drafts:** one Ajv instance per set (root file's draft); files declaring a different known draft
+  are skipped — their meta-schema is absent on that instance and `E_MIXED_DRAFT` already warns. Documented in
+  `meta-validate.ts`.
+- **URL-mode e2e deferred to P16** (needs the CORS fixture host table). The crawl/fetch path is fully unit-tested with
+  a stubbed `fetchJson` (redirects, CORS vs HTTP copy, caps 64/8, never `$id` hosts, never `quac-set:`).
+- **Crawl scope:** per edge-ledger 6 ("retrieval-URL relative only") absolute `$ref` URLs are never fetched, even in
+  URL mode — only relative refs resolved against the retrieval base crawl.
+- **Synthetic-drop e2e** uses the documented `dt.files` fallback (synthetic `DataTransfer` yields no
+  `webkitGetAsEntry` entries); no `window.__quac` hook was needed.
+- Warning/notice codes beyond the §A.5 table were added as `W_*`/`I_*` (`W_RETRIEVAL_FALLBACK`, `W_ROOT_NOT_ARRAY`,
+  `W_INDEX_BASENAME`, `W_INDEX_NO_MATCH`, `I_AUTO_PREFERRED`, `I_NON_SCHEMA_IGNORED`) so every §A copy string has a
+  typed carrier; severities in `SCHEMA_LOAD_SEVERITY`.

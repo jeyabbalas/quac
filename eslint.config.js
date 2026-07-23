@@ -5,7 +5,15 @@ import globals from 'globals';
 import eslintConfigPrettier from 'eslint-config-prettier/flat';
 
 export default defineConfig(
-  globalIgnores(['node_modules', 'dist', 'playwright-report', 'test-results', 'coverage']),
+  globalIgnores([
+    'node_modules',
+    'dist',
+    'playwright-report',
+    'test-results',
+    'coverage',
+    // copied duckdb-wasm dist assets (scripts/copy-duckdb-assets.mjs)
+    'public/duckdb',
+  ]),
   {
     files: ['**/*.ts'],
     extends: [

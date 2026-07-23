@@ -2,6 +2,7 @@
 *.DS_Store
 node_modules/
 dist/
+public/duckdb/
 playwright-report/
 test-results/
 blob-report/
@@ -9,3 +10,5 @@ blob-report/
 *.tsbuildinfo
 .eslintcache
 *.local
+.vitest-attachments/
+__screenshots__/

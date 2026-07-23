@@ -50,7 +50,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 |---|---|---|---|
 | [x] 2026-07-23 · dcec6c1 | P01 | Scaffold, CI, deployed shell | — |
 | [x] 2026-07-23 · d6476ef | P02 | Fixtures & deterministic generator | P01 |
-| [ ] | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
+| [x] 2026-07-23 · 20f361b | P03 | Bridge module & round-trip verification (CRITICAL PATH) | P01 |
 | [ ] | P04 | App shell, router, signals, design tokens | P01 |
 | [ ] | P05 | Dataset ingestion & display | P02, P03, P04 |
 | [ ] | P06 | Schema loading & root detection | P02, P04 |
@@ -73,11 +73,13 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-23 · P03 · Bridge layer shipped on branch `p03-bridge`: core/bridge/{bridge,harden,tables}.ts, copy-duckdb-assets.mjs (predev/prebuild/pretest:browser), 4 browser spike regressions + unit URL test, all green; `vite preview` serves every `/quac/duckdb/*` asset 200 (verified). MAJOR deviations recorded in Verified facts V5–V8 + new V11–V14: no `bridge.export()` → `exportToBuffer`; every SQL hardening gate unusable in duckdb-wasm → hardening moved to a generated worker prelude (same-origin exact-file allowlist) + vendored parquet/icu/json extensions (NOT statically linked — they silently fetch from extensions.duckdb.org otherwise!) + `custom_extension_repository`; specs §2/§6/§8/§9 updated to match. Successors: bundle URLs must be absolute (blob worker), vite has `optimizeDeps.include:['@jeyabbalas/data-table']`, V-fact numbering may collide with parallel P02/P04 branches at merge.
+
 2026-07-23 · P02 · Fixtures shipped: deterministic generator (mulberry32 seed 20260723) parses the HESP schema itself → 265 cols + 171
 conditionals (incl. the if.anyOf disjunction at allOf[175] and 4 then.allOf blocks); 100 valid rows clean under schema AND all enabled
 example rules (Q038 requires tied top rents per wave); dirty copy carries 23 seeded injections with machine-cross-checked expected ids
 (`seeded-violations.json`); 5 output formats byte-deterministic (xlsx zip-mtime normalization post-writeBuffer; parquet threads=1). Rules
-files verbatim from `qc-rules-format.md §8` (LF/no-BOM); tiny/ + synthetic/ committed; exceljs 4.4.0 devDep; deviation → Verified fact V11.
+files verbatim from `qc-rules-format.md §8` (LF/no-BOM); tiny/ + synthetic/ committed; exceljs 4.4.0 devDep; deviation → Verified fact V15 (recorded as V11 pre-merge; renumbered — P03 claimed V11–V14).
 
 2026-07-23 · P01 · Scaffold shipped: Vite 8.1.5 + TS ~6.0.3 (typescript-eslint caps TS <6.1.0; TS 7 native port unsupported),
 ESLint 10 flat (explicit `@eslint/js` devDep — eslint 10 dropped it), Vitest 4 projects (unit node + browser Chromium via

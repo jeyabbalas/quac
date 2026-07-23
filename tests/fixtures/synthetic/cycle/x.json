@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/synthetic/cycle/x.json",
+  "title": "Cycle X",
+  "type": "array",
+  "items": { "$ref": "y.json#/$defs/row" },
+  "$defs": {
+    "value": { "type": "integer", "minimum": 0 }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/synthetic/mini.schema.json",
+  "title": "Mini table",
+  "description": "Single-file array-of-objects schema exercising pattern, anyOf-with-sentinels, number range, oneOf codes, and one if/then conditional. Fragment-only refs.",
+  "type": "array",
+  "uniqueItems": true,
+  "items": {
+    "type": "object",
+    "title": "Mini record",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^R[0-9]{3}$",
+        "title": "Record identifier"
+      },
+      "age": {
+        "anyOf": [
+          { "type": "integer", "minimum": 18, "maximum": 100 },
+          { "$ref": "#/$defs/refused" },
+          { "$ref": "#/$defs/dont_know" }
+        ],
+        "title": "Age in years"
+      },
+      "score": {
+        "anyOf": [
+          { "type": "number", "minimum": 0, "maximum": 1 },
+          { "$ref": "#/$defs/refused" }
+        ],
+        "title": "Normalized score"
+      },
+      "consent": {
+        "oneOf": [
+          { "const": 0, "title": "No" },
+          { "const": 1, "title": "Yes" },
+          { "$ref": "#/$defs/refused" }
+        ],
+        "title": "Consent to scoring"
+      }
+    },
+    "required": ["id", "age", "score", "consent"],
+    "allOf": [
+      {
+        "$comment": "Skip pattern: records without consent carry the refused sentinel in score.",
+        "if": {
+          "required": ["consent"],
+          "properties": {
+            "consent": { "const": 0 }
+          }
+        },
+        "then": {
+          "properties": {
+            "score": { "const": -777 }
+          }
+        }
+      }
+    ],
+    "unevaluatedProperties": false
+  },
+  "$defs": {
+    "refused": {
+      "const": -777,
+      "title": "Refused"
+    },
+    "dont_know": {
+      "const": -888,
+      "title": "Don't know"
+    }
+  }
+}

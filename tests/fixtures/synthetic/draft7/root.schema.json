@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.org/quac/synthetic/draft7/root.schema.json",
+  "title": "Draft-07 table",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": { "type": "string" },
+      "val": { "$ref": "#/definitions/nonneg" }
+    },
+    "required": ["id", "val"],
+    "additionalProperties": false
+  },
+  "definitions": {
+    "nonneg": { "type": "integer", "minimum": 0 }
+  }
+}

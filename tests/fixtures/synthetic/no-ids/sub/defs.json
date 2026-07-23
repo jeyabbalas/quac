@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Definitions without $id",
+  "$defs": {
+    "row": {
+      "type": "object",
+      "properties": {
+        "n": { "type": "integer" },
+        "label": { "type": "string" }
+      },
+      "required": ["n"]
+    }
+  }
+}

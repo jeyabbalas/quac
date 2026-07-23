@@ -1,0 +1,7 @@
+rule_id,rule_type,rule_scope,target_variables,condition,update_language,update_expression,severity,comment,enabled
+R001,validate,column,person_id,unique,,,error,Duplicate person_id: identifiers must be unique across the file.,true
+R002,validate,column,person_id,match_regex('^P[0-9]{3}$'),,,error,Person identifier must be P followed by three digits.,true
+R003,validate,column,age,"in_range(0, 120)",,,error,Age outside the plausible 0-120 range.,true
+R004,validate,column,name,no_nulls,,,warning,Name should not be missing.,true
+R005,validate,row,score|age,"score IS NOT NULL AND age IS NOT NULL AND score > age * 10",,,warning,Score exceeds ten times the age - implausible combination worth review.,true
+R006,correct,row,city,"city IS NOT NULL AND city <> UPPER(city)",sql,UPPER(city),info,City normalized to uppercase per convention.,true

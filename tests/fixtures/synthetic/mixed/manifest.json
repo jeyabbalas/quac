@@ -1,0 +1,8 @@
+{
+  "name": "Mixed synthetic fixture set",
+  "status": "test fixture",
+  "entrypoints": {
+    "modular": "mini.schema.json",
+    "standalone": "bundle.schema.json"
+  }
+}

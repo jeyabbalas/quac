@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quac/tiny/people.schema.json",
+  "title": "Tiny people table",
+  "description": "Minimal single-file tabular schema for fast unit tests: one pattern, one range, one enum, one number column.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "title": "Person record",
+    "properties": {
+      "person_id": {
+        "type": "string",
+        "pattern": "^P[0-9]{3}$",
+        "title": "Person identifier"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Full name"
+      },
+      "age": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 120,
+        "title": "Age in years"
+      },
+      "city": {
+        "enum": [
+          "LONDON",
+          "ARLINGTON",
+          "MANCHESTER",
+          "HAMPTON",
+          "BOSTON",
+          "CLEVELAND",
+          "NEWPORT NEWS",
+          "SEATTLE",
+          "VIENNA",
+          "CAMBRIDGE"
+        ],
+        "title": "City of residence",
+        "$comment": "Uppercase by convention; the tiny rules file contains a correction that uppercases stray values."
+      },
+      "score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "title": "Assessment score"
+      }
+    },
+    "required": ["person_id", "name", "age", "city", "score"],
+    "unevaluatedProperties": false
+  }
+}

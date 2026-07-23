@@ -1,0 +1,4 @@
+This file is not JSON and must be ignored by the schema loader
+(classification: unsupported-extension). The manifest.json next to it
+names one entrypoint that exists (mini.schema.json) and one that does
+not (bundle.schema.json); manifest hints must tolerate dangling entries.

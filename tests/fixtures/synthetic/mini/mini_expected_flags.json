@@ -1,0 +1,89 @@
+{
+  "$comment": "Expected QCFlag output for mini_invalid.csv validated against mini.schema.json (schema engine only). Authored in P02 from architecture.md §5 and json-schema-subsystem.md §D templates; structural fields (ruleId, scope, row, column, severity, value) are ground truth, message strings may be refined by P08/P09 when the translator lands. Rows are 0-based __row__ over data rows (header excluded).",
+  "flags": [
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:id:value",
+      "scope": "cell",
+      "row": 1,
+      "column": "id",
+      "severity": "error",
+      "value": "X99",
+      "message": "'X99' does not match the expected format (pattern ^R[0-9]{3}$)."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:age:value",
+      "scope": "cell",
+      "row": 2,
+      "column": "age",
+      "severity": "error",
+      "value": 150,
+      "message": "150 exceeds the maximum 100 — expected an integer 18–100, or a missing-value code (-777 Refused, -888 Don't know)."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:age:cast",
+      "scope": "cell",
+      "row": 3,
+      "column": "age",
+      "severity": "error",
+      "value": "abc",
+      "message": "'abc' is not a valid integer."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:score:value",
+      "scope": "cell",
+      "row": 4,
+      "column": "score",
+      "severity": "error",
+      "value": 1.5,
+      "message": "1.5 exceeds the maximum 1 — expected a number 0–1, or a missing-value code (-777 Refused)."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:consent:value",
+      "scope": "cell",
+      "row": 5,
+      "column": "consent",
+      "severity": "error",
+      "value": 5,
+      "message": "5 is not an allowed value — expected one of: 0 No; 1 Yes; -777 Refused."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:cond:0:score",
+      "scope": "cell",
+      "row": 6,
+      "column": "score",
+      "severity": "error",
+      "value": 0.5,
+      "message": "when consent = 0, score must be -777 (Refused). Found 0.5. [Schema note: Skip pattern: records without consent carry the refused sentinel in score.]"
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:prop:age:required",
+      "scope": "cell",
+      "row": 7,
+      "column": "age",
+      "severity": "error",
+      "message": "value is missing — this variable is required for every record."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:column:notes:unexpected",
+      "scope": "column",
+      "column": "notes",
+      "severity": "error",
+      "message": "Column 'notes' is not defined in the schema, which does not allow unexpected variables."
+    },
+    {
+      "source": "schema",
+      "ruleId": "schema:dataset:duplicate-records",
+      "scope": "dataset",
+      "severity": "error",
+      "message": "Rows 8 and 9 are identical records — the schema requires all records to be unique."
+    }
+  ]
+}

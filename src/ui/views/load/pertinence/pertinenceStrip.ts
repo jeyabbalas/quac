@@ -1,15 +1,22 @@
 /**
  * PertinenceStrip (json-schema-subsystem.md §E.5 + ui-design.md §4): the
  * one-line data↔schema fit verdict under the slot cards, plus the block
- * modal. Recomputes whenever the dataset or schema slot changes; the
+ * modal. Recomputes whenever the dataset, schema, or rules slot changes; the
  * "continue anyway" override is keyed to the exact (setId, generation) pair
  * so any input change re-arms the gate.
+ *
+ * P12: the strip additionally carries a rules-coverage line (distinct rule
+ * targets ∩ dataset columns) in its own element (.q-pertinence-rules — the
+ * schema line's .q-pertinence-text stays byte-stable for the pinned e2e), and
+ * per ingestion.md §1 it now appears for Dataset + Rules without a schema.
+ * The block modal stays schema-driven.
  */
 import './pertinence.css';
 import { effect, signal } from '../../../../app/signals';
 import { openModal } from '../../../../app/modal';
 import { computePertinence } from '../../../../core/pertinence';
 import type { PertinenceResult } from '../../../../core/pertinence';
+import { rulesState } from '../../../../core/rules/rules-store';
 import { columnDigest } from '../../../../core/schema/column-meta';
 import { schemaState } from '../../../../core/schema/schema-store';
 import { createBadge } from '../../../components/badge';
@@ -133,34 +140,85 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
   effect(() => {
     const dataset = ctx.store.dataset.get();
     const schema = schemaState.get();
+    const rules = rulesState.get();
     const override = overrideKey.get();
 
+    if (dataset === null) {
+      strip.hidden = true;
+      return;
+    }
+
+    // Rules coverage: distinct targets across all loaded files' executable
+    // rule types (external never runs — engine §7 exempts it).
+    const targets = [
+      ...new Set(
+        rules.files.flatMap((f) =>
+          f.file.rules
+            .filter((r) => r.ruleType === 'validate' || r.ruleType === 'correct')
+            .flatMap((r) => r.targetVariables),
+        ),
+      ),
+    ];
+    const rulesResult =
+      targets.length === 0
+        ? null
+        : computePertinence({
+            schemaColumns: targets.map((name) => ({ name, required: true })),
+            datasetColumns: dataset.columns,
+          });
+    const rulesLine =
+      rulesResult === null
+        ? null
+        : `Rules pertinence: ${String(rulesResult.matched.length)}/${String(targets.length)} ` +
+          `rule targets present · ${String(rulesResult.missingRequired.length)} missing`;
+
     const digest = schema.set === null ? null : columnDigest(schema.set);
-    if (dataset === null || schema.set === null || digest === null) {
-      strip.hidden = true;
-      return;
-    }
-    const result = computePertinence({
-      schemaColumns: digest.meta.map((m) => ({ name: m.name, required: m.required })),
-      datasetColumns: dataset.columns,
-    });
-    if (result === null) {
-      strip.hidden = true;
+    const result =
+      digest === null
+        ? null
+        : computePertinence({
+            schemaColumns: digest.meta.map((m) => ({ name: m.name, required: m.required })),
+            datasetColumns: dataset.columns,
+          });
+
+    if (result !== null && digest !== null && schema.set !== null) {
+      const key = `${schema.set.setId}:${String(dataset.generation)}`;
+      const overridden = override === key;
+      // Continue-anyway downgrades block → warn (§E.5).
+      const verdict = result.verdict === 'block' && overridden ? 'warn' : result.verdict;
+      const onContinue = (): void => {
+        overrideKey.set(key);
+      };
+      render(result, digest.meta.length, verdict, onContinue);
+      if (rulesLine !== null) strip.append(renderRulesLine(rulesLine));
+
+      if (verdict === 'block' && !prompted.has(key)) {
+        prompted.add(key);
+        openBlockModal(result, digest.meta.length, onContinue);
+      }
       return;
     }
 
-    const key = `${schema.set.setId}:${String(dataset.generation)}`;
-    const overridden = override === key;
-    // Continue-anyway downgrades block → warn (§E.5).
-    const verdict = result.verdict === 'block' && overridden ? 'warn' : result.verdict;
-    const onContinue = (): void => {
-      overrideKey.set(key);
-    };
-    render(result, digest.meta.length, verdict, onContinue);
-
-    if (verdict === 'block' && !prompted.has(key)) {
-      prompted.add(key);
-      openBlockModal(result, digest.meta.length, onContinue);
+    // Dataset + rules, no schema (ingestion.md §1: "Schema OR Rules").
+    if (rulesLine !== null && rulesResult !== null) {
+      const ok = rulesResult.missingRequired.length === 0;
+      strip.replaceChildren();
+      strip.className = `q-pertinence q-pertinence--${ok ? 'ok' : 'warn'}`;
+      strip.append(
+        createBadge(ok ? 'OK' : 'Warning', ok ? 'valid' : 'warning'),
+        renderRulesLine(rulesLine),
+      );
+      strip.hidden = false;
+      return;
     }
+
+    strip.hidden = true;
   });
+}
+
+function renderRulesLine(text: string): HTMLParagraphElement {
+  const line = document.createElement('p');
+  line.className = 'q-pertinence-rules';
+  line.textContent = text;
+  return line;
 }

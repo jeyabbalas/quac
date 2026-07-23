@@ -140,7 +140,8 @@ test('oversized file is rejected before any read', async ({ page }) => {
     await expect(datasetBadge(page)).toHaveText('Error', { timeout: 30_000 });
     await expect(datasetSummary(page)).toContainText('501 MB');
     // The UI stays responsive: the drop zone is re-enabled after the failure.
-    await expect(page.locator('.q-dropzone')).toBeEnabled();
+    // (Scoped to the dataset card — the Rules card added a second .q-dropzone in P12.)
+    await expect(datasetCard(page).locator('.q-dropzone')).toBeEnabled();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

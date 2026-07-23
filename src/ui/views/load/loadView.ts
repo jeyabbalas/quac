@@ -1,14 +1,13 @@
 /**
  * Load view (ingestion.md §1): persistent hint line, the three input slot
- * cards, and the plain 50-row preview under them. Dataset (P05) and JSON
- * Schema (P06) cards are live — the Rules card is an inert placeholder frame
- * P12 replaces with a single mount call.
+ * cards (Dataset P05 · JSON Schema P06 · QC Rules P12), and the plain 50-row
+ * preview under them.
  */
 import { effect } from '../../../app/signals';
-import { createSlotCard } from '../../components/slotCard';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { mountDatasetCard } from './datasetCard';
 import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
+import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import type { ShellContext } from '../../../app/shell';
 
@@ -29,7 +28,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
 
   mountDatasetCard(dataHost, ctx);
   mountSchemaSlotCard(schemaHost);
-  mountPlaceholderCard(rulesHost, 'QC Rules', 'Rules loading arrives in a later phase.');
+  mountRulesSlotCard(rulesHost, ctx);
 
   // Pertinence verdict sits between the slot cards and the preview (§E.5).
   const pertinenceHost = document.createElement('div');
@@ -76,13 +75,4 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
       preview.hidden = true; // preview is best-effort; errors surface via the slot
     });
   });
-}
-
-function mountPlaceholderCard(container: HTMLElement, title: string, body: string): void {
-  const card = createSlotCard(title);
-  const note = document.createElement('p');
-  note.className = 'q-slotcard-placeholder';
-  note.textContent = body;
-  card.bodyHost.append(note);
-  container.append(card.el);
 }

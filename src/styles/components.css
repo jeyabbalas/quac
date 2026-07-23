@@ -680,3 +680,44 @@
   margin-top: 8px;
   min-height: 480px;
 }
+
+/* Rules slot detail (P12): per-file blocks with the lint list file → rule. */
+.q-rulesfile {
+  margin: 8px 0 0;
+}
+
+.q-rulesfile-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.q-rulesfile-name {
+  font-family: var(--q-font-mono, monospace);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.q-rulesfile-counts {
+  color: var(--q-gray-700);
+  font-size: 0.8125rem;
+}
+
+.q-rulesfile-pertinence {
+  margin: 2px 0 0;
+  color: var(--q-gray-700);
+  font-size: 0.8125rem;
+}
+
+.q-rulesissue--error {
+  color: var(--q-error);
+}
+
+.q-rulesissue--warning {
+  color: var(--q-warning);
+}
+
+.q-rulesissue--info {
+  color: var(--q-gray-700);
+}

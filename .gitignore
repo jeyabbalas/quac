@@ -10,3 +10,5 @@ blob-report/
 *.tsbuildinfo
 .eslintcache
 *.local
+.vitest-attachments/
+__screenshots__/

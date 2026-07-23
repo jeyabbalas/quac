@@ -3,7 +3,11 @@ import { playwright } from '@vitest/browser-playwright';
 
 export default defineConfig({
   base: '/quac/',
-  optimizeDeps: { exclude: ['@duckdb/duckdb-wasm'] },
+  optimizeDeps: {
+    exclude: ['@duckdb/duckdb-wasm'],
+    // Pre-bundle upfront: late discovery mid-test-run makes Vite reload and flake.
+    include: ['@jeyabbalas/data-table'],
+  },
   preview: { port: 4173, strictPort: true },
   test: {
     projects: [

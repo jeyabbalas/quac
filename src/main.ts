@@ -1,5 +1,6 @@
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/components.css';
 import { mountShell } from './app/shell';
 
 const root = document.querySelector<HTMLDivElement>('#app');

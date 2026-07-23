@@ -218,3 +218,132 @@
 .q-empty-body {
   color: var(--q-gray-600);
 }
+
+/* Duck progress */
+.q-duckprogress {
+  --q-dp-pct: 0%;
+
+  width: 100%;
+  max-width: 520px;
+}
+
+.q-duckprogress-track {
+  position: relative;
+  height: 14px;
+  margin-top: 20px; /* headroom for the duck riding above the track */
+  border: 2px solid var(--q-ink);
+  border-radius: 999px;
+  background: var(--q-gray-100);
+}
+
+.q-duckprogress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--q-dp-pct);
+  border-radius: 999px;
+  background-color: var(--q-sky);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5' fill='none' stroke='%230099cc' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: 0 60%;
+  transition: width 300ms linear;
+}
+
+.q-duckprogress-duck {
+  position: absolute;
+  top: -16px;
+  left: var(--q-dp-pct);
+  width: 36px;
+  height: 24px;
+  transform: translateX(-50%);
+  transition: left 300ms linear;
+  animation: q-duck-bob 1.1s ease-in-out infinite alternate;
+}
+
+.q-duck-body,
+.q-duck-head {
+  fill: var(--q-yellow);
+  stroke: var(--q-ink);
+  stroke-width: 1.5;
+}
+
+.q-duck-beak {
+  fill: var(--q-orange);
+  stroke: var(--q-ink);
+  stroke-width: 1;
+}
+
+.q-duck-eye {
+  fill: var(--q-ink);
+}
+
+.q-duck-wing {
+  fill: none;
+  stroke: var(--q-ink);
+  stroke-width: 1.5;
+}
+
+@keyframes q-duck-bob {
+  from {
+    transform: translateX(-50%) translateY(0) rotate(-2deg);
+  }
+
+  to {
+    transform: translateX(-50%) translateY(-3px) rotate(3deg);
+  }
+}
+
+/* Indeterminate: no fill; the duck swims end to end (left) while bobbing (transform) */
+.q-duckprogress--indeterminate .q-duckprogress-fill {
+  display: none;
+}
+
+.q-duckprogress--indeterminate .q-duckprogress-duck {
+  animation:
+    q-duck-swim 2.4s linear infinite,
+    q-duck-bob 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes q-duck-swim {
+  from {
+    left: -5%;
+  }
+
+  to {
+    left: 105%;
+  }
+}
+
+.q-duckprogress-label {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.875rem;
+  color: var(--q-gray-700);
+}
+
+.q-duckprogress-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reduced motion: plain bar — duck hidden, no transitions; indeterminate shows
+   a full-width muted bar instead of the swim animation */
+@media (prefers-reduced-motion: reduce) {
+  .q-duckprogress-duck {
+    display: none;
+  }
+
+  .q-duckprogress-track {
+    margin-top: 0;
+  }
+
+  .q-duckprogress-fill {
+    transition: none;
+  }
+
+  .q-duckprogress--indeterminate .q-duckprogress-fill {
+    display: block;
+    width: 100%;
+    opacity: 0.35;
+  }
+}

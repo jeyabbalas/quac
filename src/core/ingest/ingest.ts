@@ -126,8 +126,10 @@ async function buildRawTable(
 }
 
 /**
- * quac_typed = plain copy of quac_raw. P09 replaces exactly this function
- * with the schema-driven TRY_CAST ladder (json-schema-subsystem.md §C).
+ * quac_typed = plain copy of quac_raw — the no-schema path (architecture §4:
+ * "copy of raw when no schema"). When a schema is loaded, the validation run
+ * replaces quac_typed with the schema-driven TRY_CAST ladder
+ * (core/schema/casting.ts, json-schema-subsystem.md §C).
  */
 export async function buildTypedTable(bridge: WorkerBridge): Promise<void> {
   await ctas(bridge, QUAC_TYPED, `SELECT * FROM ${quoteIdentifier(QUAC_RAW)}`);

@@ -56,7 +56,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · ff9551c | P06 | Schema loading & root detection | P02, P04 |
 | [x] 2026-07-23 · 95993f0 | P07 | Column digests & pertinence | P06 |
 | [x] 2026-07-23 · fb7d11b | P08 | FlagStore & schema translator | P07 |
-| [ ] | P09 | Schema validation engine | P05, P08 |
+| [x] 2026-07-23 · 445b63b | P09 | Schema validation engine | P05, P08 |
 | [x] 2026-07-23 · 83bed21 | P10 | Rules model, CSV parse/serialize, static lint, assertion DSL | P02 (P01 for harness) |
 | [ ] | P11 | Rules engine: validations | P08, P10 (node-only; P03 for browser wiring) |
 | [ ] | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
@@ -72,6 +72,14 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-23 · P09 · Schema engine shipped (branch p09-schema-engine, sibling worktree — P11 in flight): core/schema/{ajv-engine,casting,
+row-shaping,worker-protocol,validation.worker,validation-run}.ts + app/devHooks console hook (P14 deletes) + ajv-formats dep. MAJOR
+deviation **V19**: DuckDB TRY_CAST ROUNDS decimal strings to BIGINT ('42.5'→43) — §C.1 ladder replaced with an integrality-gated CASE,
+pinned on node-api AND wasm. Abort = batch boundaries (arch §6; §F "between rows" → notes); extras keep native types; case-mismatch
+excluded from unexpected. Mini browser deep-equal green vs the immutable 9-flag fixture; HESP dirty 101×266 end-to-end: every seeded
+schema:* id at its row (cond:12/14 indices align). Perf: 100k×4 mini 268 ms wall / 107 ms worker (~935k rows/s); HESP-width pipeline
+509 ms. Unit 335 + browser 34 + e2e 29 green; entry 19.9 KB gz; fixtures untouched. P09 side of P14 unblocked.
 
 2026-07-23 · P08 · Flag layer + translator shipped on main: core/flags/{flagStore,messages}.ts + core/schema/{rule-ids,translator}.ts
 + recorded-Ajv fixtures (scripts/record-ajv-errors.mjs → synthetic/ajv-errors/, standalone, NOT in fixtures:check). §D.7 goldens pinned

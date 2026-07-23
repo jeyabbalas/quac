@@ -92,6 +92,7 @@ async function runIngest(
       byteSize: source.size,
       rowCount: result.rowCount,
       columnCount: result.columnCount,
+      columns: result.columns,
       renames: result.renames,
       parseWarnings: result.parseWarnings,
       source,

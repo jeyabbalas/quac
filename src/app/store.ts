@@ -85,6 +85,8 @@ export interface DatasetSession {
   byteSize: number;
   rowCount: number;
   columnCount: number;
+  /** Final (sanitized) column names, `__row__` excluded, in file order. */
+  columns: readonly string[];
   renames: readonly { from: string; to: string; reason: string }[];
   parseWarnings: readonly string[];
   /** Original source bytes, kept for the session (reruns / schema change). */

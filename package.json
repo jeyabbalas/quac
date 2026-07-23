@@ -11,6 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "fixtures": "node -e \"console.log('fixtures: no-op stub until P02 adds scripts/generate-fixtures.mjs')\"",
     "fixtures:check": "node -e \"console.log('fixtures:check: no-op stub until P02')\""

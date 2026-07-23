@@ -786,3 +786,34 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
     }
   });
 });
+
+// ---- P14: executableRuleFile — what the RUN sees (engine-spec §7) ----------
+describe('executableRuleFile', () => {
+  const csv =
+    FULL_HEADER +
+    'G1,validate,row,a,a > 1,,,error,Good.,true\n' +
+    'B1,validate,row,a,,,,error,No condition.,true\n' + // missing-field error row
+    'D1,validate,row,a,a > 2,,,error,Disabled.,false\n';
+
+  it('drops error-severity rows, keeps clean + disabled rules', async () => {
+    const { executableRuleFile } = await import('../../../src/core/rules/lint');
+    const parsed = parse(csv);
+    const result = lintOne(csv);
+    const file = executableRuleFile(parsed, result);
+    expect(file?.rules.map((r) => r.ruleId)).toEqual(['G1', 'D1']);
+  });
+
+  it('file-level structural error excludes the whole file (null)', async () => {
+    const { executableRuleFile } = await import('../../../src/core/rules/lint');
+    const text = 'rule_id,rule_type,rule_scope,target_variables,comment\nR1,validate,row,a,c\n';
+    const file = executableRuleFile(parse(text), lintOne(text));
+    expect(file).toBeNull();
+  });
+
+  it('clean file passes through unchanged (same reference)', async () => {
+    const { executableRuleFile } = await import('../../../src/core/rules/lint');
+    const text = `${HEADER}R1,validate,row,a,a > 1,c\n`;
+    const parsed = parse(text);
+    expect(executableRuleFile(parsed, lintOne(text))).toBe(parsed.file);
+  });
+});

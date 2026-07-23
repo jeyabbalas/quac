@@ -34,7 +34,14 @@ import {
   violCountSQL,
   violFetchSQL,
 } from './sql';
-import type { JSSandbox, QCRule, RuleFileLintResult, RuleLintIssue, SQLRunner } from './types';
+import type {
+  JSSandbox,
+  QCRule,
+  RuleFile,
+  RuleFileLintResult,
+  RuleLintIssue,
+  SQLRunner,
+} from './types';
 import { computePertinence } from '../pertinence';
 
 export type { LintCode, RuleFileLintResult, RuleLintIssue } from './types';
@@ -313,6 +320,28 @@ function finalizeResult(
  */
 export function lintRuleFiles(files: ParsedRuleFile[]): RuleFileLintResult[] {
   return collectStaticIssues(files).map(({ parsed, issues }) => finalizeResult(parsed, issues));
+}
+
+/**
+ * The file as the RUN sees it (engine-spec §7 partial acceptance, wired by
+ * P14's run controller): rules whose CSV row carries an error-severity lint
+ * issue are excluded — they surface in the loader panel, never in run stats.
+ * A file-level structural error (no rowNumber) excludes the whole file
+ * (null). Disabled / external / inapplicable rules are KEPT: the engine owns
+ * their skipped-* stats, which the Dataset-findings panel lists.
+ */
+export function executableRuleFile(
+  parsed: ParsedRuleFile,
+  result: RuleFileLintResult,
+): RuleFile | null {
+  if (result.issues.some((i) => i.severity === 'error' && i.rowNumber === undefined)) return null;
+  const errorRows = new Set(
+    result.issues
+      .filter((i) => i.severity === 'error' && i.rowNumber !== undefined)
+      .map((i) => i.rowNumber),
+  );
+  if (errorRows.size === 0) return parsed.file;
+  return { ...parsed.file, rules: parsed.file.rules.filter((r) => !errorRows.has(r.rowNumber)) };
 }
 
 // ---- stages 4–6: dataset-dependent lint (P12) ------------------------------

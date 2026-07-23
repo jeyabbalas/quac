@@ -154,7 +154,8 @@ test('URL fetch loads a dataset into the slot', async ({ page }) => {
 
   await page.goto('/quac/');
   await page.getByLabel('Dataset URL').fill('http://localhost:4173/testdata/people.csv');
-  await page.getByRole('button', { name: 'Fetch' }).click();
+  // Scoped: the JSON Schema card (P06) owns a second "Fetch" button.
+  await datasetCard(page).getByRole('button', { name: 'Fetch' }).click();
 
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await expect(datasetSummary(page)).toHaveText('people.csv · 12 rows × 5 cols');

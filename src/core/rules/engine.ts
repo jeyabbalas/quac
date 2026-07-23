@@ -20,6 +20,7 @@
 // - Broken rules are all-or-nothing: the rule's buffered flags are discarded
 //   and one dataset-scope error flag `Rule failed to execute: …` is emitted;
 //   the run continues (§5).
+import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { parseAssertion, expandAssertion } from './assertions';
 import { datasetCountSQL, datasetFetchSQL, violCountSQL, violFetchSQL } from './sql';
 import type { EngineOptions, QCRule, RuleFile, RuleRunStat, RunResult, SQLRunner } from './types';
@@ -30,6 +31,20 @@ export const ROW_CAP_PER_RULE_DEFAULT = 10_000;
 export const DATASET_ROW_CAP_DEFAULT = 200;
 /** Mirrors FLAG_CAP_DEFAULT in flags/flagStore.ts (architecture.md §5). */
 export const GLOBAL_FLAG_CAP_DEFAULT = 200_000;
+
+/**
+ * Browser SQLRunner over the real bridge (phase task 5; exercised in P12).
+ * Validations never mutate, so clearCache stays unused here — P12's runQC
+ * calls it after every work-table swap (Verified facts V2).
+ */
+export function createBridgeRunner(bridge: WorkerBridge): SQLRunner & { clearCache: () => void } {
+  return {
+    query: <T = Record<string, unknown>>(sql: string): Promise<T[]> => bridge.query<T>(sql),
+    clearCache: (): void => {
+      bridge.clearQueryCache();
+    },
+  };
+}
 
 // ---- flag sink (engine-internal; the store lives in flags/flagStore.ts) ----
 

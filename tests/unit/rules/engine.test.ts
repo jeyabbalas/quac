@@ -5,8 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { WorkerBridge } from '@jeyabbalas/data-table';
 import type { QCFlag } from '../../../src/core/flags/flag';
-import { runValidations } from '../../../src/core/rules/engine';
+import { createBridgeRunner, runValidations } from '../../../src/core/rules/engine';
 import { parseRuleFile } from '../../../src/core/rules/parse';
 import type { QCRule, RuleFile } from '../../../src/core/rules/types';
 import { openDuckDb, openQcFixture, type QcFixtureDb } from './support';
@@ -451,5 +452,27 @@ describe('runValidations on scratch tables', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('createBridgeRunner', () => {
+  it('forwards query to bridge.query and clearCache to bridge.clearQueryCache', async () => {
+    const calls: string[] = [];
+    let cleared = 0;
+    const stub = {
+      query: <T>(sql: string): Promise<T[]> => {
+        calls.push(sql);
+        return Promise.resolve([{ ok: 1 }] as T[]);
+      },
+      clearQueryCache: (): void => {
+        cleared += 1;
+      },
+    } as unknown as WorkerBridge;
+
+    const runner = createBridgeRunner(stub);
+    await expect(runner.query('SELECT 1')).resolves.toEqual([{ ok: 1 }]);
+    expect(calls).toEqual(['SELECT 1']);
+    runner.clearCache();
+    expect(cleared).toBe(1);
   });
 });

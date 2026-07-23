@@ -5,8 +5,23 @@
  * orchestrator (`buildSchemaSet`) lives here too once ref-graph and root
  * detection land.
  */
-import { dupIdMessage, loadError, parseMessage } from './messages';
-import type { IntakeEntry, SchemaDraft, SchemaFile, SchemaLoadError, SchemaSet } from './types';
+import {
+  dupIdMessage,
+  loadError,
+  mixedDraftMessage,
+  nonSchemaIgnoredMessage,
+  parseMessage,
+} from './messages';
+import { resolveRefGraph } from './ref-graph';
+import { applyRootSelection, detectRoot, resolveIndexParam } from './root-detection';
+import type {
+  FetchJson,
+  IntakeEntry,
+  SchemaDraft,
+  SchemaFile,
+  SchemaLoadError,
+  SchemaSet,
+} from './types';
 
 /** §A.2.3 — one own key from this set ⇒ the JSON object is a schema. */
 const SCHEMA_MARKER_KEYS = [
@@ -252,4 +267,131 @@ export function intakeFiles(
   };
   for (const entry of sorted) intakeEntry(entry, origin, acc);
   return acc;
+}
+
+/** Longest common directory of URL pathnames (URL sets: display paths). */
+function commonDir(pathnames: readonly string[]): string {
+  const segmentLists = pathnames.map((p) =>
+    p
+      .slice(0, p.lastIndexOf('/') + 1)
+      .split('/')
+      .filter(Boolean),
+  );
+  const first = segmentLists[0] ?? [];
+  const common: string[] = [];
+  for (const [i, segment] of first.entries()) {
+    if (segmentLists.every((list) => list[i] === segment)) common.push(segment);
+    else break;
+  }
+  return common.length > 0 ? `/${common.join('/')}/` : '/';
+}
+
+/** §A.1 — URL sets: relativePath = path relative to the inferred common base, else full URL. */
+function relativizeUrlPaths(files: SchemaFile[]): void {
+  if (files.length === 0) return;
+  let parsed: URL[];
+  try {
+    parsed = files.map((f) => new URL(f.fileId));
+  } catch {
+    return;
+  }
+  const first = parsed[0];
+  if (first === undefined || !parsed.every((u) => u.origin === first.origin)) return;
+  const base = commonDir(parsed.map((u) => u.pathname));
+  files.forEach((file, i) => {
+    const url = parsed[i];
+    if (url === undefined) return;
+    const relative = url.pathname.slice(base.length);
+    file.relativePath = relative === '' ? file.fileId : relative;
+  });
+}
+
+export interface BuildOptions {
+  origin: 'upload' | 'url';
+  /** Required for URL sets — injected so node tests stub the network. */
+  fetchJson?: FetchJson;
+  /** §A.4 `index=` value (P16 passes it); a match always suppresses the modal. */
+  indexParam?: string;
+  caps?: { maxFiles?: number; maxDepth?: number };
+}
+
+/**
+ * The §A.2–§A.4 pipeline: intake → ref graph (+ crawl) → classification
+ * promotion → manifest hints → root detection → `index=` / auto selection →
+ * draft-mix check. Every stage appends errors and continues — fatal findings
+ * block validation, never schema browsing.
+ */
+export async function buildSchemaSet(
+  entries: readonly IntakeEntry[],
+  options: BuildOptions,
+): Promise<SchemaSet> {
+  const acc = intakeFiles(entries, options.origin);
+  const graph = await resolveRefGraph({
+    intake: acc,
+    origin: options.origin,
+    ...(options.fetchJson
+      ? {
+          fetchJson: options.fetchJson,
+          intakeFetched: (entry: IntakeEntry) => intakeEntry(entry, 'url', acc),
+        }
+      : {}),
+    ...(options.caps ? { caps: options.caps } : {}),
+  });
+  if (options.origin === 'url') relativizeUrlPaths(acc.files);
+
+  const schemas = acc.files.filter((f) => graph.schemaIds.has(f.fileId));
+  const manifestHints = extractManifestHints(acc.files);
+
+  const ignored = [...acc.ignored];
+  const notices: SchemaLoadError[] = [];
+  for (const file of acc.files) {
+    if (file.classification === 'invalid-json') {
+      ignored.push({ fileId: file.fileId, reason: 'not-json' });
+    } else if (file.classification === 'non-schema' && !graph.schemaIds.has(file.fileId)) {
+      ignored.push({ fileId: file.fileId, reason: 'non-schema' });
+      notices.push(
+        loadError('I_NON_SCHEMA_IGNORED', nonSchemaIgnoredMessage(file.relativePath), {
+          fileId: file.fileId,
+        }),
+      );
+    }
+  }
+
+  const detect = detectRoot({ files: acc.files, schemaIds: graph.schemaIds, manifestHints });
+
+  let set: SchemaSet = {
+    setId: await computeSetId(acc.files.map((f) => ({ relativePath: f.relativePath, raw: f.raw }))),
+    origin: options.origin,
+    files: acc.files,
+    schemas,
+    ignored,
+    idIndex: acc.idIndex,
+    pathIndex: acc.pathIndex,
+    root: detect.root,
+    errors: [...acc.errors, ...graph.errors, ...notices, ...detect.errors],
+    manifestHints,
+  };
+
+  if (options.indexParam !== undefined) {
+    const match = resolveIndexParam(set, options.indexParam);
+    if (match.fileId !== null) {
+      if (match.warning !== undefined) set.errors.push(match.warning);
+      set = applyRootSelection(set, match.fileId);
+    } else {
+      set.errors.push(match.warning);
+      if (detect.root.rootFileId !== undefined) {
+        set = applyRootSelection(set, detect.root.rootFileId);
+      }
+    }
+  } else if (detect.root.rootFileId !== undefined) {
+    set = applyRootSelection(set, detect.root.rootFileId);
+  }
+
+  const drafts = [...new Set(schemas.map((f) => f.draft).filter((d) => d !== 'unknown'))];
+  if (drafts.length > 1) {
+    const rootDraft = set.files.find((f) => f.fileId === set.root.rootFileId)?.draft ?? 'unknown';
+    set.errors.push(loadError('E_MIXED_DRAFT', mixedDraftMessage(drafts, rootDraft)));
+  }
+
+  return set;
 }

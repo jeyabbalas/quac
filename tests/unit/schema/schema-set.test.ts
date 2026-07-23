@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSchemaSet,
   classifyJson,
   computeSetId,
   extractManifestHints,
@@ -198,6 +199,51 @@ describe('quacSetUri', () => {
   it('resolves relative refs against a quac-set base like a real URL', () => {
     const resolved = new URL('../../common/defs.json', 'quac-set:/core/categories/income.json');
     expect(resolved.href).toBe('quac-set:/common/defs.json');
+  });
+});
+
+describe('buildSchemaSet', () => {
+  it('warns E_MIXED_DRAFT with the index file draft (mini + draft7)', async () => {
+    const set = await buildSchemaSet(
+      [
+        ...entriesFromDir(fixtureDir('synthetic', 'mini')).filter((e) =>
+          e.relativePath.endsWith('.schema.json'),
+        ),
+        ...entriesFromDir(fixtureDir('synthetic', 'draft7')),
+      ],
+      { origin: 'upload', indexParam: 'mini.schema.json' },
+    );
+    const warning = set.errors.find((e) => e.code === 'E_MIXED_DRAFT');
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.message).toBe(
+      "Files use different JSON Schema drafts (2020-12, draft-07); QuaC validates using the index file's draft (2020-12).",
+    );
+  });
+
+  it('emits an info notice for ignored non-schema JSON (mixed/)', async () => {
+    const set = await buildSchemaSet(entriesFromDir(fixtureDir('synthetic', 'mixed')), {
+      origin: 'upload',
+    });
+    expect(set.root.rootFileId).toBe('mini.schema.json');
+    expect(set.ignored).toEqual(
+      expect.arrayContaining([
+        { fileId: 'manifest.json', reason: 'non-schema' },
+        { fileId: 'notes.txt', reason: 'unsupported-extension' },
+      ]),
+    );
+    expect(set.errors.find((e) => e.code === 'I_NON_SCHEMA_IGNORED')?.message).toBe(
+      '`manifest.json` doesn\'t look like a JSON Schema and was ignored.',
+    );
+  });
+
+  it('marks invalid JSON files as ignored not-json alongside E_PARSE', async () => {
+    const set = await buildSchemaSet(
+      [entry('good.json', { type: 'array', items: {} }), entry('broken.json', '{ nope')],
+      { origin: 'upload' },
+    );
+    expect(set.ignored).toEqual(expect.arrayContaining([{ fileId: 'broken.json', reason: 'not-json' }]));
+    expect(set.errors.map((e) => e.code)).toContain('E_PARSE');
+    expect(set.root.rootFileId).toBe('good.json');
   });
 });
 

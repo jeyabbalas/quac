@@ -1,0 +1,52 @@
+/* PertinenceStrip (ui-design.md §4 Load wireframe): one-line verdict under
+   the slot cards. Scoped q-pertinence prefix, same pattern as q-schemaslot. */
+
+.q-pertinence {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 2px solid var(--q-ink);
+  border-radius: 10px;
+  background: var(--q-paper);
+  font-size: 0.875rem;
+}
+
+.q-pertinence--warn {
+  background: var(--q-warning-fill);
+}
+
+.q-pertinence--block {
+  background: var(--q-error-fill);
+}
+
+.q-pertinence-text {
+  margin: 0;
+  color: var(--q-gray-800);
+}
+
+.q-pertinence-note {
+  margin: 0;
+  color: var(--q-gray-700);
+  font-size: 0.8125rem;
+}
+
+.q-pertinence-continue {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 2px solid var(--q-ink);
+  border-radius: 8px;
+  background: var(--q-paper);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.q-pertinence-continue:hover {
+  background: var(--q-gray-100);
+}
+
+.q-pertinence-missing {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}

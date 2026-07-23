@@ -8,6 +8,7 @@ import { effect } from '../../../app/signals';
 import { createSlotCard } from '../../components/slotCard';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { mountDatasetCard } from './datasetCard';
+import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import type { ShellContext } from '../../../app/shell';
 
@@ -30,6 +31,10 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   mountSchemaSlotCard(schemaHost);
   mountPlaceholderCard(rulesHost, 'QC Rules', 'Rules loading arrives in a later phase.');
 
+  // Pertinence verdict sits between the slot cards and the preview (§E.5).
+  const pertinenceHost = document.createElement('div');
+  mountPertinenceStrip(pertinenceHost, ctx);
+
   const preview = document.createElement('section');
   preview.className = 'q-preview';
   preview.hidden = true;
@@ -38,7 +43,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const previewHost = document.createElement('div');
   preview.append(previewTitle, previewHost);
 
-  container.append(hint, grid, preview);
+  container.append(hint, grid, pertinenceHost, preview);
 
   // Preview refresh: engine access stays behind a dynamic import so the
   // entry chunk never pulls bridge/data-table code (bundle gate).

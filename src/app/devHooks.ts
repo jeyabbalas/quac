@@ -1,13 +1,15 @@
 /**
- * Headless dev hook (phase-09 task 6): `window.__quacDev.runSchemaValidation()`
- * runs the schema engine end-to-end against the currently loaded dataset +
- * schema and dumps the summary to the console — the real Run button and
- * annotations display arrive in P14, which deletes this hook.
+ * Headless dev hooks: `window.__quacDev.runSchemaValidation()` (phase-09
+ * task 6) runs the schema engine end-to-end; `window.__quacDev.runRules()`
+ * (P12 task 4) hardens the bridge then runs the rules engine — corrections +
+ * validations — against the loaded dataset + rules. The real Run button and
+ * annotations display arrive in P14, which deletes both hooks; until then
+ * runRules is the app-code call site for "hardenBridge() at run start".
  *
  * Everything heavy is lazy-imported at call time, so the entry chunk gains
  * only this installer. After a run, `quac_typed` holds the schema-cast
- * table; `quac_work` and the `data` view intentionally keep the plain
- * ingest copy until P14's prepare stage re-CTASes them.
+ * table; `quac_work` and the `data` view hold the rules run's output (rebuilt
+ * from `quac_typed` at every runRules call).
  */
 import type { AppStore } from './store';
 
@@ -49,5 +51,49 @@ export function installDevHooks(store: AppStore): void {
     console.log('[quac:schema] flag store', flagStore.summary(summary.rowsTotal));
     return { summary, flagStore };
   };
-  (window as unknown as Record<string, unknown>).__quacDev = { runSchemaValidation };
+
+  const runRules = async (applyCorrections = true): Promise<unknown> => {
+    const dataset = store.dataset.get();
+    if (!dataset) throw new Error('QuaC dev: load a dataset first');
+    const [rulesStore, engine, hardenModule, bridgeModule] = await Promise.all([
+      import('../core/rules/rules-store'),
+      import('../core/rules/engine'),
+      import('../core/bridge/harden'),
+      import('../core/bridge/bridge'),
+    ]);
+    const rules = rulesStore.rulesState.get();
+    if (rules.files.length === 0) throw new Error('QuaC dev: load a rules file first');
+
+    // Run start (phase-12 task 4): harden BEFORE any rule SQL, then runQC.
+    const bridge = await bridgeModule.getBridge();
+    await hardenModule.hardenBridge(bridge);
+    const result = await engine.runQC(
+      engine.createBridgeRunner(bridge),
+      rules.files.map((f) => f.file),
+      {
+        applyCorrections,
+        onProgress: (p) => {
+          console.log(
+            `[quac:rules] ${p.phase} ${String(p.index + 1)}/${String(p.total)} ${p.ruleId}`,
+          );
+        },
+      },
+    );
+    console.table(
+      result.perRule.map((s) => ({
+        rule: s.ruleId,
+        status: s.status,
+        violations: s.violationCount,
+        changed: s.changedCells ?? 0,
+        flags: s.flagsEmitted,
+      })),
+    );
+    console.log(
+      `[quac:rules] ${String(result.flags.length)} flags · ` +
+        `${String(result.correctedCells)} corrected cells`,
+    );
+    return result;
+  };
+
+  (window as unknown as Record<string, unknown>).__quacDev = { runSchemaValidation, runRules };
 }

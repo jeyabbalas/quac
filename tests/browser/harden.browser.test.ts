@@ -85,3 +85,73 @@ test('V6: the annotate sequence works post-harden (COPY export → loadData byte
 test('V6: hardenBridge() is idempotent across runs', async () => {
   await expect(hardenBridge(b())).resolves.toBeUndefined();
 });
+
+// ---- P12 extension: rules execute AGAINST the hardened bridge -------------
+// (Appended after the V6 pins — they share this bridge and its seeded tables;
+// runQC only creates quac_work + the data view, never touching quac_typed or
+// the pre/post_harden tables. The full corrections-parity manifest lives in
+// rulesExec.browser.test.ts on its own bridge.)
+
+test('P12: a rule reaching for https breaks locally; corrections still mutate hardened', async () => {
+  const { createBridgeRunner, runQC } = await import('../../src/core/rules/engine');
+  const base = {
+    ruleScope: 'row' as const,
+    targetVariables: ['val'],
+    updateLanguage: 'sql' as const,
+    severity: 'info' as const,
+    comment: 'Hardened-run probe.',
+    enabled: true,
+    sourceFile: 'inline.quac.csv',
+    extras: {},
+  };
+  const files = [
+    {
+      name: 'inline.quac.csv',
+      group: 'inline',
+      extraColumns: [],
+      rules: [
+        {
+          ...base,
+          ruleId: 'X_LEAK',
+          ruleType: 'validate' as const,
+          ruleScope: 'dataset' as const,
+          targetVariables: [],
+          condition: "SELECT * FROM read_csv('https://example.invalid/leak.csv')",
+          updateExpression: '',
+          severity: 'error' as const,
+          rowNumber: 1,
+        },
+        {
+          ...base,
+          ruleId: 'X_FIX',
+          ruleType: 'correct' as const,
+          condition: "val = 'keep'",
+          updateExpression: "'kept'",
+          rowNumber: 2,
+        },
+      ],
+    },
+  ];
+
+  const { flags, perRule, correctedCells } = await runQC(createBridgeRunner(b()), files);
+
+  // The https read died INSIDE the worker (no network-layer error), the rule
+  // is broken, and the run continued.
+  const leak = perRule.find((s) => s.ruleId === 'X_LEAK');
+  expect(leak?.status).toBe('broken');
+  expect(leak?.error).not.toMatch(/XMLHttpRequest|NetworkError/);
+  const leakFlag = flags.find((f) => f.ruleId === 'X_LEAK');
+  expect(leakFlag?.message).toMatch(/^Rule failed to execute: /);
+
+  // The correction path works fully hardened: capture + CTAS swap + flags.
+  expect(perRule.find((s) => s.ruleId === 'X_FIX')).toMatchObject({
+    status: 'ok',
+    changedCells: 1,
+  });
+  expect(correctedCells).toBe(1);
+  expect(flags.find((f) => f.ruleId === 'X_FIX')?.correction).toEqual({
+    before: 'keep',
+    after: 'kept',
+  });
+  expect(await b().query('SELECT val FROM quac_work')).toEqual([{ val: 'kept' }]);
+});

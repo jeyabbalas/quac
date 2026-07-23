@@ -224,6 +224,24 @@ export function violFetchSQL(condition: string, targets: string[], rowCap: numbe
   );
 }
 
+/**
+ * Dataset-scope fetch: the user's full SELECT with the engine cap appended
+ * (engine §3 `stripTrailingSemicolon(rule.condition) + " LIMIT {cap+1}"`).
+ * A rule carrying its own top-level LIMIT yields a parser error → broken rule.
+ */
+export function datasetFetchSQL(condition: string, rowCap: number): string {
+  return `${stripTrailingSemicolon(condition)} LIMIT ${String(rowCap)}`;
+}
+
+/**
+ * Exact result-row count for a dataset rule (needed for the "…and N more
+ * result rows" truncation flag; engine §5). Newlines guard the closing paren
+ * against a trailing line comment in the user's SELECT.
+ */
+export function datasetCountSQL(condition: string): string {
+  return `SELECT COUNT(*) FROM (\n${stripTrailingSemicolon(condition)}\n)`;
+}
+
 export function correctionCountSQL(condition: string, expression: string, target: string): string {
   const t = quoteIdentifier(target);
   return (

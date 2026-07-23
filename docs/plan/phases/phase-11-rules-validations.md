@@ -31,4 +31,38 @@ Corrections (P12), JS rules (P13), UI.
 - **UI/UX:** n/a (engine phase).
 
 ## Deferred notes
-*(agent fills in)*
+
+Shipped 2026-07-23 on branch `p11-rules-validations` (engine.ts header documents the same contracts).
+Spec-silent decisions made here:
+
+- **violationCount semantics**: row/longitudinal = violating ROWS (exact `COUNT(*)`); column asserts = SUM of
+  per-target counts (violating cells); `count_distinct_in_range` = number of violating targets; dataset =
+  returned-row count (exact — `datasetCountSQL` runs only when the cap+1 fetch overflows); broken/skips = 0.
+- **onProgress contract**: fires BEFORE each enabled validate rule (inapplicable skips included — they are loop
+  work; disabled/external excluded), `index` 0-based, `total` = enabled validate count, `phase` always
+  `'validate'`. Pinned in engine.test.ts — P14 renders `(index+1)/total`.
+- **flagsEmitted** counts everything the rule delivered (cells + truncation/cap summaries + the broken flag);
+  `truncated` = any detail flags withheld (row-cap, dataset-cap, or global-cap suppression).
+- **Global cap**: summary + broken flags BYPASS the cap (§5 — they ARE the past-cap mechanism; bounded by
+  O(rules×targets)); count-only summary wording: `…and {N} more flags from this rule suppressed (global flag
+  cap reached)`.
+- **Broken rules are all-or-nothing**: the rule's buffered flags are discarded (cap slots refunded) and only the
+  dataset-scope `Rule failed to execute: …` error flag is emitted; mid-rule failures (e.g. target 2 of a
+  multi-target assert) therefore never leave partial flags.
+- **Stats ordering**: ONE file-order pass with validate+external interleaved (deviation from §3 pseudocode's
+  externals-appended-last; same stat set, deterministic file order for the report). `external` →
+  `skipped-external` even when disabled (§3 has no enabled filter). `correct` rules get NO stat from
+  `runValidations` — P12's corrections phase owns them (avoids double-stat when runQC composes both).
+- **Message wordings pinned in tests**: `${comment} Found {n} distinct values.` (count_distinct violation);
+  dataset rows `${comment} — col=val; col=val` in SELECT column order (values render like
+  formatCorrectionValue: strings quoted, null → `null`, numbers bare); blank-comment fallback
+  `Rule condition matched.`; thousands separators via `toLocaleString('en-US')`.
+- **Known edge**: a dataset rule carrying its own top-level `LIMIT` parser-errors under the appended cap →
+  broken rule; P12's lint SQL dry-run (stage 4) EXPLAINs the same wrapped statement and surfaces it pre-run.
+- **For P12**: the browser bridge may deliver bigint values — the engine already coerces counts/`__row__` via
+  `Number()` engine-side, so `createBridgeRunner` stays a pure passthrough; runQC must call its `clearCache()`
+  after every work-table swap. `EngineOptions.workTable/applyCorrections/jsSandbox` are accepted but unused
+  here (validations only read view `data`).
+- **DATE caution** (P10 helper knock-on): `@duckdb/node-api` `getRowObjects()` returns DuckDBDateValue objects
+  for real DATE columns; `qc_fixture` keeps `interview_date` VARCHAR so the shared adapter only normalizes
+  bigint. If P12+ tests add DATE columns, extend `openDuckDb`'s normalization.

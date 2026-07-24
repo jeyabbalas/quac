@@ -65,13 +65,31 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-24 · 46b3b3a | P15 | Excel QC report export | P14 |
 | [x] 2026-07-24 · bbd3a25 | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
 | [x] 2026-07-24 · 47179c2 | P17 | Rule Studio: workspace & editor | P12, P05 |
-| [ ] | P18 | Rule Studio: preview, gate, export | P17 |
+| [x] 2026-07-24 · ce4e15b | P18 | Rule Studio: preview, gate, export | P17 |
 | [ ] | P19 | Branding polish & accessibility | P14, P16, P18 |
 | [ ] | P20 | Hardening, perf, docs, release | all |
 
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-24 · P18 · Rule Studio preview/gate/export shipped on main (6 commits): rules become live-testable, saving is gated,
+files round-trip. ruleTest.ts = pure dispatch mirroring engine interpret+applicableTargets over the EXACT sql.ts wrappers with
+PREVIEW_ROW_CAP 20 (counts exact on full `data`; sql corrections pure SELECT count/capture — no CTAS; js sandboxed on the ≤20
+sample only, exact match count from SQL, all-sampled-errored fails; dataset cap+1 idiom; external/missing targets →
+not-testable) — node-tested on qc_fixture incl. the phase file's −2500→2500 capture (fixture-reality deviation: the e2e asserts
+the example dataset's own seeded −1200; −2500 never existed there — recorded in phase notes). previewPane.ts docks a second
+data-table (quac_studio_display over STUDIO_SAMPLE_SQL, 10k sample, __rowid__==__row__ V7) beside the grid (3-col ≥1280px)
+with reportGrid's queue/generation/loadData discipline + RuleTestPanel (per-kind result lines, renderPreviewTable bodies,
+assert expansions in details/code, "Filter preview to matches" gated on validateSQLFilter — the window-free detector).
+Gate: submit iff rule_id valid ∧ last completed lint zero errors (lastLintOk, superseding P17's lint-never-blocks) ∧
+tested-since-last-edit; lint-only (no ctx/external/inapplicable) drops the test leg — data-shaped skips save as "Save
+untested"; any edit/drawer/file-switch resets; tests suspended during runs. Export: "Download rules CSV" in the grid header
+(deviation from the wireframe's drawer row) via shared triggerDownload + exportFileName; dirty * survives download, clears on
+same-name re-import. Import-back seeds bucketStoredIssues on edit-open. Golden journey 5 e2e (studio.spec.ts): compose→Test
+"1 row"→filter narrows→gated Add→correction −1200→1200→Download (BOM)→re-import → 4 files · 24 rules, identical lint state.
+Manual pass via headed-Playwright screenshots (Chrome ext couldn't reach local servers). Unit 545 + browser 44 + e2e 41 green;
+entry 37.1 KB gz (all new UI in the lazy studio chunk). P19 unblocked.
 
 2026-07-24 · P17 · Rule Studio workspace & editor shipped on main (7 commits): lint.ts exports the (type,scope) matrix
 (typeScopeComboError/isValidTypeScope — stage 2 refactored onto them, messages byte-identical) and rules-store grows

@@ -65,7 +65,7 @@ Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM
 | `unit/report/reportModel.test.ts` | node | collision `age__review_2`, merge order, 8-flag cap, truncation, row-review column |
 | `unit/report/excelRoundtrip.test.ts` | node | write → re-read: sheet names, review text incl. corrected suffix, fills, frozen pane, widths |
 | `unit/share/{urlConfig,configManifest}.test.ts` | node | round-trip, repeated keys, precedence, >2000 detection |
-| `unit/studio/{ruleSerialize,completionSource}.test.ts` | node | lossless round-trip; completion feeds |
+| `unit/studio/{ruleSerialize,ruleTest,draftLint,completionSource}.test.ts` | node (+duckdb for ruleTest/draftLint) | lossless round-trip; live-test dispatch on qc_fixture (−2500→2500 pinned here); draft-lint bucketing; completion feeds |
 | `unit/pipeline/pipeline.test.ts` | node (mocked executors) | stage order, cancel token, rerun idempotence, invalidation |
 | `browser/bridge.browser.test.ts` | browser | V1/V2 regressions: DDL, cache invalidation |
 | `browser/roundtrip.browser.test.ts` | browser | V5/V7: COPY→bytes→loadData→`__rowid__==__row__` |

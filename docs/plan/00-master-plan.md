@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V20) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V21) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -62,7 +62,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 43e0c31 | P12 | Rules corrections (SQL), integrated lint, hardening, rules slot | P05, P11 |
 | [x] 2026-07-23 · 3cf097e | P13 | QuickJS sandbox & JS corrections | P12 |
 | [x] 2026-07-23 · 0e817b9 | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
-| [ ] | P15 | Excel QC report export | P14 |
+| [x] 2026-07-24 · 46b3b3a | P15 | Excel QC report export | P14 |
 | [ ] | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
 | [ ] | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [ ] | P18 | Rule Studio: preview, gate, export | P17 |
@@ -72,6 +72,18 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-24 · P15 · Excel QC report export shipped on main: core/report/reportModel.ts (pure five-sheet layout — `<col>__review`
+sisters + deterministic collision escalation `age__review_2`, `__row_review` col A when row flags exist, per-cell merge in
+pipeline order with 8-flag cap + 32,767-char guard, severity/corrected fills, column-header tints, EXCEL_MAX_ROWS truncation;
+moved RULE_STATUS_LABELS/schemaRuleTargets/exact-count ranking out of reportPanels so panel + workbook share one source) +
+core/report/excelWriter.ts (lazy exceljs; frozen row 1, autofilter, spec ARGB, 10–40 width clamp, bigint-safe coercion, chunked
+cancellable row source → Blob) + ui/views/report/reportExport.ts (RunInfo assembly, 10k-row paged reads clearing the SELECT
+cache, download) + version.ts/vite define. **V21**: exceljs has no browser streaming writer (WorkbookWriter is Node-fs only) →
+chunked READ + in-memory workbook + writeBuffer(); UMD API only under `.default`. HESP emits NO row-scope QCFlags (row-scope
+validate rules emit cell flags per target), so `__row_review` is absent on real runs — Q003 merges into record_id__review.
+exceljs promoted devDep→dep; 249.9 KB gz lazy chunk, entry 29.7 KB gz (bundle gate asserts no leak). Unit 461 + browser 44 +
+e2e 36 green. P16 unblocked.
 
 2026-07-23 · P14-ui · One shell rail for all three routes (user request): `#app{--q-shell-max:1600px}` unconditionally;
 `.q-main--wide` and its `#app:has()` rule are gone, as is the class toggle in shell.ts. Load/Studio previously sat at 1280px

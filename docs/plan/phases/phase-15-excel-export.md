@@ -26,4 +26,36 @@ Anything not in the workbook spec; PDF/CSV report variants.
 - **UI/UX:** Playwright `tests/e2e/download.spec.ts` — full run on the dirty fixture → click Download → capture the download event → parse bytes in-test → assert a known seeded violation's review text and fill, and Sheets 2–5 exist with expected header rows.
 
 ## Deferred notes
-*(agent fills in)*
+
+**Shipped as planned.** Pure model (`reportModel.ts`) + lazy exceljs writer (`excelWriter.ts`) + lazy orchestrator
+(`reportExport.ts`); Download button live; bundle gate extended. Unit 461 (16 model + 5 round-trip new) · browser 44 ·
+e2e 36 (download.spec new) green. Entry 29.7 KB gz; exceljs lazy chunk 249.9 KB gz, asserted out of the entry graph.
+
+Spec-silent resolutions / deviations (successors trust these):
+- **V21 — no browser streaming write.** exceljs's `stream.xlsx.WorkbookWriter` is Node-`fs`-only, so the spec's
+  "streamed in 10k-row chunks" is honoured on the READ side (paged `reportRowsSQL`, cache cleared per chunk) while
+  the workbook is assembled in memory and emitted via `writeBuffer()` → `Blob`. Fine at v1 scale; if a
+  >~500k-row export is ever needed, revisit (there is no in-browser streaming xlsx writer in this library).
+- **exceljs UMD interop.** API is reachable only under the ESM-interop `default` (`import('exceljs')` →
+  `{ default: ExcelJS }`); `mod.Workbook` is undefined. exceljs moved devDep→dep (a `src/` module imports it);
+  `optimizeDeps.include` gains it so Vite pre-bundles it once (avoids the late-discovery reload flake).
+- **`__row__` inclusion.** `reportRowsSQL` keeps `__row__` (unlike `DISPLAY_EXPORT_SQL`) — it keys the model's
+  per-row decoration lookup and is simply never emitted as a workbook column. Report data row = `__row__ + 2`.
+- **No `__row_review` on real HESP runs.** Row-scope *validate* rules emit one **cell** flag per target column
+  (engine `runRowBool`), and schema conditionals attribute to target columns (cell scope) — so a normal run
+  produces no `scope:'row'` QCFlags and the model omits `__row_review` entirely. Q003 (row rule) therefore
+  merges into `record_id__review` alongside the schema pattern flag. `__row_review` placement + escalation is
+  still exercised by a synthetic row flag in `reportModel.test.ts`.
+- **Cell-truncation marker.** The 32,767-char guard appends `"… (truncated)"` (spec says "guard", not the exact
+  marker). The 8-flag cap uses `" (+N more)"` (leading space, joined after `"; "`).
+- **Sheet 3 affected count** uses the exact per-rule counter (`violationCount` ∪ schema `countsByRuleId`) with a
+  fallback to the FlagStore dedupe count — never a truncated list. **Sheet 5 (Run Info)** is the creative-freedom
+  sheet: version (build-time `__QUAC_VERSION__`), timestamp, dataset dims, schema/rules file lists + resolved
+  root/index, stage durations, corrections, caps in effect, and truncation/cancel/cap notes.
+- **Column-header tint** for column-scope flags uses the severity fill's bg + fg (bold) so tinted headers stay
+  readable (a white-on-light-yellow header would not); review headers are italic gray on the dark header fill.
+- **App-version source.** `src/app/version.ts` reads a Vite `define` from `package.json` rather than importing the
+  JSON, so P20's version bump flows through with no code change and no JSON import in the bundle.
+
+Not done (out of scope, as planned): PDF/CSV report variants; any streaming-write path; changes to the in-app panels'
+rendered content (only the shared helpers moved to `reportModel.ts`).

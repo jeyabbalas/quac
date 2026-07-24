@@ -151,7 +151,7 @@ function renderLinkSection(model: ShareModel, shareBase: string): HTMLElement {
   input.setAttribute('aria-label', 'Shareable link');
   const copy = document.createElement('button');
   copy.type = 'button';
-  copy.className = 'q-btn q-share-copy';
+  copy.className = 'q-btn q-btn--primary q-share-copy';
   copy.textContent = 'Copy';
   copy.addEventListener('click', () => {
     input.select();

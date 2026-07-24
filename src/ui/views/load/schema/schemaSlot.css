@@ -54,11 +54,6 @@
   gap: var(--q-space-2);
 }
 
-.q-btn--small {
-  padding: 4px 12px;
-  font-size: var(--q-text-sm);
-}
-
 .q-schemaslot-url {
   display: flex;
   align-items: end;

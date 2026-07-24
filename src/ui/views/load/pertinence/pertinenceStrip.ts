@@ -119,7 +119,7 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
     actions.className = 'q-idxpick-actions';
     const continueButton = document.createElement('button');
     continueButton.type = 'button';
-    continueButton.className = 'q-btn';
+    continueButton.className = 'q-btn q-btn--primary';
     continueButton.textContent = 'Continue anyway';
     continueButton.addEventListener('click', () => {
       confirmed = true;

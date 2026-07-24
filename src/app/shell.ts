@@ -77,7 +77,7 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   actions.className = 'q-actions';
   const share = document.createElement('button');
   share.type = 'button';
-  share.className = 'q-btn';
+  share.className = 'q-btn q-btn--primary';
   share.textContent = 'Share';
   share.disabled = true; // enabled once a slot is loaded (effect below)
   share.title = 'Copy a shareable link to this configuration';

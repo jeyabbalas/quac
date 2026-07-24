@@ -81,18 +81,21 @@
   gap: var(--q-space-4);
 }
 
+/* Buttons — base is the SECONDARY look (paper + ink stroke); yellow is an
+   explicit opt-in via --primary so only true calls-to-action shout. */
 .q-btn {
   padding: 6px 16px;
   border: var(--q-stroke);
   border-radius: var(--q-radius-md);
-  background: var(--q-yellow);
+  background: var(--q-paper);
   color: var(--q-ink);
   font-weight: 600;
   cursor: pointer;
 }
 
 .q-btn:hover:not(:disabled) {
-  filter: brightness(1.05);
+  background: var(--q-gray-50);
+  box-shadow: var(--q-shadow-1);
 }
 
 /* Solid fill, not opacity — translucent yellow over the sky header reads green */
@@ -101,6 +104,32 @@
   border-color: var(--q-gray-400);
   color: var(--q-gray-500);
   cursor: not-allowed;
+}
+
+.q-btn--primary {
+  background: var(--q-yellow);
+}
+
+.q-btn--primary:hover:not(:disabled) {
+  background: var(--q-yellow);
+  filter: brightness(1.05);
+  box-shadow: none;
+}
+
+/* Ghost — borderless quiet action (inline dismiss/tertiary) */
+.q-btn--ghost {
+  border-color: transparent;
+  background: none;
+}
+
+.q-btn--ghost:hover:not(:disabled) {
+  background: var(--q-gray-100);
+  box-shadow: none;
+}
+
+.q-btn--small {
+  padding: 4px 12px;
+  font-size: var(--q-text-sm);
 }
 
 .q-gh {
@@ -271,18 +300,21 @@
   font-size: var(--q-text-xl);
 }
 
+/* Ghost-recipe close button; bespoke class kept for the × glyph metrics */
 .q-modal-close {
   border: none;
   background: none;
-  padding: 2px 8px;
+  padding: 2px var(--q-space-2);
   font-size: 1.5rem;
   line-height: 1;
   border-radius: var(--q-radius-sm);
+  color: var(--q-gray-600);
   cursor: pointer;
 }
 
 .q-modal-close:hover {
   background: var(--q-gray-100);
+  color: var(--q-ink);
 }
 
 .q-modal-body {
@@ -713,11 +745,6 @@
   margin-top: var(--q-space-3);
 }
 
-.q-btn--primary {
-  background: var(--q-yellow);
-  border-color: var(--q-ink);
-}
-
 /* Plain preview table */
 .q-preview {
   margin-top: var(--q-space-5);
@@ -1010,11 +1037,6 @@
 .q-export-progress .q-duckprogress {
   flex: 1;
   min-width: 0;
-}
-
-.q-btn--small {
-  padding: 2px 8px;
-  font-size: var(--q-text-xs);
 }
 
 /* Missing variables */

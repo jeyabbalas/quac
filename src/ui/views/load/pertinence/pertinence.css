@@ -31,19 +31,22 @@
   font-size: var(--q-text-sm);
 }
 
+/* Small-secondary button metrics (class name pinned by pertinence.spec) */
 .q-pertinence-continue {
   margin-left: auto;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border: var(--q-stroke);
   border-radius: var(--q-radius-md);
   background: var(--q-paper);
   font: inherit;
   font-size: var(--q-text-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
 .q-pertinence-continue:hover {
-  background: var(--q-gray-100);
+  background: var(--q-gray-50);
+  box-shadow: var(--q-shadow-1);
 }
 
 .q-pertinence-missing {

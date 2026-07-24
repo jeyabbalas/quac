@@ -83,7 +83,7 @@ export function openIndexPickerModal(options: IndexPickerOptions): void {
   actions.className = 'q-idxpick-actions';
   const confirm = document.createElement('button');
   confirm.type = 'button';
-  confirm.className = 'q-btn';
+  confirm.className = 'q-btn q-btn--primary';
   confirm.textContent = 'Use this file';
   confirm.addEventListener('click', () => {
     if (selected === '') return;

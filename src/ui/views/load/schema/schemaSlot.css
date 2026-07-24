@@ -11,6 +11,7 @@
   border: var(--q-stroke);
   border-radius: var(--q-radius-lg);
   background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
 }
 
 .q-schemaslot-head {
@@ -135,7 +136,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border: 1.5px solid var(--q-gray-300);
+  border: var(--q-border-input);
   border-radius: var(--q-radius-md);
   cursor: pointer;
 }

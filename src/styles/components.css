@@ -596,14 +596,16 @@
   }
 }
 
+/* Tier 1 sticker: bold ink outline = a thing you act on (ui-design.md §2) */
 .q-slotcard {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: var(--q-space-4);
-  border: var(--q-border-input);
-  border-radius: 10px;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
   background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
 }
 
 .q-slotcard-header {
@@ -756,9 +758,10 @@
   font-weight: 700;
 }
 
+/* Tier 3 data surface: quiet hairline containment, the data does the talking */
 .q-preview-scroll {
   overflow-x: auto;
-  border: var(--q-border-input);
+  border: var(--q-border-hairline);
   border-radius: var(--q-radius-md);
   max-height: 420px;
   overflow-y: auto;
@@ -878,15 +881,17 @@
   min-width: 0;
 }
 
+/* Tier 1 sticker */
 .q-run-progress {
   display: flex;
   align-items: center;
   gap: var(--q-space-3);
   padding: var(--q-space-3);
   margin-bottom: var(--q-space-2);
-  border: var(--q-border-hairline);
-  border-radius: var(--q-radius-md);
-  background: var(--q-gray-50);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
 }
 
 .q-run-progress .q-duckprogress {
@@ -918,12 +923,13 @@
   font-size: var(--q-text-md);
 }
 
-/* Panel tabs */
+/* Panel tabs — the panel column is a Tier 1 sticker */
 .q-report-panels {
-  border: var(--q-border-hairline);
-  border-radius: var(--q-radius-md);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
   background: var(--q-paper);
-  padding: var(--q-space-3);
+  padding: var(--q-space-4);
+  box-shadow: var(--q-shadow-2);
   min-width: 0;
 }
 
@@ -1023,15 +1029,17 @@
   gap: var(--q-space-2);
 }
 
-/* Excel export progress — replaces the action buttons while the workbook builds. */
+/* Excel export progress — replaces the action buttons while the workbook
+   builds. Tier 1 sticker like the run progress card. */
 .q-export-progress {
   display: flex;
   align-items: center;
   gap: var(--q-space-3);
   padding: var(--q-space-3);
-  border: var(--q-border-hairline);
-  border-radius: var(--q-radius-md);
-  background: var(--q-gray-50);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
 }
 
 .q-export-progress .q-duckprogress {

@@ -1,14 +1,16 @@
 /* PertinenceStrip (ui-design.md §4 Load wireframe): one-line verdict under
    the slot cards. Scoped q-pertinence prefix, same pattern as q-schemaslot. */
 
+/* Tier 1 sticker (radius aligned to the card language) */
 .q-pertinence {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
   border: var(--q-stroke);
-  border-radius: 10px;
+  border-radius: var(--q-radius-lg);
   background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
   font-size: var(--q-text-md);
 }
 

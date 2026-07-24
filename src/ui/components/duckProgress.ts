@@ -1,10 +1,11 @@
 /**
- * DuckProgress — a small hand-drawn duck bobbing along a wavy track.
+ * DuckProgress — the brand duck bobbing along a wavy track.
  * Determinate (`setProgress(label, 62)`) and indeterminate
  * (`setProgress(label, null)`) modes; `prefers-reduced-motion` swaps to a
  * plain bar purely in CSS. One custom property (`--q-dp-pct`) drives both the
  * fill width and the duck position, so JS never animates anything.
  */
+import { assetUrl } from '../../app/urlBase';
 
 /** The three sanctioned loading lines (ui-design §6) — their single home. */
 export const DUCK_LOADING_LINES = [
@@ -21,18 +22,20 @@ export interface DuckProgress {
   dispose: () => void;
 }
 
-// Tiny flat duck (~6 shapes). Colors come from CSS classes — SVG presentation
-// attributes cannot read var(--q-*). Never the 280 KB raster logo (ui-design §6).
-const DUCK_SVG =
-  '<svg class="q-duckprogress-duck" viewBox="0 0 36 24" aria-hidden="true">' +
-  '<ellipse class="q-duck-body" cx="13" cy="16" rx="11" ry="7"/>' +
-  '<path class="q-duck-wing" d="M7 15 q6 -5 12 0"/>' +
-  '<circle class="q-duck-head" cx="23" cy="8" r="6"/>' +
-  '<polygon class="q-duck-beak" points="28,6 34,9 28,11.5"/>' +
-  '<circle class="q-duck-eye" cx="25" cy="7" r="1.2"/>' +
-  '</svg>';
-
 const ROTATE_MS = 4000;
+
+/** The brand duck, drawn right-facing so it swims along the track (ui-design
+ *  §6: a flat SVG, never the raster logo). ~10 KB, cached after the first
+ *  progress bar mounts; the wordmark logo is a separate file. */
+function createDuck(): HTMLImageElement {
+  const duck = document.createElement('img');
+  duck.className = 'q-duckprogress-duck';
+  duck.src = assetUrl('logo/quac-duck.svg');
+  duck.alt = '';
+  duck.width = 40;
+  duck.height = 40;
+  return duck;
+}
 
 export function createDuckProgress(): DuckProgress {
   const el = document.createElement('div');
@@ -46,7 +49,9 @@ export function createDuckProgress(): DuckProgress {
   const fill = document.createElement('div');
   fill.className = 'q-duckprogress-fill';
   track.append(fill);
-  track.insertAdjacentHTML('beforeend', DUCK_SVG);
+  // The duck is a sibling of the track, not a child: the track clips its fill
+  // to the rounded channel (`overflow: hidden`) and would clip the duck too.
+  const duck = createDuck();
 
   const label = document.createElement('p');
   label.className = 'q-duckprogress-label';
@@ -57,7 +62,7 @@ export function createDuckProgress(): DuckProgress {
   meta.className = 'q-duckprogress-meta';
   label.append(pun, meta);
 
-  el.append(track, label);
+  el.append(track, duck, label);
 
   // Copy rotation is a content update, not motion — it survives reduced-motion.
   // The label is intentionally not a live region; aria-valuetext carries state.

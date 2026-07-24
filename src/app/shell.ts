@@ -47,16 +47,22 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
 
   const header = document.createElement('header');
   header.className = 'q-header';
+  // Inner rail: the banner paints full-bleed, its contents line up with the
+  // main column (same max-width) so brand/tabs share the cards' left edge.
+  const headerInner = document.createElement('div');
+  headerInner.className = 'q-header-inner';
 
   const brand = document.createElement('div');
   brand.className = 'q-brand';
   const logo = document.createElement('img');
   logo.src = assetUrl('logo/quac-logo.svg');
   logo.alt = ''; // decorative; the wordmark carries the name
-  logo.width = 40;
-  logo.height = 40;
+  // Box sizes differ so the two round marks read the same size — see .q-logo.
+  logo.width = 56;
+  logo.height = 56;
   logo.className = 'q-logo';
   const titles = document.createElement('div');
+  titles.className = 'q-brand-text';
   const title = document.createElement('h1');
   title.className = 'q-title';
   title.textContent = 'QuaC';
@@ -83,8 +89,8 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   const githubIcon = document.createElement('img');
   githubIcon.src = assetUrl('logo/github-logo.svg');
   githubIcon.alt = '';
-  githubIcon.width = 24;
-  githubIcon.height = 24;
+  githubIcon.width = 46;
+  githubIcon.height = 46;
   github.append(githubIcon);
   actions.append(share, github);
 
@@ -113,7 +119,8 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   tabs.report.append(pill.el);
   nav.append(tabs.load, tabs.report, tabs.studio);
 
-  header.append(brand, actions, nav);
+  headerInner.append(brand, actions, nav);
+  header.append(headerInner);
 
   const main = document.createElement('main');
   main.className = 'q-main';

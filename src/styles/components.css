@@ -119,6 +119,12 @@
   padding: 24px;
 }
 
+/* The report carries a wide grid (HESP is 266 columns) alongside the panel
+   column; the shell's reading width squeezes both. Applied by the router. */
+.q-main--wide {
+  max-width: 1600px;
+}
+
 .q-footer {
   padding: 8px 24px;
   font-size: 0.8125rem;
@@ -675,10 +681,29 @@
   color: var(--q-gray-400);
 }
 
-/* Report view grid host */
+/* Report view grid host.
+   data-table's `.dt-root` is `height: 100%`, and its VirtualScroller sizes the
+   window from the body scroller's `clientHeight`. With an auto-height host that
+   percentage resolves to `auto`, the scroller measures the FULL content height
+   and renders every row — 101 rows x 266 cols already froze the tab at ~51k DOM
+   nodes, and a large dataset would kill it. A definite height is therefore load-
+   bearing, not cosmetic: keep one here. */
 .q-report-grid {
   margin-top: 8px;
-  min-height: 480px;
+  height: clamp(420px, calc(100dvh - 210px), 1200px);
+}
+
+/* data-table renders a string[] tooltip item as pills sized for short values
+   (height: 1.4em). QuaC's "QC rules" entries are sentences that wrap to two or
+   three lines and spill over their neighbours — let those pills grow. Two
+   classes deep on purpose: data-table's stylesheet arrives in the lazy grid
+   chunk, i.e. after this file, so an equal-specificity rule would lose. */
+.dt-col-tooltip .dt-col-tooltip__chip {
+  height: auto;
+  min-height: 1.4em;
+  align-items: flex-start;
+  padding-block: 2px;
+  line-height: 1.35;
 }
 
 /* Rules slot detail (P12): per-file blocks with the lint list file → rule. */
@@ -946,6 +971,19 @@
   align-items: baseline;
 }
 
+/* Schema ruleIds embed the source file id — a full URL for URL-loaded sets —
+   which a flex item will not shrink below. Without these the finding text
+   spills past the panel's right edge and squeezes the severity pill to a
+   sliver. */
+.q-findings-list li > span:not(.q-pill) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.q-findings-list li > .q-pill {
+  flex: none;
+}
+
 /* Repeat offenders */
 .q-offenders-scroll {
   overflow: auto;
@@ -954,16 +992,45 @@
 
 .q-offenders {
   width: 100%;
+  /* Below this the scroller scrolls instead of shredding header words. */
+  min-width: 420px;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  /* `auto` sizes columns from max-content: one URL-bearing schema ruleId blew
+     the table to ~3x the panel width and left only the Rule column on screen. */
+  table-layout: fixed;
 }
 
 .q-offenders th,
 .q-offenders td {
   text-align: left;
-  padding: 6px 8px;
+  padding: 6px;
   border-bottom: 1px solid var(--q-gray-200);
   vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+/* Rule · Source · Severity · Targets · Count · % rows — proportions chosen so
+   every header word still fits on one line at the table's min-width. */
+.q-offenders th:nth-child(1) {
+  width: 30%;
+}
+
+.q-offenders th:nth-child(2),
+.q-offenders th:nth-child(6) {
+  width: 13%;
+}
+
+.q-offenders th:nth-child(3) {
+  width: 15%;
+}
+
+.q-offenders th:nth-child(4) {
+  width: 17%;
+}
+
+.q-offenders th:nth-child(5) {
+  width: 12%;
 }
 
 .q-offenders th {

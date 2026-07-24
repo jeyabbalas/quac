@@ -57,7 +57,7 @@ export function createSlotCard(title: string): SlotCard {
   const details = document.createElement('details');
   details.className = 'q-slotcard-details';
   const detailsToggle = document.createElement('summary');
-  detailsToggle.textContent = 'details';
+  detailsToggle.textContent = 'Details';
   const detailHost = document.createElement('div');
   details.append(detailsToggle, detailHost);
   details.hidden = true;

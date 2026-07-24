@@ -76,3 +76,41 @@ e2e replicates the dirty dataset ×20 through the JSON path instead. Also: annot
 
 **Not done here:** testing-strategy §1's "local CORS-enabled static fixture server" still does not exist
 (e2e uses `page.route()`); becomes load-bearing at P16. Excel download ships as a disabled stub (P15).
+
+## Post-P14 demo review (2026-07-23, user-requested pass over the shipped UI)
+
+**Fixed (all four are bugs, not polish):**
+
+- **`.q-report-grid` must carry a definite height.** data-table's `.dt-root` is `height: 100%` and its
+  `VirtualScroller.calculateVisibleRange` reads `.dt-body-scroll.clientHeight`. Under the old
+  `min-height: 480px` (auto height) that percentage resolved to `auto`, the scroller measured the full
+  content height and rendered **every** row: 101 × 266 = 26,866 cells / 51k DOM nodes locked the tab for
+  minutes, and a real-size dataset would have killed it. Now `clamp(420px, calc(100dvh - 210px), 1200px)`
+  → 12–15 rows rendered. **Do not turn this back into a min-height.**
+- Repeat-offenders table: `table-layout: auto` sized columns from max-content, so one URL-bearing
+  `schema:advisory:<fileId>` id stretched the table to ~3× the panel and only the Rule column was on
+  screen. Now `table-layout: fixed` + explicit column proportions + `overflow-wrap`, and the Targets cell
+  shows 3 names with the full list in `title`.
+- Dataset-findings rows: the flex text child had no `min-width: 0`, so long ruleIds spilled past the panel
+  edge and squeezed the severity pill to a sliver. Also **sorted errors → warnings → info**: emission order
+  put the per-file `$comment` advisories (info) first and buried the real findings.
+- Repeat offenders are now ranked on the **exact** count that is displayed. `FlagStore.summary().perRule`
+  sorts by *flag* count; a rule with ten target columns emits ten flags per violation, so the visible
+  Count column looked unsorted (spec §4 says sorted desc).
+
+**Also here:** `.q-main--wide` (report route only, 1600px) — 266 columns plus the panel column do not fit
+the 1280px reading width; `.dt-col-tooltip__chip` height override (data-table sizes `string[]` tooltip
+items as 1.4em pills; QuaC's QC-rule lines are sentences and overflowed their neighbours — the override
+needs two classes because data-table's stylesheet ships in the lazy grid chunk, i.e. after ours); slot-card
+disclosure label `details` → `Details` to match the schema card.
+
+**Measured, left alone:** a window resize with the 266-column grid mounted blocks the main thread for
+~4.5 s. It is **not** the `100dvh` height (a fixed-px grid height reproduces it identically) and not the
+route switch (report↔load is <400 ms; first grid render is two long tasks of 67/105 ms) — it is
+data-table's own per-column work, most likely the 266 header visualizations each re-rendering off their
+own ResizeObserver. Worth raising with the library rather than patching here.
+
+**Deferred (not attempted):** `schema:advisory:<fileId>` uses the absolute URL for URL-loaded schema sets,
+so those findings/offender rows are dominated by a ~90-char prefix that the message then repeats as
+`Schema note (<relativePath>)`. `relativePath` would read far better, but §D.5 pins the id on `fileId`, so
+changing it is a spec deviation for P19/P20 to weigh. Report-panel tabs wrap to two rows below ~520px.

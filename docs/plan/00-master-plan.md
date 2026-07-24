@@ -73,6 +73,15 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-23 · P14-review · Demo-readiness pass over the shipped UI (browser-driven, no scope added). CRITICAL: `.q-report-grid`
+had no definite height, so data-table's `.dt-root{height:100%}` resolved to auto, its VirtualScroller measured the full content
+height and rendered EVERY row (101×266 = 27k cells / 51k nodes froze the tab; a real dataset would kill it) — now a `clamp()`
+on `100dvh`; treat that height as load-bearing. Also: offenders table `table-layout:fixed` (URL-bearing schema ruleIds blew it
+to 3× the panel), findings list `min-width:0` + errors-first ordering, offenders ranked on the exact count shown, `.q-main--wide`
+on the report route, tooltip-chip height override. Measured & left alone: window resize ≈4.5 s main-thread block from
+data-table's 266 per-column visualizations (reproduces with a fixed-px grid height — not ours). Unit 440 + browser 44 + e2e 35
+green; entry 26.4 KB gz. Details → phase-14 "Post-P14 demo review".
+
 2026-07-23 · P14 · Run orchestration + in-app report shipped on main: core/pipeline.ts (ONE runQC call, schema in the NEW
 EngineOptions.betweenPhases hook = §3's reserved slot, sourceTable='data', castPlan seam; signal cancel = return-partial; annotate
 always presents via the reportView presenter port), report view (annotated grid + 4 panels + DuckProgress/cancel + 20k cap banner +

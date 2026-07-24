@@ -42,6 +42,19 @@ function schemaRuleTargets(ruleId: string): string {
   return '—';
 }
 
+/** The panel's Targets column is ~70px wide — a 10-target rule would make the
+ *  row 200px tall. Show three; the rest live in the cell's title. */
+const TARGETS_SHOWN = 3;
+function targetsCellText(names: readonly string[]): { text: string; full: string } {
+  const shown = names.filter((n) => n !== '');
+  const full = shown.join(', ');
+  if (shown.length <= TARGETS_SHOWN) return { text: full === '' ? '—' : full, full };
+  return {
+    text: `${shown.slice(0, TARGETS_SHOWN).join(', ')} +${String(shown.length - TARGETS_SHOWN)} more`,
+    full,
+  };
+}
+
 function findRule(ruleId: string): QCRule | undefined {
   for (const parsed of rulesState.get().files) {
     const rule = parsed.file.rules.find((r) => r.ruleId === ruleId);
@@ -264,30 +277,35 @@ export function mountReportPanels(
       );
       return;
     }
-    const entries = [
+    // Errors first: emission order puts the schema-set `$comment` advisories
+    // (info, one per file) ahead of everything, burying the real findings.
+    const rows: { severity: 'error' | 'warning' | 'info'; text: string }[] = [
       ...artifacts.flagStore.datasetScope(),
       ...artifacts.flagStore.all().filter((e) => e.flag.scope === 'column'),
-    ];
+    ].map((entry) => ({
+      severity: entry.flag.severity,
+      text:
+        entry.count > 1 ? `${renderFlag(entry.flag)} (×${num(entry.count)})` : renderFlag(entry.flag),
+    }));
+    for (const stat of (artifacts.rules?.perRule ?? []).filter((s) => s.status !== 'ok')) {
+      rows.push({
+        severity: stat.status === 'broken' ? 'error' : 'info',
+        text:
+          stat.status === 'broken'
+            ? `${stat.ruleId}: Rule failed to execute: ${stat.error ?? 'unknown error'}`
+            : `${stat.ruleId}: ${STATUS_LABELS[stat.status]}`,
+      });
+    }
+    const rank = { error: 0, warning: 1, info: 2 };
+    rows.sort((a, b) => rank[a.severity] - rank[b.severity]); // stable within a tier
+
     const list = document.createElement('ul');
     list.className = 'q-findings-list';
-    for (const entry of entries) {
+    for (const row of rows) {
       const item = document.createElement('li');
-      item.append(severityPillEl(entry.flag.severity));
+      item.append(severityPillEl(row.severity));
       const text = document.createElement('span');
-      text.textContent =
-        entry.count > 1 ? `${renderFlag(entry.flag)} (×${num(entry.count)})` : renderFlag(entry.flag);
-      item.append(text);
-      list.append(item);
-    }
-    const ruleStats = (artifacts.rules?.perRule ?? []).filter((s) => s.status !== 'ok');
-    for (const stat of ruleStats) {
-      const item = document.createElement('li');
-      item.append(severityPillEl(stat.status === 'broken' ? 'error' : 'info'));
-      const text = document.createElement('span');
-      text.textContent =
-        stat.status === 'broken'
-          ? `${stat.ruleId}: Rule failed to execute: ${stat.error ?? 'unknown error'}`
-          : `${stat.ruleId}: ${STATUS_LABELS[stat.status]}`;
+      text.textContent = row.text;
       item.append(text);
       list.append(item);
     }
@@ -331,6 +349,15 @@ export function mountReportPanels(
     for (const [ruleId, count] of Object.entries(artifacts.schema?.countsByRuleId ?? {})) {
       exactByRule.set(ruleId, count);
     }
+    // Re-sort on the count the reader sees. FlagStore orders by FLAG count, and
+    // a rule spanning ten target columns emits ten flags per violation — so the
+    // store's "descending" order looks shuffled once the exact counts are shown.
+    const exactOf = (ruleId: string, fallback: number): number =>
+      exactByRule.get(ruleId) ?? fallback;
+    const ranked = [...summary.perRule].sort((a, b) => {
+      const delta = exactOf(b.ruleId, b.count) - exactOf(a.ruleId, a.count);
+      return delta !== 0 ? delta : a.ruleId < b.ruleId ? -1 : 1;
+    });
 
     const hint = document.createElement('p');
     hint.className = 'q-panel-note';
@@ -352,25 +379,27 @@ export function mountReportPanels(
       '<tr><th>Rule</th><th>Source</th><th>Severity</th><th>Targets</th>' +
       '<th class="q-num">Count</th><th class="q-num">% rows</th></tr>';
     const body = document.createElement('tbody');
-    for (const aggregate of summary.perRule) {
+    for (const aggregate of ranked) {
       const row = document.createElement('tr');
       const rule = findRule(aggregate.ruleId);
-      const targets =
+      const targets = targetsCellText(
         aggregate.source === 'rules'
-          ? (rule?.targetVariables.join(', ') ?? '—')
-          : schemaRuleTargets(aggregate.ruleId);
-      const exact = exactByRule.get(aggregate.ruleId) ?? aggregate.count;
+          ? (rule?.targetVariables ?? [])
+          : [schemaRuleTargets(aggregate.ruleId)],
+      );
+      const exact = exactOf(aggregate.ruleId, aggregate.count);
       const cells = [
         aggregate.ruleId,
         aggregate.source,
         aggregate.severity,
-        targets === '' ? '—' : targets,
+        targets.text,
         num(exact),
         aggregate.pctOfRows === undefined ? '—' : pct(aggregate.pctOfRows),
       ];
       for (const [i, textContent] of cells.entries()) {
         const cell = document.createElement('td');
         cell.textContent = textContent;
+        if (i === 3 && targets.text !== targets.full) cell.title = targets.full;
         if (i >= 4) cell.className = 'q-num';
         row.append(cell);
       }

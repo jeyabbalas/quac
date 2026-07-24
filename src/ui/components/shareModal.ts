@@ -8,6 +8,7 @@
  */
 import { openModal } from '../../app/modal';
 import { showToast } from '../../app/toast';
+import { triggerDownload } from './download';
 import { rulesState } from '../../core/rules/rules-store';
 import { schemaState } from '../../core/schema/schema-store';
 import { configToManifest } from '../../core/share/configManifest';
@@ -72,20 +73,6 @@ function schemaGroupInfo(): SchemaGroupInfo | null {
   if (set === null) return null;
   const root = rootLabel(set);
   return { fileCount: set.files.length, ...(root !== undefined ? { root } : {}) };
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 10_000);
 }
 
 /** One row per dataset / rules file / uploaded schema set. */

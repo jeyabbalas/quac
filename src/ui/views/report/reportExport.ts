@@ -12,6 +12,7 @@
  */
 import { getBridge } from '../../../core/bridge/bridge';
 import { reportRowsSQL } from '../../../core/bridge/tables';
+import { triggerDownload } from '../../components/download';
 import { buildReportModel } from '../../../core/report/reportModel';
 import { writeReportWorkbook } from '../../../core/report/excelWriter';
 import { ANNOTATION_CAP } from '../../../core/report/annotations';
@@ -81,21 +82,6 @@ function pageRows(bridge: WorkerBridge, rowLimit: number): ReportRowSource {
       yield rows.map<ReportDataRow>((r) => ({ row: Number(r.__row__), values: r }));
     }
   };
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  // Revoke after the download has had time to start.
-  window.setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 10_000);
 }
 
 /**

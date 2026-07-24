@@ -7,7 +7,7 @@
 //   - byte idempotence: serialize(parse(x)) === x for any x already produced by
 //     this serializer.
 import type { QCRule, RuleFile } from './types';
-import { CANONICAL_COLUMNS } from './parse';
+import { CANONICAL_COLUMNS, deriveGroup } from './parse';
 
 // RFC 4180 minimal quoting: quote iff the field contains a quote, comma, CR, or LF.
 const QUOTE_TRIGGER = /["\r\n,]/;
@@ -46,6 +46,15 @@ function ruleRecord(rule: QCRule, extraColumns: readonly string[]): string[] {
     rule.enabled ? 'true' : 'false',
     ...extraColumns.map((c) => rule.extras[c] ?? ''),
   ];
+}
+
+/**
+ * Download filename for an exported rules file (P18 task 3):
+ * `<group>.quac.csv`, where group = basename minus `.quac.csv`/`.csv` (§1).
+ * A file already named `x.quac.csv` exports under the same name.
+ */
+export function exportFileName(fileName: string): string {
+  return `${deriveGroup(fileName)}.quac.csv`;
 }
 
 export function serializeRuleFile(file: RuleFile): string {

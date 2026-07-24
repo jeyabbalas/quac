@@ -568,8 +568,9 @@ async function runSqlCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcom
 
 // ---- js corrections (P13; engine §3 js branch, format §6) ------------------
 
-/** JSON-safe view of a DuckDB cell for the sandbox boundary (format §6). */
-function marshalJsValue(v: unknown): unknown {
+/** JSON-safe view of a DuckDB cell for the sandbox boundary (format §6).
+ *  Exported for the Studio's sampled js-correction preview (P18). */
+export function marshalJsValue(v: unknown): unknown {
   if (typeof v === 'bigint') return Number(v); // precision loss past 2^53 accepted
   if (v instanceof Date) return v.toISOString();
   return v;

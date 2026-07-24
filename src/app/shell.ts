@@ -10,6 +10,7 @@ import { ROUTE_IDS } from './router';
 import { assetUrl } from './urlBase';
 import { createDuckProgress } from '../ui/components/duckProgress';
 import { createSeverityPill } from '../ui/components/severityPill';
+import { openShareModal } from '../ui/components/shareModal';
 import { mountLoadView } from '../ui/views/load/loadView';
 import { mountReportView } from '../ui/views/report/reportView';
 import { mountStudioView } from '../ui/views/studio/studioView';
@@ -78,8 +79,11 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   share.type = 'button';
   share.className = 'q-btn';
   share.textContent = 'Share';
-  share.disabled = true; // stub — P16 wires the ShareModal
-  share.title = 'Share arrives with URL configurations';
+  share.disabled = true; // enabled once a slot is loaded (effect below)
+  share.title = 'Copy a shareable link to this configuration';
+  share.addEventListener('click', () => {
+    openShareModal(ctx.store);
+  });
   const github = document.createElement('a');
   github.className = 'q-gh';
   github.href = 'https://github.com/jeyabbalas/quac';
@@ -162,6 +166,15 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   effect(() => {
     const run = ctx.store.run.get();
     pill.update(run?.flagsSummary ?? { errors: 0, warnings: 0, infos: 0 });
+  });
+
+  // Share becomes available once any slot has content (nothing to share when
+  // every slot is empty — keeps the keyboard "disabled Share skipped" contract).
+  effect(() => {
+    const anyLoaded = (['data', 'schema', 'rules'] as const).some(
+      (id) => ctx.store.slots[id].get().status !== 'empty',
+    );
+    share.disabled = !anyLoaded;
   });
 
   // P14 re-run semantics (architecture §6): replacing the dataset invalidates

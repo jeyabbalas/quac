@@ -64,7 +64,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 0e817b9 | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
 | [x] 2026-07-24 · 46b3b3a | P15 | Excel QC report export | P14 |
 | [x] 2026-07-24 · bbd3a25 | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
-| [ ] | P17 | Rule Studio: workspace & editor | P12, P05 |
+| [x] 2026-07-24 · 47179c2 | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [ ] | P18 | Rule Studio: preview, gate, export | P17 |
 | [ ] | P19 | Branding polish & accessibility | P14, P16, P18 |
 | [ ] | P20 | Hardening, perf, docs, release | all |
@@ -72,6 +72,25 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-24 · P17 · Rule Studio workspace & editor shipped on main (7 commits): lint.ts exports the (type,scope) matrix
+(typeScopeComboError/isValidTypeScope — stage 2 refactored onto them, messages byte-identical) and rules-store grows
+getLintContext() + dirtyFiles + in-session mutators (createRuleFile pristine; update/insert/remove/move/duplicate all
+round-trip serialize→parse so rowNumbers/issues re-derive; same-name re-add clears dirty). views/studio/: studioView.ts stays
+an eager shim (view-level empty ONLY when nothing is loaded — user-approved; rules-without-dataset gets the workspace + info
+banner) route-gating the lazy studioWorkspace chunk (CM never mounts hidden; bundle gate gains the @codemirror/view
+`cm-announced` entry-leak marker beside ExcelJS). Workspace = rail (group/count/lint badge/x-y targets/dirty *) + plain-table
+rule grid (enable toggle, duplicate/delete/↑↓ with the pinned "Row order = correction order" tooltip) + full-width bottom
+editor drawer (user-approved layout; P18 docks preview beside the grid). ruleForm enforces the matrix live (invalid scope
+options disabled with the lint helper's exact text; auto-snap scope→row; type change resets severity default), targetsSelect
+= chips+combobox (unknown targets allowed, warning-tinted), codeEditor.ts is the only @codemirror/* importer (sql/js/text
+compartments, PostgreSQL dialect + schema:{data} + custom feed: functions/__row__/__value__/boosted assertion snippets —
+completionSource.ts pure+node-tested), draft lint = ONE 400 ms debounce → runDraftLint (synthetic one-rule file →
+lintRuleFilesWithDataset verbatim, byField buckets, cross-file duplicate-id w/ self-exclusion) pushed via setDiagnostics +
+mirrored ul.q-editor-diags; paused while the pipeline runs. Catalog: DESCRIBE quac_work (idiom deviation from PRAGMA
+table_info) + session-cached duckdb_functions() via getLintContext() — studio never boots the wasm. Manual keyboard pass done
+(found+fixed a rail focus drop, 47179c2); deferred notes record the pre-existing download.spec flake (VARCHAR-window lint
+race, reproduced on pre-P17 base 4/6 under --repeat-each=6). Unit 525 + browser 44 + e2e 40 green; entry 37.3 KB gz. P18 unblocked.
 
 2026-07-24 · UIX · Interstitial UI/UX overhaul (10 commits, post-P16, before P17) — one design language on the loved chrome:
 tokens (type/space/radius/border/elevation/z/motion tiers + yellow-tint/sky-deep) → button system (.q-btn secondary base,

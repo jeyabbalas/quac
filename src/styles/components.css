@@ -287,6 +287,10 @@
   overflow: auto;
 }
 
+.q-modal--wide {
+  max-width: 720px;
+}
+
 .q-modal-header {
   display: flex;
   align-items: center;

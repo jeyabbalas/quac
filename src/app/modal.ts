@@ -5,6 +5,8 @@
  */
 export interface ModalOptions {
   title: string;
+  /** 'wide' (720px cap) for content-heavy dialogs like Share; default 560px. */
+  size?: 'default' | 'wide';
   onClose?: () => void;
 }
 
@@ -17,7 +19,7 @@ export interface ModalHandle {
 }
 
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'a[href], button:not([disabled]), summary, input:not([disabled]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 let modalSeq = 0;
@@ -30,6 +32,7 @@ export function openModal(options: ModalOptions): ModalHandle {
 
   const dialog = document.createElement('div');
   dialog.className = 'q-modal';
+  if (options.size === 'wide') dialog.classList.add('q-modal--wide');
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
   dialog.tabIndex = -1; // focus target of last resort if callers remove all focusables

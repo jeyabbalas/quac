@@ -1,8 +1,9 @@
 /**
- * ShareModal (url-params.md §4): lists each loaded artifact with provenance
- * (URL-loaded ✓ included / uploaded ✗ excluded + why), then the assembled link
- * with a char count and Copy — or, past MAX_URL_CHARS, the `config=` manifest
- * download path. Reads the authoritative slot states; nothing uploaded ever
+ * ShareModal (url-params.md §4): the assembled link up top (char count + Copy,
+ * or the `config=` manifest path past MAX_URL_CHARS), then per-slot provenance
+ * — URL-loaded ✓ included / uploaded ✗ excluded + why. Schema's crawl bases
+ * collapse into one grouped row (file count + root) with the URLs behind a
+ * <details>. Reads the authoritative slot states; nothing uploaded ever
  * enters the link.
  */
 import { openModal } from '../../app/modal';
@@ -25,6 +26,12 @@ const SLOT_LABEL: Record<ShareArtifact['slot'], string> = {
 
 const UPLOAD_EXPLANATION =
   "Uploaded files can't travel in a link. Host this file (GitHub raw / gist) and load it by URL to include it.";
+
+/** Render-time context for the grouped schema row (the model stays per-URL). */
+interface SchemaGroupInfo {
+  fileCount: number;
+  root?: string;
+}
 
 function rootLabel(set: SchemaSet): string | undefined {
   return set.files.find((f) => f.fileId === set.root.rootFileId)?.relativePath;
@@ -60,6 +67,13 @@ function collectShareModel(store: AppStore): ShareModel {
   });
 }
 
+function schemaGroupInfo(): SchemaGroupInfo | null {
+  const set = schemaState.get().set;
+  if (set === null) return null;
+  const root = rootLabel(set);
+  return { fileCount: set.files.length, ...(root !== undefined ? { root } : {}) };
+}
+
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -74,40 +88,107 @@ function triggerDownload(blob: Blob, filename: string): void {
   }, 10_000);
 }
 
-function renderArtifactList(model: ShareModel): HTMLElement {
+/** One row per dataset / rules file / uploaded schema set. */
+function artifactItem(artifact: ShareArtifact): HTMLElement {
+  const item = document.createElement('li');
+  item.className = `q-share-item q-share-item--${artifact.shareable ? 'in' : 'out'}`;
+
+  const mark = document.createElement('span');
+  mark.className = 'q-share-mark';
+  mark.textContent = artifact.shareable ? '✓' : '✗';
+  mark.setAttribute('aria-hidden', 'true');
+
+  const body = document.createElement('div');
+  body.className = 'q-share-item-body';
+  const label = document.createElement('span');
+  label.className = 'q-share-label';
+  label.textContent = `${SLOT_LABEL[artifact.slot]}: ${artifact.label}`;
+  body.append(label);
+
+  if (artifact.shareable && artifact.url !== undefined) {
+    const url = document.createElement('code');
+    url.className = 'q-share-url';
+    url.textContent = artifact.url;
+    body.append(url);
+  } else {
+    const note = document.createElement('p');
+    note.className = 'q-share-note';
+    note.textContent = UPLOAD_EXPLANATION;
+    body.append(note);
+  }
+  item.append(mark, body);
+  return item;
+}
+
+function schemaGroupLabel(info: SchemaGroupInfo | null): string {
+  if (info === null) return 'Schema';
+  const files = `${String(info.fileCount)} file${info.fileCount === 1 ? '' : 's'}`;
+  return info.root !== undefined ? `Schema: ${files} · root ${info.root}` : `Schema: ${files}`;
+}
+
+/** URL-loaded schema: one row for the whole set, crawl bases in a <details>. */
+function schemaGroupItem(urls: ShareArtifact[], info: SchemaGroupInfo | null): HTMLElement {
+  const item = document.createElement('li');
+  item.className = 'q-share-item q-share-item--in';
+
+  const mark = document.createElement('span');
+  mark.className = 'q-share-mark';
+  mark.textContent = '✓';
+  mark.setAttribute('aria-hidden', 'true');
+
+  const body = document.createElement('div');
+  body.className = 'q-share-item-body';
+  const label = document.createElement('span');
+  label.className = 'q-share-label';
+  label.textContent = schemaGroupLabel(info);
+
+  const details = document.createElement('details');
+  details.className = 'q-share-urls';
+  const summary = document.createElement('summary');
+  summary.textContent = `${String(urls.length)} source URL${urls.length === 1 ? '' : 's'} in the link`;
+  const list = document.createElement('ul');
+  list.className = 'q-share-urllist';
+  for (const artifact of urls) {
+    const entry = document.createElement('li');
+    const code = document.createElement('code');
+    code.className = 'q-share-url';
+    code.textContent = artifact.url ?? '';
+    entry.append(code);
+    list.append(entry);
+  }
+  details.append(summary, list);
+
+  body.append(label, details);
+  item.append(mark, body);
+  return item;
+}
+
+function renderProvenance(model: ShareModel, info: SchemaGroupInfo | null): HTMLElement {
+  const section = document.createElement('div');
+  section.className = 'q-share-provenance';
+  const heading = document.createElement('h3');
+  heading.className = 'q-share-subhead';
+  heading.textContent = 'Loaded files';
+
   const list = document.createElement('ul');
   list.className = 'q-share-list';
+  // The model carries one schema artifact per crawl base; they render as a
+  // single grouped row. Everything else stays one row per artifact.
+  const schemaUrls = model.artifacts.filter((a) => a.slot === 'schema' && a.shareable);
+  let schemaGrouped = false;
   for (const artifact of model.artifacts) {
-    const item = document.createElement('li');
-    item.className = `q-share-item q-share-item--${artifact.shareable ? 'in' : 'out'}`;
-
-    const mark = document.createElement('span');
-    mark.className = 'q-share-mark';
-    mark.textContent = artifact.shareable ? '✓' : '✗';
-    mark.setAttribute('aria-hidden', 'true');
-
-    const body = document.createElement('div');
-    body.className = 'q-share-item-body';
-    const label = document.createElement('span');
-    label.className = 'q-share-label';
-    label.textContent = `${SLOT_LABEL[artifact.slot]}: ${artifact.label}`;
-    body.append(label);
-
-    if (artifact.shareable && artifact.url !== undefined) {
-      const url = document.createElement('code');
-      url.className = 'q-share-url';
-      url.textContent = artifact.url;
-      body.append(url);
-    } else {
-      const note = document.createElement('p');
-      note.className = 'q-share-note';
-      note.textContent = UPLOAD_EXPLANATION;
-      body.append(note);
+    if (artifact.slot === 'schema' && artifact.shareable) {
+      if (!schemaGrouped) {
+        list.append(schemaGroupItem(schemaUrls, info));
+        schemaGrouped = true;
+      }
+      continue;
     }
-    item.append(mark, body);
-    list.append(item);
+    list.append(artifactItem(artifact));
   }
-  return list;
+
+  section.append(heading, list);
+  return section;
 }
 
 function renderLinkSection(model: ShareModel, shareBase: string): HTMLElement {
@@ -182,7 +263,7 @@ function renderLinkSection(model: ShareModel, shareBase: string): HTMLElement {
 
 export function openShareModal(store: AppStore): void {
   const model = collectShareModel(store);
-  const modal = openModal({ title: 'Share this configuration' });
+  const modal = openModal({ title: 'Share this configuration', size: 'wide' });
   const root = document.createElement('div');
   root.className = 'q-share';
 
@@ -202,8 +283,7 @@ export function openShareModal(store: AppStore): void {
     return;
   }
 
-  root.append(renderArtifactList(model));
-
+  // Link first — it's what the opener came for; provenance below explains it.
   if (model.hasShareable) {
     const shareBase = `${window.location.origin}${window.location.pathname}`;
     root.append(renderLinkSection(model, shareBase));
@@ -216,5 +296,6 @@ export function openShareModal(store: AppStore): void {
     root.append(none);
   }
 
+  root.append(renderProvenance(model, schemaGroupInfo()));
   modal.body.append(root);
 }

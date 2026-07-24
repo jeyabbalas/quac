@@ -4,12 +4,15 @@
  * (everything that loads eagerly). Dynamic-import lazy chunks and .wasm are
  * excluded by construction: they are never referenced from index.html.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 const LIMIT_BYTES = 300 * 1024;
+// exceljs (P15) is huge and must stay a lazy chunk; this marker (the UMD global
+// assignment `.ExcelJS=…`) appears only in its bundle, never in minified app code.
+const EXCELJS_MARKER = 'ExcelJS';
 const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const html = readFileSync(join(distDir, 'index.html'), 'utf8');
 
@@ -29,11 +32,20 @@ if (refs.size === 0) {
 }
 
 let total = 0;
+const entryRels = new Set();
 for (const ref of refs) {
   const rel = ref.replace(/^\/quac\//, '').replace(/^\//, '');
-  const gz = gzipSync(readFileSync(join(distDir, rel))).length;
+  entryRels.add(rel);
+  const bytes = readFileSync(join(distDir, rel));
+  const gz = gzipSync(bytes).length;
   total += gz;
   console.log(`  ${rel}  ${(gz / 1024).toFixed(1)} KB gz`);
+  // The exceljs writer is dynamically imported; it must never be pulled into an
+  // eager entry chunk (would blow the budget and delay first paint by ~256 KB gz).
+  if (bytes.includes(EXCELJS_MARKER)) {
+    console.error(`check-bundle-size: FAIL — exceljs leaked into the entry chunk ${rel}`);
+    process.exit(1);
+  }
 }
 
 console.log(`entry JS total: ${(total / 1024).toFixed(1)} KB gz (budget ${LIMIT_BYTES / 1024} KB)`);
@@ -41,4 +53,17 @@ if (total > LIMIT_BYTES) {
   console.error('check-bundle-size: FAIL — entry bundle exceeds budget');
   process.exit(1);
 }
+
+// Report the lazy exceljs chunk's weight so its cost stays visible in CI logs.
+const assetsDir = join(distDir, 'assets');
+const excelChunk = readdirSync(assetsDir)
+  .filter((f) => f.endsWith('.js') && !entryRels.has(`assets/${f}`))
+  .find((f) => readFileSync(join(assetsDir, f)).includes(EXCELJS_MARKER));
+if (excelChunk === undefined) {
+  console.log('lazy exceljs chunk: not built (report-export path absent?)');
+} else {
+  const gz = gzipSync(readFileSync(join(assetsDir, excelChunk))).length;
+  console.log(`lazy exceljs chunk: assets/${excelChunk}  ${(gz / 1024).toFixed(1)} KB gz`);
+}
+
 console.log('check-bundle-size: OK');

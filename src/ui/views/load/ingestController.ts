@@ -6,6 +6,7 @@
 import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
 import { getBridge } from '../../../core/bridge/bridge';
+import { IngestError } from '../../../core/ingest/errors';
 import { assessFileSize, needsExcelTruncationNotice } from '../../../core/ingest/guardrails';
 import { openWorkbook } from '../../../core/ingest/excel';
 import { ingestDataset } from '../../../core/ingest/ingest';
@@ -18,6 +19,8 @@ import type { IngestResult, IngestStage } from '../../../core/ingest/ingest';
 export interface IngestUi {
   setProgress: (label: string, pct: number | null) => void;
   detailHost: HTMLElement;
+  /** P16: called with the failed URL when a URL fetch fails with FETCH_CORS. */
+  onCorsError?: (url: string) => void;
 }
 
 const STAGE_LABELS: Record<IngestStage, string> = {
@@ -41,6 +44,7 @@ export async function ingestFromUrl(ctx: ShellContext, url: string, ui: IngestUi
     await runIngest(ctx, ui, new Blob([bytes]), filename, previous, url);
   } catch (err) {
     reportError(err, { fallbackCode: 'FETCH_HTTP', slot });
+    if (err instanceof IngestError && err.code === 'FETCH_CORS') ui.onCorsError?.(url);
   }
 }
 

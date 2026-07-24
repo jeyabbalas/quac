@@ -18,6 +18,7 @@ import type { SchemaSlotState } from '../../../../core/schema/schema-store';
 import type { SchemaLoadError, SchemaSet } from '../../../../core/schema/types';
 import { createBadge } from '../../../components/badge';
 import type { BadgeTone } from '../../../components/badge';
+import { createCorsHelp } from '../../../components/corsHelp';
 import { entriesFromDataTransfer, entriesFromFileList } from './intake-dom';
 import { openIndexPickerModal } from './indexPickerModal';
 import './schemaSlot.css';
@@ -215,6 +216,11 @@ export function mountSchemaSlotCard(container: HTMLElement): void {
         list.append(li);
       }
       detailsBody.append(heading, list);
+    }
+
+    // P16: a cross-origin fetch failure gets the "which hosts work?" table.
+    if (set.errors.some((e) => e.code === 'E_FETCH' && /cross-origin|CORS/i.test(e.message))) {
+      detailsBody.append(createCorsHelp());
     }
   }
 

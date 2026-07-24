@@ -20,6 +20,7 @@ import {
   type RulesSlotState,
 } from '../../../core/rules/rules-store';
 import { createBadge } from '../../components/badge';
+import { createCorsHelp } from '../../components/corsHelp';
 import { createDropZone } from '../../components/dropZone';
 import { createSlotCard } from '../../components/slotCard';
 import { createUrlField } from '../../components/urlField';
@@ -119,6 +120,10 @@ function renderDetails(host: HTMLElement, state: RulesSlotState): void {
       list.append(item);
     }
     host.append(list);
+    // P16: a cross-origin fetch failure gets the "which hosts work?" table.
+    if (state.fetchErrors.some((m) => /cross-origin|CORS/i.test(m))) {
+      host.append(createCorsHelp());
+    }
   }
 }
 

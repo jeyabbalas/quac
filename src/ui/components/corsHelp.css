@@ -1,0 +1,51 @@
+/* CORS host-table popover (P16, url-params.md §5). Scoped to .q-corshelp. */
+
+.q-corshelp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.q-corshelp-details > summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--q-info);
+}
+
+.q-corshelp-table {
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.q-corshelp-table td {
+  padding: 3px 8px 3px 0;
+  vertical-align: top;
+}
+
+.q-corshelp-mark {
+  font-weight: 700;
+}
+
+.q-corshelp-ok .q-corshelp-mark {
+  color: var(--q-success);
+}
+
+.q-corshelp-no .q-corshelp-mark {
+  color: var(--q-error);
+}
+
+.q-corshelp-host {
+  font-family: var(--q-font-mono, monospace);
+  white-space: nowrap;
+}
+
+.q-corshelp-note {
+  color: var(--q-gray-600);
+}
+
+.q-corshelp-retry {
+  align-self: flex-start;
+}

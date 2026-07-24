@@ -5,6 +5,7 @@
  * user action so the entry chunk stays free of bridge/data-table code.
  */
 import { effect } from '../../../app/signals';
+import { createCorsHelp } from '../../components/corsHelp';
 import { createDropZone } from '../../components/dropZone';
 import { createDuckProgress } from '../../components/duckProgress';
 import { createSlotCard } from '../../components/slotCard';
@@ -21,6 +22,8 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
 
   const progress = createDuckProgress();
   progress.el.hidden = true;
+  // P16: FETCH_CORS guidance (host table + Retry) lands here below the inputs.
+  const corsHost = document.createElement('div');
 
   let busy = false;
   const setBusy = (value: boolean): void => {
@@ -35,11 +38,22 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
       progress.setProgress(label, pct);
     },
     detailHost: card.detailHost,
+    onCorsError: (url: string): void => {
+      corsHost.replaceChildren(
+        createCorsHelp({
+          onRetry: () => {
+            run('url', url);
+          },
+        }),
+      );
+    },
   };
 
-  const run = (action: 'file' | 'url', payload: File | string): void => {
+  // Hoisted so controllerUi.onCorsError can re-invoke it (mutual reference).
+  function run(action: 'file' | 'url', payload: File | string): void {
     if (busy) return;
     setBusy(true);
+    corsHost.replaceChildren(); // clear stale CORS guidance on a fresh attempt
     void (async () => {
       const controller = await import('./ingestController');
       if (action === 'file') await controller.ingestFromFile(ctx, payload as File, controllerUi);
@@ -47,7 +61,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
     })().finally(() => {
       setBusy(false);
     });
-  };
+  }
 
   const dropZone = createDropZone({
     label: 'Drop dataset file (CSV, TSV, JSON, Excel, Parquet) or',
@@ -65,7 +79,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
     },
   });
 
-  card.bodyHost.append(dropZone.el, urlField.el, progress.el);
+  card.bodyHost.append(dropZone.el, urlField.el, progress.el, corsHost);
   container.append(card.el);
 
   effect(() => {

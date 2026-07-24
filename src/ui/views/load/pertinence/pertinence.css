@@ -6,10 +6,10 @@
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border: 2px solid var(--q-ink);
+  border: var(--q-stroke);
   border-radius: 10px;
   background: var(--q-paper);
-  font-size: 0.875rem;
+  font-size: var(--q-text-md);
 }
 
 .q-pertinence--warn {
@@ -28,17 +28,17 @@
 .q-pertinence-note {
   margin: 0;
   color: var(--q-gray-700);
-  font-size: 0.8125rem;
+  font-size: var(--q-text-sm);
 }
 
 .q-pertinence-continue {
   margin-left: auto;
   padding: 4px 10px;
-  border: 2px solid var(--q-ink);
-  border-radius: 8px;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-md);
   background: var(--q-paper);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--q-text-sm);
   cursor: pointer;
 }
 

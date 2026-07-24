@@ -3,21 +3,21 @@
 .q-corshelp {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--q-space-2);
+  margin-top: var(--q-space-2);
 }
 
 .q-corshelp-details > summary {
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: var(--q-text-sm);
   font-weight: 600;
   color: var(--q-info);
 }
 
 .q-corshelp-table {
-  margin-top: 8px;
+  margin-top: var(--q-space-2);
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: var(--q-text-xs);
 }
 
 .q-corshelp-table td {
@@ -38,7 +38,7 @@
 }
 
 .q-corshelp-host {
-  font-family: var(--q-font-mono, monospace);
+  font-family: var(--q-font-mono);
   white-space: nowrap;
 }
 

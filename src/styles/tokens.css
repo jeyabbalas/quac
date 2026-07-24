@@ -29,10 +29,62 @@
   --q-success: #15803d;
   --q-success-fill: #c6efce;
 
+  /* Brand tints (washes derived from brand hues; never semantic) */
+  --q-yellow-tint: #fff8ec; /* warm hover wash (drop zones) */
+  --q-sky-deep: #0099cc; /* wave stroke inside the duck-progress water SVG; the
+     data-URI must keep the literal hex — update both together */
+
   /* Type — @fontsource self-hosting arrives in P04; system fallbacks until then */
   --q-font-sans:
     'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --q-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Type scale — six steps; the header wordmark/h1 sizes stay component-local */
+  --q-text-xs: 0.75rem;
+  --q-text-sm: 0.8125rem;
+  --q-text-md: 0.875rem;
+  --q-text-lg: 1rem;
+  --q-text-xl: 1.125rem;
+  --q-text-2xl: 1.25rem;
+
+  /* Space — 4px grid */
+  --q-space-1: 4px;
+  --q-space-2: 8px;
+  --q-space-3: 12px;
+  --q-space-4: 16px;
+  --q-space-5: 24px;
+  --q-space-6: 32px;
+  --q-space-7: 48px;
+
+  /* Radius */
+  --q-radius-sm: 6px;
+  --q-radius-md: 8px;
+  --q-radius-lg: 12px;
+  --q-radius-pill: 999px;
+
+  /* Borders — hairline/input for quiet inner structure, stroke for the bold
+     sticker containers (ui-design.md §2 surface tiers) */
+  --q-border-hairline: 1px solid var(--q-gray-200);
+  --q-border-input: 1px solid var(--q-gray-300);
+  --q-stroke: 2px solid var(--q-ink);
+  --q-stroke-heavy: 3px solid var(--q-ink);
+
+  /* Elevation */
+  --q-shadow-1: 0 1px 2px rgb(17 17 17 / 0.08);
+  --q-shadow-2: 0 2px 6px rgb(17 17 17 / 0.1);
+  --q-shadow-3: 0 4px 12px rgb(17 17 17 / 0.15);
+  --q-scrim: rgb(17 17 17 / 0.5);
+
+  /* Z layers */
+  --q-z-sticky: 10;
+  --q-z-modal: 50;
+  --q-z-toast: 60;
+
+  /* Motion */
+  --q-ease-out: cubic-bezier(0.33, 1, 0.68, 1);
+  --q-dur-1: 120ms;
+  --q-dur-2: 200ms;
+  --q-dur-3: 300ms;
 
   /* Focus ring — 2px orange, visible on every interactive element */
   --q-focus-ring: 2px solid var(--q-orange);

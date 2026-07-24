@@ -28,9 +28,33 @@ Semantic (distinct from brand so duck-yellow never means "warning"):
 --q-success: #15803D;  /* corrected cells */ fill #C6EFCE-family
 ```
 
+Brand tints (washes only, never semantic):
+```
+--q-yellow-tint: #FFF8EC;  /* warm hover wash (drop zones) */
+--q-sky-deep:    #0099CC;  /* wave stroke in the duck-progress water SVG; the data-URI keeps the literal hex */
+```
+
 Map onto data-table: set `--dt-annotation-error-*`, `--dt-annotation-warning-*`, `--dt-annotation-info-*` from the semantic tokens so grid tints match the app. `colorScheme` stays `'light'` for v1 (white work area is a brief requirement); dark mode is out of scope.
 
 Type: **Inter** (UI) + **JetBrains Mono** (code, rule IDs, SQL) — self-hosted via `@fontsource` (privacy: no Google Fonts CDN); system-stack fallbacks.
+
+Structural tokens (all `src/styles/tokens.css`; component CSS uses these, not raw values):
+
+| Tier | Tokens | Values |
+| --- | --- | --- |
+| Type scale | `--q-text-xs / sm / md / lg / xl / 2xl` | 0.75 / 0.8125 / 0.875 / 1 / 1.125 / 1.25 rem (wordmark/h1 sizes stay component-local) |
+| Space | `--q-space-1..7` | 4 / 8 / 12 / 16 / 24 / 32 / 48 px (4px grid) |
+| Radius | `--q-radius-sm / md / lg / pill` | 6 / 8 / 12 / 999 px |
+| Borders | `--q-border-hairline` · `--q-border-input` · `--q-stroke` · `--q-stroke-heavy` | 1px gray-200 · 1px gray-300 · 2px ink · 3px ink |
+| Elevation | `--q-shadow-1 / 2 / 3` · `--q-scrim` | subtle → floating soft shadows · `rgb(17 17 17 / 0.5)` overlay |
+| Z layers | `--q-z-sticky / modal / toast` | 10 / 50 / 60 |
+| Motion | `--q-ease-out` · `--q-dur-1 / 2 / 3` | easeOutCubic · 120 / 200 / 300 ms |
+
+Surface tiers (the "sticker" language — decided in the UIX overhaul):
+- **Tier 1 — sticker containers** (`--q-stroke`, `--q-radius-lg`, paper, `--q-shadow-2`): slot cards, report panel, pertinence strip, run/export progress cards. Bold ink outline = a thing you act on.
+- **Tier 2 — inner structure** (`--q-border-hairline`/`--q-border-input`, `--q-radius-sm/md`): stat tiles, choice rows, inputs, table rules. Quiet gray lines organize inside a sticker.
+- **Tier 3 — data surfaces** (borderless or hairline, white): preview table, report grid container, finding lists. The data is the interface.
+- **Chrome** (header, tabs, buttons, toasts, modals) keeps its existing ink-stroke language.
 
 Focus ring: 2px `--q-orange`, visible on every interactive element.
 

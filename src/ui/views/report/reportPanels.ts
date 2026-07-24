@@ -14,10 +14,15 @@ import { renderFlag } from '../../../core/flags/messages';
 import { columnDigest, missingVariables } from '../../../core/schema/column-meta';
 import { schemaState } from '../../../core/schema/schema-store';
 import { rulesState } from '../../../core/rules/rules-store';
+import {
+  RULE_STATUS_LABELS,
+  exactRuleCounts,
+  rankOffenders,
+  schemaRuleTargets,
+} from '../../../core/report/reportModel';
 import type { ShellContext } from '../../../app/shell';
 import type { RunArtifacts } from '../../../core/pipeline';
 import type { QCRule } from '../../../core/rules/types';
-import type { RuleRunStat } from '../../../core/rules/types';
 import type { SeverityToggles } from './reportGrid';
 
 export interface PanelHooks {
@@ -33,14 +38,6 @@ type TabName = (typeof TABS)[number];
 
 const num = (n: number): string => n.toLocaleString('en-US');
 const pct = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
-
-/** Target column(s) for a schema ruleId (D.5 grammar); '—' for dataset scope. */
-function schemaRuleTargets(ruleId: string): string {
-  const parts = ruleId.split(':');
-  if (parts[1] === 'prop' || parts[1] === 'column') return parts[2] ?? '—';
-  if (parts[1] === 'cond') return parts[3] ?? '—';
-  return '—';
-}
 
 /** The panel's Targets column is ~70px wide — a 10-target rule would make the
  *  row 200px tall. Show three; the rest live in the cell's title. */
@@ -62,14 +59,6 @@ function findRule(ruleId: string): QCRule | undefined {
   }
   return undefined;
 }
-
-const STATUS_LABELS: Record<RuleRunStat['status'], string> = {
-  ok: 'ok',
-  broken: 'failed to execute',
-  'skipped-disabled': 'skipped — disabled',
-  'skipped-external': 'not evaluated — requires external reference data',
-  'skipped-inapplicable': 'skipped — target variables not in this dataset',
-};
 
 function statCard(label: string, value: string): HTMLElement {
   const card = document.createElement('div');
@@ -293,7 +282,7 @@ export function mountReportPanels(
         text:
           stat.status === 'broken'
             ? `${stat.ruleId}: Rule failed to execute: ${stat.error ?? 'unknown error'}`
-            : `${stat.ruleId}: ${STATUS_LABELS[stat.status]}`,
+            : `${stat.ruleId}: ${RULE_STATUS_LABELS[stat.status]}`,
       });
     }
     const rank = { error: 0, warning: 1, info: 2 };
@@ -339,25 +328,13 @@ export function mountReportPanels(
       target.append(p);
       return;
     }
-    // Exact counts: rules-engine rows use RuleRunStat.violationCount and the
-    // schema side uses ValidationSummary.countsByRuleId — flag emission gets
-    // truncated by the engine caps, the counters never do.
-    const exactByRule = new Map<string, number>();
-    for (const stat of artifacts.rules?.perRule ?? []) {
-      exactByRule.set(stat.ruleId, stat.violationCount);
-    }
-    for (const [ruleId, count] of Object.entries(artifacts.schema?.countsByRuleId ?? {})) {
-      exactByRule.set(ruleId, count);
-    }
-    // Re-sort on the count the reader sees. FlagStore orders by FLAG count, and
-    // a rule spanning ten target columns emits ten flags per violation — so the
-    // store's "descending" order looks shuffled once the exact counts are shown.
+    // Exact counts (rules-engine violationCount ∪ schema countsByRuleId — the
+    // caps truncate flag emission, never the counters) drive both the numbers
+    // shown and the ranking; shared with the Excel Sheet 4 via reportModel.
+    const exactByRule = exactRuleCounts(artifacts.rules?.perRule, artifacts.schema?.countsByRuleId);
     const exactOf = (ruleId: string, fallback: number): number =>
       exactByRule.get(ruleId) ?? fallback;
-    const ranked = [...summary.perRule].sort((a, b) => {
-      const delta = exactOf(b.ruleId, b.count) - exactOf(a.ruleId, a.count);
-      return delta !== 0 ? delta : a.ruleId < b.ruleId ? -1 : 1;
-    });
+    const ranked = rankOffenders(summary.perRule, exactByRule);
 
     const hint = document.createElement('p');
     hint.className = 'q-panel-note';

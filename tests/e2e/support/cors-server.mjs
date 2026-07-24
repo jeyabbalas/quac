@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const FIXTURES = fileURLToPath(new URL('../../fixtures', import.meta.url));
 const PORT = Number(process.env.CORS_FIXTURE_PORT ?? 4199);
 
+/** @type {Record<string, string>} */
 const CONTENT_TYPES = {
   '.json': 'application/json',
   '.csv': 'text/csv',
@@ -24,11 +25,21 @@ const CONTENT_TYPES = {
   '.txt': 'text/plain',
 };
 
+/**
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status
+ * @param {Record<string, string>} headers
+ * @param {string | Buffer} body
+ */
 function send(res, status, headers, body) {
   res.writeHead(status, headers);
   res.end(body);
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://localhost:${String(PORT)}`);
   let pathname = decodeURIComponent(url.pathname);
@@ -52,18 +63,21 @@ async function handle(req, res) {
     return;
   }
 
+  /** @type {Buffer} */
   let body;
   try {
     const info = await stat(resolved);
     if (!info.isFile()) throw new Error('not a file');
     body = await readFile(resolved);
   } catch {
+    /** @type {Record<string, string>} */
     const headers = { 'content-type': 'text/plain' };
     if (cors) headers['access-control-allow-origin'] = '*';
     send(res, 404, headers, 'not found');
     return;
   }
 
+  /** @type {Record<string, string>} */
   const headers = { 'content-type': CONTENT_TYPES[extname(resolved)] ?? 'application/octet-stream' };
   if (cors) headers['access-control-allow-origin'] = '*';
   send(res, 200, headers, body);

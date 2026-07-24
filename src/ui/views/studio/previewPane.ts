@@ -24,7 +24,11 @@ import {
   copyToParquetBytes,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
+import { renderPreviewTable } from '../../components/plainPreviewTable';
+import type { DuckProgress } from '../../components/duckProgress';
 import type { DatasetSession } from '../../../app/store';
+import type { QCRule } from '../../../core/rules/types';
+import type { RuleTestResult } from './ruleTest';
 
 export interface PreviewPane {
   readonly el: HTMLElement;
@@ -36,7 +40,16 @@ export interface PreviewPane {
    * in hidden containers.
    */
   syncDataset: (session: DatasetSession | null, opts?: { refresh?: boolean }) => void;
+  /** Show the test-in-flight progress bar in the test panel. */
+  setTestRunning: () => void;
+  /** Render a completed test: result line + sample bodies + filter toggle. */
+  renderTestResult: (draft: QCRule, result: RuleTestResult) => void;
+  /** Empty + hide the test panel and drop any preview filter. */
+  clearTest: () => void;
 }
+
+const fmt = (n: number): string => n.toLocaleString('en-US');
+const plural = (n: number, word: string): string => `${fmt(n)} ${word}${n === 1 ? '' : 's'}`;
 
 export function createPreviewPane(): PreviewPane {
   const el = document.createElement('section');
@@ -68,6 +81,7 @@ export function createPreviewPane(): PreviewPane {
   // ---- sample grid (reportGrid's discipline, closure-scoped) ----
   let table: DataTable | undefined;
   let tableGeneration = 0;
+  let previewFilterId: string | null = null;
   let queue: Promise<unknown> = Promise.resolve();
   /** Serialize every grid operation; failures do not poison the queue. */
   function enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -81,6 +95,7 @@ export function createPreviewPane(): PreviewPane {
       await table.destroy();
       table = undefined;
     }
+    previewFilterId = null; // filters die with the instance
   }
 
   async function ensureTable(generation: number, refresh: boolean): Promise<void> {
@@ -137,5 +152,200 @@ export function createPreviewPane(): PreviewPane {
     });
   }
 
-  return { el, syncDataset };
+  // ---- test panel (RuleTestPanel) ----
+  let testProgress: DuckProgress | null = null;
+  /** Guards the async filter-toggle append against a newer render/clear. */
+  let renderToken = 0;
+
+  function stopTestProgress(): void {
+    if (testProgress !== null) {
+      testProgress.dispose();
+      testProgress = null;
+    }
+  }
+
+  /** Drop the applied preview filter (serialized with the grid queue). */
+  function removePreviewFilter(): void {
+    void enqueue(async () => {
+      if (table !== undefined && previewFilterId !== null) {
+        table.actions.removeRawSQLFilter(previewFilterId);
+      }
+      previewFilterId = null;
+      return Promise.resolve();
+    });
+  }
+
+  function clearTest(): void {
+    renderToken += 1;
+    stopTestProgress();
+    removePreviewFilter();
+    testPanel.replaceChildren();
+    testPanel.hidden = true;
+  }
+
+  function setTestRunning(): void {
+    renderToken += 1;
+    stopTestProgress();
+    testProgress = createDuckProgress();
+    testProgress.setProgress(PROGRESS_LABELS.ruleTest, null);
+    testPanel.replaceChildren(testProgress.el);
+    testPanel.hidden = false;
+  }
+
+  function appendSampleTable(
+    host: HTMLElement,
+    columns: readonly string[],
+    rows: readonly Record<string, unknown>[],
+    truncated: boolean,
+  ): void {
+    if (rows.length === 0) return;
+    const body = document.createElement('div');
+    body.className = 'q-test-body';
+    renderPreviewTable(body, columns, rows);
+    host.append(body);
+    if (truncated) {
+      const note = document.createElement('p');
+      note.className = 'q-test-trunc';
+      note.textContent = 'showing first 20';
+      host.append(note);
+    }
+  }
+
+  /** Read-only expanded-assertion SQL, tucked behind a disclosure. */
+  function expansionDetails(sql: string): HTMLDetailsElement {
+    const details = document.createElement('details');
+    details.className = 'q-test-sql';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Expanded SQL';
+    const code = document.createElement('code');
+    code.textContent = sql;
+    details.append(summary, code);
+    return details;
+  }
+
+  /** "Filter preview to matches" — offered only when the raw condition passes
+   *  validateSQLFilter on the sample table (window functions or `__row__`
+   *  references simply fail validation; same contract as the report grid). */
+  function offerPreviewFilter(draft: QCRule, condition: string): void {
+    const token = renderToken;
+    void enqueue(async () => {
+      const t = table;
+      if (t === undefined || token !== renderToken) return;
+      const verdict = await t.actions.validateSQLFilter(condition);
+      if (!verdict.valid || token !== renderToken) return;
+      const label = draft.ruleId === '' ? 'rule test' : draft.ruleId;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'q-btn q-btn--small q-test-filter';
+      toggle.textContent = 'Filter preview to matches';
+      toggle.addEventListener('click', () => {
+        void enqueue(async () => {
+          if (table === undefined) return Promise.resolve();
+          if (previewFilterId === null) {
+            previewFilterId = table.actions.addRawSQLFilter(condition, label);
+            toggle.textContent = 'Clear preview filter';
+          } else {
+            table.actions.removeRawSQLFilter(previewFilterId);
+            previewFilterId = null;
+            toggle.textContent = 'Filter preview to matches';
+          }
+          return Promise.resolve();
+        });
+      });
+      testPanel.append(toggle);
+    });
+  }
+
+  function correctionLine(result: Extract<RuleTestResult, { kind: 'correction' }>): string {
+    if (!result.sampleOnly) return `Test result: ${plural(result.count, 'cell')} would change`;
+    const verb = result.count === 1 ? 'matches' : 'match';
+    let line =
+      `Test result: ${plural(result.count, 'row')} ${verb} · ` +
+      `corrections sampled on ${plural(result.sampledRows, 'row')}`;
+    if (result.sampleErrors > 0) line += ` · ${plural(result.sampleErrors, 'sample error')}`;
+    return line;
+  }
+
+  function renderTestResult(draft: QCRule, result: RuleTestResult): void {
+    renderToken += 1;
+    stopTestProgress();
+    removePreviewFilter(); // a new test replaces the previous filter state
+    testPanel.replaceChildren();
+    testPanel.hidden = false;
+    const line = document.createElement('p');
+    line.className = 'q-test-result';
+    testPanel.append(line);
+
+    switch (result.kind) {
+      case 'validate': {
+        const verb = result.count === 1 ? 'matches' : 'match';
+        line.textContent = `Test result: ${plural(result.count, 'row')} ${verb}`;
+        appendSampleTable(testPanel, result.columns, result.rows, result.truncated);
+        offerPreviewFilter(draft, draft.condition);
+        return;
+      }
+      case 'assert': {
+        const violating = result.perTarget.filter((t) =>
+          'aggregate' in t ? !t.aggregate.pass : t.count > 0,
+        ).length;
+        line.textContent =
+          `Test result: ${String(violating)} of ` +
+          `${plural(result.perTarget.length, 'target')} violating`;
+        for (const target of result.perTarget) {
+          const section = document.createElement('div');
+          section.className = 'q-test-target';
+          const head = document.createElement('p');
+          head.className = 'q-test-targethead';
+          if ('aggregate' in target) {
+            const { count, lo, hi, pass } = target.aggregate;
+            head.textContent =
+              `${target.target}: ${plural(count, 'distinct value')} — ` +
+              (pass ? 'pass' : `outside ${fmt(lo)}–${fmt(hi)}`);
+            section.append(head, expansionDetails(target.sql));
+          } else {
+            const verb = target.count === 1 ? 'matches' : 'match';
+            head.textContent = `${target.target}: ${plural(target.count, 'row')} ${verb}`;
+            section.append(head, expansionDetails(target.sql));
+            appendSampleTable(section, ['__row__', target.target], target.rows, target.truncated);
+          }
+          testPanel.append(section);
+        }
+        return;
+      }
+      case 'correction': {
+        line.textContent = correctionLine(result);
+        const columns = ['__row__', 'target', 'before', 'after'];
+        if (result.sampleErrors > 0) columns.push('error');
+        appendSampleTable(
+          testPanel,
+          columns,
+          result.captures.map((c) => ({
+            __row__: c.row,
+            target: c.target,
+            before: c.before,
+            after: c.after,
+            error: c.error,
+          })),
+          !result.sampleOnly && result.count > result.captures.length,
+        );
+        return;
+      }
+      case 'dataset': {
+        line.textContent = `Test result: ${plural(result.count, 'result row')}`;
+        appendSampleTable(testPanel, result.columns, result.rows, result.truncated);
+        return;
+      }
+      case 'not-testable': {
+        line.textContent = `Not testable: ${result.reason}`;
+        return;
+      }
+      case 'error': {
+        line.classList.add('q-test-result--error');
+        line.textContent = `Test failed: ${result.message}`;
+        return;
+      }
+    }
+  }
+
+  return { el, syncDataset, setTestRunning, renderTestResult, clearTest };
 }

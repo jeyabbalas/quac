@@ -27,6 +27,7 @@ export const PROGRESS_LABELS = {
   rules: 'Running QC rules',
   annotate: 'Painting the report',
   gridPrep: 'Preparing the grid',
+  ruleTest: 'Testing the rule',
   exportBuild: 'Building the workbook',
   exportRows: 'Writing rows',
   exportFinish: 'Finishing the workbook',

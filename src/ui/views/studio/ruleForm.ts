@@ -9,9 +9,13 @@
  *   invalid pair auto-snaps scope to `row`.
  * - A type change resets severity to its format default (correct→info, else
  *   error) — the §2 defaults, applied eagerly so the form never lies.
- * - Save gate: rule_id must be pattern-valid and unique across all loaded
- *   files (checked synchronously via deps.isDuplicateId). Draft-lint issues
- *   NEVER block saving — partial acceptance; P18's test gate lands here.
+ * - Save gate (P18): rule_id pattern-valid + unique (synchronous via
+ *   deps.isDuplicateId) AND the last completed draft lint had zero errors
+ *   (`lastLintOk`, nulled by any edit) AND — in 'test' gate mode — a test
+ *   passed since the last edit. 'lint-only' mode (no dataset, external, or
+ *   inapplicable targets — the engine would skip the rule) drops the test
+ *   requirement; the workspace supplies the submit label ("Save untested"
+ *   when the skip is data-shaped).
  * - Values are trimmed on read, matching what parse would do to the CSV cell.
  */
 import { isValidTypeScope, typeScopeComboError } from '../../../core/rules/lint';
@@ -29,9 +33,23 @@ export interface RuleFormCatalog {
 
 export interface RuleFormDeps {
   onChange: () => void;
+  /** "Test rule" click — the workspace owns the async test run. */
+  onTest: () => void;
   onSubmit: (draft: QCRule) => void;
   onCancel: () => void;
   isDuplicateId: (id: string) => boolean;
+}
+
+export type TestGateState = 'untested' | 'testing' | 'passed' | 'failed';
+
+export interface TestGate {
+  /** 'lint-only' hides the test affordances and drops the test requirement. */
+  mode: 'test' | 'lint-only';
+  state: TestGateState;
+  /** True while the pipeline runs — tests are suspended, not queued. */
+  suspended: boolean;
+  /** Submit label — the workspace computes "Save untested" for lint-only. */
+  saveLabel: string;
 }
 
 export interface RuleForm {
@@ -39,6 +57,7 @@ export interface RuleForm {
   load: (rule: QCRule | null, opts: { mode: 'new' | 'edit' }) => void;
   readDraft: () => QCRule;
   setIssues: (result: DraftLintResult | null) => void;
+  setTestGate: (gate: TestGate) => void;
   setColumns: (catalog: RuleFormCatalog | null) => void;
   isDirty: () => boolean;
   focusFirst: () => void;
@@ -67,6 +86,13 @@ const NEW_RULE: QCRule = {
   extras: {},
 };
 
+const TEST_STATUS_TEXT: Record<TestGateState, string> = {
+  untested: 'Untested',
+  testing: 'Testing…',
+  passed: 'Tested ✓',
+  failed: 'Test failed — see the preview panel.',
+};
+
 export function createRuleForm(deps: RuleFormDeps): RuleForm {
   let mode: 'new' | 'edit' = 'new';
   let loaded: QCRule | null = null;
@@ -74,6 +100,9 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
   let loadingFields = false;
   let catalog: RuleFormCatalog | null = null;
   let updateLanguage: 'sql' | 'js' = 'sql';
+  /** Verdict of the last COMPLETED draft lint; null = edited since (pending). */
+  let lastLintOk: boolean | null = null;
+  let gate: TestGate = { mode: 'lint-only', state: 'untested', suspended: false, saveLabel: 'Add to file' };
 
   // ---------- controls ----------
   const el = document.createElement('form');
@@ -133,7 +162,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     tab.addEventListener('click', () => {
       if (loadingFields || updateLanguage === value) return;
       updateLanguage = value;
-      dirty = true;
+      markChanged();
       syncMatrixAndModes();
       syncPreviewAndGate();
       deps.onChange();
@@ -161,6 +190,18 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
   generalIssues.className = 'q-form-general';
   generalIssues.setAttribute('aria-live', 'polite');
   generalIssues.hidden = true;
+
+  const testButton = document.createElement('button');
+  testButton.type = 'button';
+  testButton.className = 'q-btn q-rf-test';
+  testButton.textContent = 'Test rule';
+  testButton.addEventListener('click', () => {
+    deps.onTest();
+  });
+  const testStatus = document.createElement('span');
+  testStatus.className = 'q-rf-teststatus';
+  testStatus.setAttribute('aria-live', 'polite');
+  testStatus.textContent = TEST_STATUS_TEXT.untested;
 
   const cancelButton = document.createElement('button');
   cancelButton.type = 'button';
@@ -250,7 +291,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
 
   const footer = document.createElement('div');
   footer.className = 'q-rf-footer';
-  footer.append(cancelButton, submitButton);
+  footer.append(testButton, testStatus, cancelButton, submitButton);
 
   el.append(head, targetsField.wrap, conditionField.wrap, correctionBlock, commentField.wrap, generalIssues, footer);
 
@@ -262,9 +303,15 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     return scopeSelect.value as RuleScope;
   }
 
+  /** Any edit invalidates the last lint verdict (the gate goes pending). */
+  function markChanged(): void {
+    dirty = true;
+    lastLintOk = null;
+  }
+
   function handleChange(): void {
     if (loadingFields) return;
-    dirty = true;
+    markChanged();
     syncPreviewAndGate();
     deps.onChange();
   }
@@ -274,14 +321,14 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     const type = currentType();
     severitySelect.value = defaultSeverity(type);
     if (!isValidTypeScope(type, currentScope())) scopeSelect.value = 'row'; // auto-snap
-    dirty = true;
+    markChanged();
     syncMatrixAndModes();
     syncPreviewAndGate();
     deps.onChange();
   });
   scopeSelect.addEventListener('change', () => {
     if (loadingFields) return;
-    dirty = true;
+    markChanged();
     syncMatrixAndModes();
     syncPreviewAndGate();
     deps.onChange();
@@ -349,7 +396,16 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     const error = idErrorText(id);
     idError.textContent = error ?? '';
     idError.hidden = error === null;
-    submitButton.disabled = error !== null;
+    // The P18 gate: valid unique id AND a clean completed lint AND — unless
+    // the rule is lint-only — a test passed since the last edit.
+    const tested = gate.mode === 'lint-only' || gate.state === 'passed';
+    submitButton.disabled = error !== null || lastLintOk !== true || !tested;
+    submitButton.textContent = gate.saveLabel;
+    const lintOnly = gate.mode === 'lint-only';
+    testButton.hidden = lintOnly;
+    testStatus.hidden = lintOnly;
+    testButton.disabled = gate.state === 'testing' || gate.suspended;
+    testStatus.textContent = TEST_STATUS_TEXT[gate.state];
   }
 
   function applyCatalog(): void {
@@ -371,6 +427,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
   }
 
   function setIssues(result: DraftLintResult | null): void {
+    lastLintOk = result === null ? null : result.ok;
     conditionEditor.setIssues(result?.byField.condition ?? []);
     updateEditor.setIssues(result?.byField.update_expression ?? []);
     // rule_id issues are owned by the synchronous gate above — not mirrored.
@@ -381,6 +438,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     renderIssueList(commentField.issues, result?.byField.comment ?? []);
     renderIssueList(updateField.issues, result?.byField.update_language ?? []);
     renderIssueList(generalIssues, result?.general ?? []);
+    syncPreviewAndGate(); // lastLintOk feeds the submit gate
   }
 
   function readDraft(): QCRule {
@@ -424,7 +482,14 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     updateLanguage = source.updateLanguage === 'js' ? 'js' : 'sql';
     updateEditor.setValue(source.updateExpression);
     commentInput.value = source.comment;
-    submitButton.textContent = mode === 'edit' ? 'Save rule' : 'Add to file';
+    // Fresh gate per open — the workspace immediately follows with the real
+    // setTestGate; this default only bridges the synchronous gap.
+    gate = {
+      mode: 'lint-only',
+      state: 'untested',
+      suspended: false,
+      saveLabel: mode === 'edit' ? 'Save rule' : 'Add to file',
+    };
     dirty = false;
     setIssues(null);
     applyCatalog();
@@ -440,6 +505,10 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     load,
     readDraft,
     setIssues,
+    setTestGate: (next) => {
+      gate = next;
+      syncPreviewAndGate();
+    },
     setColumns: (next) => {
       catalog = next;
       applyCatalog();

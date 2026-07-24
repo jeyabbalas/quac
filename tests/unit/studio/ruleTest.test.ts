@@ -181,6 +181,7 @@ describe('runRuleTest — corrections (never mutate)', () => {
       count: 1,
       captures: [{ target: 'credit_card_balance', row: 9, before: -2500, after: 2500 }],
       sampleOnly: false,
+      sampledRows: 0,
       sampleErrors: 0,
     });
     // Preview never mutates: the seeded value is still there.
@@ -207,6 +208,7 @@ describe('runRuleTest — corrections (never mutate)', () => {
       count: 1,
       captures: [{ target: 'household_id', row: 13, before: 'hh-42', after: 'HH00000042' }],
       sampleOnly: true,
+      sampledRows: 1,
       sampleErrors: 0,
     });
     const [row] = await db.runner.query("SELECT household_id FROM data WHERE __row__ = 13");
@@ -229,6 +231,7 @@ describe('runRuleTest — corrections (never mutate)', () => {
     if (result.kind !== 'correction') throw new Error(`unexpected kind ${result.kind}`);
     expect(result.count).toBe(15); // waves 1+2 match rows
     expect(result.sampleOnly).toBe(true);
+    expect(result.sampledRows).toBe(15); // all matches fit the 20-row sample
     expect(result.sampleErrors).toBe(2); // sampled rows 1 and 11 are wave 2
     const errored = result.captures.filter((c) => c.error !== undefined);
     expect(errored.map((c) => c.row)).toEqual([1, 11]);

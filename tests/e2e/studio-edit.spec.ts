@@ -98,6 +98,14 @@ test('create a rule in the studio: draft lint, completions, matrix, save', async
   await page.keyboard.type('record_id IS NULL');
   await page.locator('#q-rf-comment').fill('Record id must be present.');
   await expect(conditionDiags).toBeHidden({ timeout: LINT_TIMEOUT }); // lint settles clean
+
+  // ---- P18 gate: Add stays disabled until a test executes successfully ----
+  // (0 matches still counts — record_id IS NULL matches no example rows).
+  await expect(page.getByRole('button', { name: 'Add to file' })).toBeDisabled();
+  await page.locator('.q-rf-test').click();
+  await expect(page.locator('.q-test-result')).toBeVisible({ timeout: LINT_TIMEOUT });
+  await expect(page.locator('.q-rf-teststatus')).toHaveText('Tested ✓');
+  await expect(page.getByRole('button', { name: 'Add to file' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add to file' }).click();
 
   // ---- saved: grid row, dirty rail marker, pinned reorder tooltip ----

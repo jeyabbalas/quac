@@ -67,6 +67,8 @@ export type RuleTestResult =
       captures: CorrectionCapture[];
       /** True for js — captures come from the ≤20-row sample only. */
       sampleOnly: boolean;
+      /** Rows the sandbox actually ran on (0 for sql — captures are exact). */
+      sampledRows: number;
       sampleErrors: number;
     }
   | {
@@ -157,7 +159,7 @@ async function testSqlCorrection(rule: QCRule, deps: RuleTestDeps): Promise<Rule
       });
     }
   }
-  return { kind: 'correction', count, captures, sampleOnly: false, sampleErrors: 0 };
+  return { kind: 'correction', count, captures, sampleOnly: false, sampledRows: 0, sampleErrors: 0 };
 }
 
 /** js correction: exact match counts from SQL; the user function runs
@@ -220,7 +222,7 @@ async function testJsCorrection(rule: QCRule, deps: RuleTestDeps): Promise<RuleT
         `first error: ${firstError ?? 'unknown'}`,
     );
   }
-  return { kind: 'correction', count, captures, sampleOnly: true, sampleErrors };
+  return { kind: 'correction', count, captures, sampleOnly: true, sampledRows, sampleErrors };
 }
 
 async function testDataset(rule: QCRule, deps: RuleTestDeps): Promise<RuleTestResult> {

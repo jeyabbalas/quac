@@ -39,7 +39,8 @@ import { QUAC_WORK } from '../../../core/bridge/tables';
 import { runDraftLint } from './draftLint';
 import { createPreviewPane } from './previewPane';
 import { createRuleForm } from './ruleForm';
-import type { RuleFormCatalog } from './ruleForm';
+import { runRuleTest } from './ruleTest';
+import type { RuleFormCatalog, TestGateState } from './ruleForm';
 import type { ShellContext } from '../../../app/shell';
 import type { RulesSlotState } from '../../../core/rules/rules-store';
 import type { QCRule, RuleFileLintResult } from '../../../core/rules/types';
@@ -121,7 +122,12 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   // ---------- form ----------
   const form = createRuleForm({
     onChange: () => {
+      resetTest(); // ANY edit invalidates the last test
+      syncGate();
       scheduleDraftLint();
+    },
+    onTest: () => {
+      void runTestNow();
     },
     onSubmit: (draft) => {
       submitDraft(draft);
@@ -195,6 +201,76 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     form.setIssues(result);
   }
 
+  // ---------- rule test + save gate (P18) ----------
+  let testToken = 0;
+  let testState: TestGateState = 'untested';
+
+  /** Invalidate any in-flight test and clear the panel (field change, drawer
+   *  open/close, file switch). */
+  function resetTest(): void {
+    testToken += 1;
+    testState = 'untested';
+    previewPane.clearTest();
+  }
+
+  /**
+   * Recompute the gate mode from the draft: lint-only iff there is no lint
+   * context OR the rule is external OR any distinct target is missing from
+   * the dataset (mirrors engine applicableTargets — the engine would skip the
+   * rule, so demanding a test would make the gate unsatisfiable).
+   */
+  function syncGate(): void {
+    const target = drawerTarget;
+    if (target === null) return;
+    const draft = form.readDraft();
+    const lintCtx = getLintContext();
+    const external = draft.ruleType === 'external';
+    const inapplicable =
+      lintCtx !== null &&
+      [...new Set(draft.targetVariables)].some((t) => !lintCtx.datasetColumns.includes(t));
+    const mode = lintCtx === null || external || inapplicable ? 'lint-only' : 'test';
+    // External stays lint-only with the NORMAL label; only data-shaped skips
+    // (no dataset / inapplicable targets) get the explicit "Save untested".
+    const saveLabel =
+      mode === 'lint-only' && !external
+        ? 'Save untested'
+        : target.kind === 'edit'
+          ? 'Save rule'
+          : 'Add to file';
+    form.setTestGate({
+      mode,
+      state: testState,
+      suspended: isRunningStage(ctx.store.pipeline.get().stage),
+      saveLabel,
+    });
+  }
+
+  async function runTestNow(): Promise<void> {
+    // Captured check (runLintNow precedent): narrowing `drawerTarget` here
+    // would pin the post-await staleness guard to this value.
+    const target = drawerTarget;
+    if (target === null) return;
+    // Suspended, not queued, while a run holds the bridge — the user re-clicks.
+    if (isRunningStage(ctx.store.pipeline.get().stage)) return;
+    const lintCtx = getLintContext();
+    if (lintCtx === null) return;
+    const token = ++testToken;
+    testState = 'testing';
+    syncGate();
+    previewPane.setTestRunning();
+    const draft = form.readDraft();
+    const result = await runRuleTest(draft, {
+      runner: lintCtx.runner,
+      datasetColumns: lintCtx.datasetColumns,
+      loadSandbox: loadJSSandbox,
+    });
+    if (token !== testToken || drawerTarget === null) return; // stale — discarded
+    testState =
+      result.kind === 'error' ? 'failed' : result.kind === 'not-testable' ? 'untested' : 'passed';
+    previewPane.renderTestResult(draft, result);
+    syncGate();
+  }
+
   // ---------- completion catalog ----------
   let functionsCache: readonly string[] | null = null;
   let catalogToken = 0;
@@ -252,6 +328,8 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       target.kind === 'edit' ? `Edit rule — ${target.fileName}` : `New rule — ${target.fileName}`;
     drawer.hidden = false;
     form.load(rule, { mode: target.kind === 'edit' ? 'edit' : 'new' });
+    resetTest();
+    syncGate();
     scheduleDraftLint();
     form.focusFirst();
   }
@@ -261,6 +339,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     if (target === null) return;
     drawerTarget = null;
     cancelScheduledLint();
+    resetTest();
     drawer.hidden = true;
     if (restoreFocus) {
       if (target.kind === 'edit') focusGrid(target.fileName, target.index);
@@ -795,6 +874,16 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       lintPending = false;
       scheduleDraftLint();
     }
+  });
+
+  // Gate mode tracks the lint context and run state: the context installs
+  // after the dataset signal (rulesState republish), runs suspend testing,
+  // and a dataset change can flip testability entirely.
+  effect(() => {
+    ctx.store.dataset.get();
+    ctx.store.pipeline.get();
+    rulesState.get();
+    if (drawerTarget !== null) syncGate();
   });
 
   // Completion catalog: re-check on dataset/pipeline/rules-lint changes.

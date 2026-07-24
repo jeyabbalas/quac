@@ -7,6 +7,7 @@
 import { createBadge } from './badge';
 import type { BadgeTone } from './badge';
 import type { SlotState, SlotStatus } from '../../app/store';
+import './slotCard.css';
 
 export interface SlotCard {
   readonly el: HTMLElement;

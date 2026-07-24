@@ -50,7 +50,7 @@ src/
     views/load/  views/report/  views/studio/
     components/               # SlotCard, DropZone, UrlField, DuckProgress, Badge, Modal variants, ...
   styles/
-    tokens.css base.css components.css
+    tokens.css base.css primitives.css   # only app-wide files; component/view CSS is co-located (ui-design.md §5)
 public/
   favicon.svg favicon-32.png apple-touch-icon.png
   logo/quac-logo.svg logo/github-logo.svg

@@ -26,6 +26,7 @@ import { setPresenter } from './presenter';
 import type { ShellContext } from '../../../app/shell';
 import type { HeaderTooltipPlan } from '../../../core/report/headerTooltips';
 import type { SeverityToggles } from './reportGrid';
+import './reportView.css';
 
 type GridModule = typeof import('./reportGrid');
 

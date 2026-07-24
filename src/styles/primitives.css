@@ -1,0 +1,261 @@
+/* App-wide primitives (ui-design.md §2/§5): buttons → toast → modal → badge →
+   pill → empty state. Anything view- or component-specific lives in a CSS file
+   co-located with its owning module. */
+
+/* Buttons — base is the SECONDARY look (paper + ink stroke); yellow is an
+   explicit opt-in via --primary so only true calls-to-action shout. */
+.q-btn {
+  padding: 6px 16px;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-md);
+  background: var(--q-paper);
+  color: var(--q-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.q-btn:hover:not(:disabled) {
+  background: var(--q-gray-50);
+  box-shadow: var(--q-shadow-1);
+}
+
+/* Solid fill, not opacity — translucent yellow over the sky header reads green */
+.q-btn:disabled {
+  background: var(--q-gray-200);
+  border-color: var(--q-gray-400);
+  color: var(--q-gray-500);
+  cursor: not-allowed;
+}
+
+.q-btn--primary {
+  background: var(--q-yellow);
+}
+
+.q-btn--primary:hover:not(:disabled) {
+  background: var(--q-yellow);
+  filter: brightness(1.05);
+  box-shadow: none;
+}
+
+/* Ghost — borderless quiet action (inline dismiss/tertiary) */
+.q-btn--ghost {
+  border-color: transparent;
+  background: none;
+}
+
+.q-btn--ghost:hover:not(:disabled) {
+  background: var(--q-gray-100);
+  box-shadow: none;
+}
+
+.q-btn--small {
+  padding: 4px 12px;
+  font-size: var(--q-text-sm);
+}
+
+/* Toast */
+.q-toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--q-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-2);
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.q-toast {
+  background: var(--q-paper);
+  border: var(--q-stroke);
+  border-left-width: 6px;
+  border-radius: var(--q-radius-md);
+  padding: 10px 14px;
+  box-shadow: var(--q-shadow-3);
+  cursor: pointer;
+}
+
+.q-toast--info {
+  border-left-color: var(--q-info);
+}
+
+.q-toast--success {
+  border-left-color: var(--q-success);
+}
+
+.q-toast--error {
+  border-left-color: var(--q-error);
+}
+
+.q-toast-msg {
+  font-weight: 500;
+}
+
+.q-toast-hint {
+  margin-top: 2px;
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-600);
+}
+
+/* Modal */
+.q-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--q-z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--q-space-4);
+  background: var(--q-scrim);
+}
+
+.q-modal {
+  background: var(--q-paper);
+  border: var(--q-stroke-heavy);
+  border-radius: var(--q-radius-lg);
+  min-width: min(320px, 100%);
+  max-width: 560px;
+  max-height: 80dvh;
+  overflow: auto;
+}
+
+.q-modal--wide {
+  max-width: 720px;
+}
+
+.q-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-3);
+  padding: 14px 16px;
+  border-bottom: var(--q-border-hairline);
+}
+
+.q-modal-title {
+  font-size: var(--q-text-xl);
+}
+
+/* Ghost-recipe close button; bespoke class kept for the × glyph metrics */
+.q-modal-close {
+  border: none;
+  background: none;
+  padding: 2px var(--q-space-2);
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: var(--q-radius-sm);
+  color: var(--q-gray-600);
+  cursor: pointer;
+}
+
+.q-modal-close:hover {
+  background: var(--q-gray-100);
+  color: var(--q-ink);
+}
+
+.q-modal-body {
+  padding: var(--q-space-4);
+}
+
+/* Footer action row shared by every modal (ui-design.md §5) */
+.q-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--q-space-2);
+  margin-top: var(--q-space-3);
+}
+
+/* Badge */
+.q-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-pill);
+  font-size: var(--q-text-sm);
+  font-weight: 600;
+  background: var(--q-gray-100);
+  color: var(--q-gray-700);
+}
+
+.q-badge--valid {
+  background: var(--q-success-fill);
+  color: var(--q-success);
+  border-color: var(--q-success);
+}
+
+.q-badge--warning {
+  background: var(--q-warning-fill);
+  color: var(--q-warning);
+  border-color: var(--q-warning);
+}
+
+.q-badge--error {
+  background: var(--q-error-fill);
+  color: var(--q-error);
+  border-color: var(--q-error);
+}
+
+.q-badge--info {
+  background: var(--q-info-fill);
+  color: var(--q-info);
+  border-color: var(--q-info);
+}
+
+/* Severity pill (nav tab count; white passes AA on all three severity colors) */
+.q-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--q-radius-pill);
+  font-size: var(--q-text-xs);
+  font-weight: 700;
+  background: var(--q-gray-200);
+  color: var(--q-ink);
+}
+
+.q-pill--error {
+  background: var(--q-error);
+  color: var(--q-paper);
+}
+
+.q-pill--warning {
+  background: var(--q-warning);
+  color: var(--q-paper);
+}
+
+.q-pill--info {
+  background: var(--q-info);
+  color: var(--q-paper);
+}
+
+/* Empty state */
+.q-empty {
+  max-width: 480px;
+  margin: var(--q-space-7) auto;
+  padding: 32px 24px;
+  text-align: center;
+  border: 2px dashed var(--q-gray-300);
+  border-radius: var(--q-radius-lg);
+}
+
+.q-empty-title {
+  margin-bottom: var(--q-space-2);
+}
+
+.q-empty-body {
+  color: var(--q-gray-600);
+}
+
+.q-empty-duck {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--q-space-3);
+}
+
+.q-empty-action {
+  display: inline-block;
+  margin-top: var(--q-space-4);
+  text-decoration: none;
+}

@@ -1,0 +1,120 @@
+/* Shared slot-card primitives: the card frame plus the DropZone and UrlField
+   input widgets that every slot composes. */
+
+/* Tier 1 sticker: bold ink outline = a thing you act on (ui-design.md §2) */
+.q-slotcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--q-space-4);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+}
+
+.q-slotcard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-2);
+}
+
+.q-slotcard-title {
+  margin: 0;
+  font-size: var(--q-text-lg);
+  font-weight: 700;
+}
+
+.q-slotcard-summary {
+  margin: 0;
+  min-height: 1.25em;
+  font-size: var(--q-text-md);
+  color: var(--q-gray-700);
+  overflow-wrap: anywhere;
+}
+
+.q-slotcard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Card-level secondary actions (e.g. "Browse folder", "Choose index…") */
+.q-slotcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--q-space-2);
+}
+
+.q-slotcard-details {
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+}
+
+.q-slotcard-details > summary {
+  cursor: pointer;
+  color: var(--q-gray-600);
+}
+
+.q-slotcard-issues {
+  margin: var(--q-space-2) 0 0;
+  padding-left: 18px;
+}
+
+/* Drop zone (a real <button> for keyboard access) */
+.q-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--q-space-1);
+  width: 100%;
+  padding: 20px 12px;
+  border: 2px dashed var(--q-gray-400);
+  border-radius: var(--q-radius-md);
+  background: var(--q-gray-50);
+  font: inherit;
+  font-size: var(--q-text-md);
+  color: var(--q-gray-700);
+  cursor: pointer;
+}
+
+.q-dropzone:hover:not(:disabled),
+.q-dropzone--over {
+  border-color: var(--q-orange);
+  background: var(--q-yellow-tint);
+}
+
+.q-dropzone:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.q-dropzone-browse {
+  font-weight: 700;
+  text-decoration: underline;
+  color: var(--q-ink);
+}
+
+/* URL field */
+.q-urlfield {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.q-urlfield-label {
+  grid-column: 1 / -1;
+  font-size: var(--q-text-sm);
+  font-weight: 600;
+  color: var(--q-gray-700);
+}
+
+.q-urlfield-input {
+  min-width: 0;
+  padding: 6px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  font: inherit;
+  font-size: var(--q-text-md);
+}

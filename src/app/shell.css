@@ -1,0 +1,170 @@
+/* App shell chrome: header banner, brand, tabs, main rail, footer. */
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+
+  /* One rail width for the header and the main column, so the banner's brand,
+     tabs and actions sit on the cards' edges. Every route shares it: the report
+     grid needs the width for 266 columns plus the panel column, and the Load and
+     Studio views read as the same app only if their rail matches. */
+  --q-shell-max: 1600px;
+}
+
+.q-header {
+  padding-top: 14px;
+  background: var(--q-sky); /* black text on sky, never white */
+  color: var(--q-ink);
+  border-bottom: var(--q-stroke-heavy);
+}
+
+/* Same box model as .q-main (rail width + 24px inset) so the two columns share
+   one left edge; the banner itself keeps painting full-bleed. */
+.q-header-inner {
+  display: grid;
+  grid-template-areas:
+    'brand actions'
+    'tabs tabs';
+  grid-template-columns: 1fr auto;
+  gap: var(--q-space-3) var(--q-space-5);
+  width: 100%;
+  max-width: var(--q-shell-max);
+  margin-inline: auto;
+  padding-inline: var(--q-space-5);
+}
+
+.q-brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The two round marks are drawn with different padding inside their boxes —
+   the QuaC ring fills 82% of its viewBox, the Octocat 98%. Sizing the boxes
+   56/46 lands both discs at ~46px so they read as one matched pair, and the
+   shared drop-shadow lifts them off the sky. */
+.q-logo,
+.q-gh img {
+  filter: drop-shadow(0 1px 2px rgb(17 17 17 / 0.28));
+}
+
+.q-logo {
+  width: 56px;
+  height: 56px;
+  flex: none;
+}
+
+.q-brand-text {
+  min-width: 0;
+}
+
+.q-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.q-subtitle {
+  font-size: var(--q-text-md);
+  line-height: 1.35;
+}
+
+.q-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-4);
+}
+
+.q-gh {
+  display: inline-flex;
+  border-radius: var(--q-radius-pill);
+  transition: transform var(--q-dur-1) ease;
+}
+
+.q-gh:hover {
+  transform: translateY(-2px);
+}
+
+.q-gh img {
+  width: 46px;
+  height: 46px;
+}
+
+/* Tabs — the active tab fuses into the white main area through the header's
+   3px ink stroke (negative margin + matching border) */
+.q-tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: var(--q-space-1);
+}
+
+.q-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--q-space-2);
+  padding: 9px 18px;
+  border: 3px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  color: var(--q-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.q-tab:hover:not([aria-current='page']) {
+  background: rgb(255 255 255 / 0.45);
+}
+
+.q-tab[aria-current='page'] {
+  background: var(--q-paper);
+  border-color: var(--q-ink);
+  margin-bottom: -3px;
+  padding-bottom: 12px;
+}
+
+.q-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--q-shell-max);
+  margin-inline: auto;
+  padding: var(--q-space-5);
+}
+
+.q-footer {
+  padding: 8px 24px;
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-600);
+  background: var(--q-gray-50);
+  border-top: var(--q-border-hairline);
+}
+
+/* Below the desktop-first breakpoint: tighten the insets, let the tabs scroll */
+@media (max-width: 1023px) {
+  .q-header-inner {
+    padding-inline: var(--q-space-4);
+  }
+
+  .q-tabs {
+    overflow-x: auto;
+  }
+
+  .q-main {
+    padding: var(--q-space-4);
+  }
+}
+
+/* Phones: brand line + actions no longer fit on one row, so stack them */
+@media (max-width: 639px) {
+  .q-header-inner {
+    grid-template-areas:
+      'brand'
+      'actions'
+      'tabs';
+    grid-template-columns: 1fr;
+    gap: 10px 0;
+  }
+}

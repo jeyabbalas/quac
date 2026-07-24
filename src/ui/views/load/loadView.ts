@@ -19,6 +19,7 @@ import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import { isRunningStage } from '../../../app/store';
 import type { ShellContext } from '../../../app/shell';
 import type { SlotState } from '../../../app/store';
+import './loadView.css';
 
 interface ExampleIndex {
   dataset: string;

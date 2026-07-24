@@ -4,6 +4,7 @@
  * cancels (Esc, ×, backdrop, Cancel).
  */
 import { openModal } from '../../app/modal';
+import './sheetPickerModal.css';
 
 export function pickSheet(sheetNames: readonly string[]): Promise<string | null> {
   return new Promise((resolve) => {

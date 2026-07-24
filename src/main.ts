@@ -1,6 +1,6 @@
 import './styles/tokens.css';
 import './styles/base.css';
-import './styles/components.css';
+import './styles/primitives.css';
 import { applyBootConfig } from './app/bootConfig';
 import { startRouter } from './app/router';
 import { mountShell } from './app/shell';

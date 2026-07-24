@@ -134,7 +134,7 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 **Modals** (all: focus-trapped, `Esc` closes, `role="dialog"`, labelled):
 - **IndexPickerModal** — radio list of candidate root schemas (relativePath, `$id`, title, array-shape badge) + "why this is ambiguous" note; selection recorded → `index=` param.
 - **SheetPickerModal** — Excel sheet names, Sheet 1 preselected.
-- **ShareModal** — per `url-params.md §4`.
+- **ShareModal** — per `url-params.md §4`. Opens **wide** (`openModal({ size: 'wide' })`). Order: intro → "Shareable link" (readonly input + Copy primary + char count + index callout, or the `config=` manifest path) → "Loaded files" provenance. Schema's per-crawl-base rows render as ONE grouped ✓ row ("Schema: N files · root …") with the URLs behind a `<details>`; grouping is render-time only — `shareModel.ts` stays per-URL. Uploaded artifacts keep their ✗ row + "host it by URL" note.
 - **Pertinence block modal** — per `json-schema-subsystem.md §E.5`.
 
 ## 5. Component inventory
@@ -142,9 +142,15 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PertinenceStrip, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
 Conventions:
+- **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body).
+- **Modal sizes**: `openModal({ size: 'default' | 'wide' })` — 560px / 720px caps. Wide is for content-heavy dialogs; ShareModal is the only wide modal today.
 - **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker, IndexPicker, and the pertinence block modal share it. One primary per modal at most.
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
 - **Empty states**: framed `createEmptyState` is for view-level empties only (a whole route with nothing to show). In-panel empties are a quiet `.q-panel-note` paragraph — a dashed box inside a sticker card reads as a broken drop zone.
+- **Progress**: DuckProgress v2 mechanics + the run-level monotonic mapper (`runProgressModel.ts`) and the `PROGRESS_LABELS` copy home are specified in §6.
+- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state — imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`. Bare e2e-hook classes (`.q-run-cancel`, `.q-example-load`) are noted in comments where they'd otherwise look like dead selectors.
+
+**For P17 (Rule Studio)**: compose, don't invent. The studio's two panels are Tier 1 stickers; inner structure (rule rows, form fields) is Tier 2 hairlines; the preview grid is a Tier 3 surface sized like `.q-report-grid`. Buttons come from the `.q-btn` system (one `--primary` per region — "Test rule" and the download live as secondary until a row is ready to commit); modals use `q-modal-actions` footers; tab-like switches reuse the `.q-paneltab` underline pattern; long-running preview queries show DuckProgress with a `PROGRESS_LABELS` entry. Styles go in a co-located `views/studio/studioView.css`. The pinned copy inventory (badges, dialog titles, button names) is the contract — extend it, never reword it.
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 

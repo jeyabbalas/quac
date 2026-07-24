@@ -18,6 +18,7 @@ import { createCancelToken } from './store';
 import { installTypedSync } from './typedSync';
 import type { RouteId, Router } from './router';
 import type { AppStore } from './store';
+import './shell.css';
 
 export interface ShellContext {
   store: AppStore;

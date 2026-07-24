@@ -1,0 +1,23 @@
+/* Sheet picker modal (multi-sheet Excel datasets). */
+
+.q-sheetpicker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--q-space-3) 0;
+}
+
+.q-sheetpicker-option {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-2);
+  padding: 8px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  cursor: pointer;
+}
+
+.q-sheetpicker-option:has(input:checked) {
+  border-color: var(--q-ink);
+  background: var(--q-gray-50);
+}

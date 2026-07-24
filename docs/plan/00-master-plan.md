@@ -73,6 +73,20 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-24 · UIX · Interstitial UI/UX overhaul (10 commits, post-P16, before P17) — one design language on the loved chrome:
+tokens (type/space/radius/border/elevation/z/motion tiers + yellow-tint/sky-deep) → button system (.q-btn secondary base,
+--primary yellow opt-in, ghost/small) → tiered "sticker" surfaces (T1 ink-stroke cards / T2 hairlines / T3 quiet data) → slot-card
+consolidation (shared SlotCard+DropZone+UrlField; schemaSlotCard is a detail-renderer; folder drop via onDropTransfer) → modal
+footers (.q-modal-actions) + createSeverityLabel + in-panel empty doctrine → DuckProgress v2 (clamped duck, CSS-glide asymptote,
+runProgressModel.ts monotonic stage segments, one surface at a time, WAAPI reveal/collapse) → Load hero + sticky run bar →
+report severity-stat hero, short one-line panel tabs, offenders rule/source split, sticky panel column → ShareModal wide +
+link-first + grouped schema row → CSS co-location (styles/ = tokens/base/primitives only; shell/slotCard/duckProgress/
+sheetPickerModal/loadView/reportView css beside owners; dist rule-multiset verified identical minus purged
+.q-slotcard-placeholder + --q-gray-900). Spec churn: ui-design.md §2 tokens/tiers, §4 wireframes + ShareModal structure, §5
+conventions (slot primitives API, modal sizes, CSS map, For-P17 contract), §6 DuckProgress v2 + PROGRESS_LABELS. Lockstep
+selector/copy edits confined to schemaLoad/runQc/pertinence/loadExample/download/preconfig/shareLink/nav/smoke specs
+(badge → slotcard-header, panel tab renames, exact:true). 490 unit + 44 browser + 39 e2e green; bundle gate unchanged.
+
 2026-07-24 · P16 · URL config & sharing shipped on main: core/share/{urlConfig (fragment grammar decode/encode/assemble,
 unknown-param + repeated-key order preserving),configManifest (shape validation + applyPrecedence — config= first, inline
 overrides each key WHOLESALE + override toast),shareModel (pure provenance→link),corsHosts} + fetchArtifact finalized (30 s

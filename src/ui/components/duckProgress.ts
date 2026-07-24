@@ -9,6 +9,7 @@
  * transition resumes from the current computed value for free.
  */
 import { assetUrl } from '../../app/urlBase';
+import './duckProgress.css';
 
 /** The three sanctioned loading lines (ui-design §6) — their single home. */
 export const DUCK_LOADING_LINES = [

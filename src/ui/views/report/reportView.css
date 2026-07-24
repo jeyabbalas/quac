@@ -1,0 +1,441 @@
+/* QC Report view: grid host, run-progress sticker, panel column (tabs, stats,
+   findings, offenders), export progress.
+   .q-run-cancel is a bare e2e hook (runQc.spec) — no styles on purpose. */
+
+/* Report view grid host.
+   data-table's `.dt-root` is `height: 100%`, and its VirtualScroller sizes the
+   window from the body scroller's `clientHeight`. With an auto-height host that
+   percentage resolves to `auto`, the scroller measures the FULL content height
+   and renders every row — 101 rows x 266 cols already froze the tab at ~51k DOM
+   nodes, and a large dataset would kill it. A definite height is therefore load-
+   bearing, not cosmetic: keep one here. */
+.q-report-grid {
+  /* Vertical chrome around the grid at 100dvh: header banner + tabs (~130px)
+     + main padding, grid margin and cap-banner allowance (~56px) + footer
+     (~24px). Keeps the grid filling the viewport without pushing the page
+     into a scroll on its own. */
+  --q-report-chrome: 210px;
+
+  margin-top: var(--q-space-2);
+  height: clamp(420px, calc(100dvh - var(--q-report-chrome)), 1200px);
+}
+
+/* data-table renders a string[] tooltip item as pills sized for short values
+   (height: 1.4em). QuaC's "QC rules" entries are sentences that wrap to two or
+   three lines and spill over their neighbours — let those pills grow. Two
+   classes deep on purpose: data-table's stylesheet arrives in the lazy grid
+   chunk, i.e. after this file, so an equal-specificity rule would lose. */
+.dt-col-tooltip .dt-col-tooltip__chip {
+  height: auto;
+  min-height: 1.4em;
+  align-items: flex-start;
+  padding-block: 2px;
+  line-height: 1.35;
+}
+
+.q-report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
+  gap: var(--q-space-4);
+  align-items: start;
+}
+
+@media (max-width: 1023px) {
+  .q-report-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.q-report-gridarea {
+  min-width: 0;
+}
+
+.q-report-gridhost {
+  min-width: 0;
+}
+
+/* Tier 1 sticker */
+.q-run-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-3);
+  padding: var(--q-space-3);
+  margin-bottom: var(--q-space-2);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+}
+
+.q-run-progress .q-duckprogress {
+  flex: 1;
+  min-width: 0;
+}
+
+.q-cap-banner {
+  margin: 0 0 var(--q-space-2);
+  padding: var(--q-space-2) var(--q-space-3);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-warning-fill);
+  color: var(--q-warning);
+  font-size: var(--q-text-md);
+}
+
+.q-partial-banner {
+  margin: 0 0 var(--q-space-3);
+  padding: var(--q-space-2) var(--q-space-3);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-warning-fill);
+  color: var(--q-warning);
+  font-size: var(--q-text-md);
+}
+
+.q-assess-note {
+  margin: 0 0 var(--q-space-3);
+  color: var(--q-gray-700);
+  font-size: var(--q-text-md);
+}
+
+/* Panel tabs — the panel column is a Tier 1 sticker */
+.q-report-panels {
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  padding: var(--q-space-4);
+  box-shadow: var(--q-shadow-2);
+  min-width: 0;
+}
+
+/* Two-column layouts: the panel rides along while the grid scrolls */
+@media (min-width: 1024px) {
+  .q-report-panels {
+    position: sticky;
+    top: var(--q-space-4);
+    max-height: calc(100dvh - 120px);
+    overflow: auto;
+  }
+}
+
+/* One line at the pinned 1280×720 viewport (short labels; full names in
+   title/aria-label). Active = ink text over a yellow underline that fuses
+   with the hairline rule — the sticker language, not a sky pill. */
+.q-paneltabs {
+  display: flex;
+  gap: var(--q-space-1);
+  border-bottom: var(--q-border-hairline);
+  margin-bottom: var(--q-space-3);
+}
+
+.q-paneltab {
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px; /* the underline sits ON the hairline rule */
+  background: none;
+  padding: 6px 10px 8px;
+  border-radius: var(--q-radius-sm) var(--q-radius-sm) 0 0;
+  font: inherit;
+  font-size: var(--q-text-md);
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--q-gray-600);
+  white-space: nowrap;
+}
+
+.q-paneltab:hover {
+  background: var(--q-gray-100);
+  color: var(--q-ink);
+}
+
+.q-paneltab--active {
+  color: var(--q-ink);
+  border-bottom-color: var(--q-yellow);
+}
+
+.q-panel {
+  min-width: 0;
+}
+
+.q-panel-note {
+  color: var(--q-gray-700);
+  font-size: var(--q-text-md);
+}
+
+/* Summary stat cards — severity-tinted hero row above a quiet fact row */
+.q-statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--q-space-2);
+  margin-bottom: var(--q-space-3);
+}
+
+.q-statgrid--hero {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--q-space-2);
+}
+
+.q-statcard {
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: 10px 12px;
+  background: var(--q-gray-50);
+}
+
+.q-statcard-value {
+  font-size: var(--q-text-2xl);
+  font-weight: 700;
+  color: var(--q-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-statgrid--hero .q-statcard-value {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.q-statcard-label {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-700);
+  margin-top: 2px;
+}
+
+/* Severity tints: the verdict numbers carry their severity colors so counts
+   cannot be mistaken for neutral facts (fills pair with their AA text colors
+   exactly like .q-badge--*). */
+.q-statcard--error {
+  background: var(--q-error-fill);
+  border-color: var(--q-error);
+}
+
+.q-statcard--error .q-statcard-value,
+.q-statcard--error .q-statcard-label {
+  color: var(--q-error);
+}
+
+.q-statcard--warning {
+  background: var(--q-warning-fill);
+  border-color: var(--q-warning);
+}
+
+.q-statcard--warning .q-statcard-value,
+.q-statcard--warning .q-statcard-label {
+  color: var(--q-warning);
+}
+
+.q-statcard--info {
+  background: var(--q-info-fill);
+  border-color: var(--q-info);
+}
+
+.q-statcard--info .q-statcard-value,
+.q-statcard--info .q-statcard-label {
+  color: var(--q-info);
+}
+
+.q-statcard--success {
+  background: var(--q-success-fill);
+  border-color: var(--q-success);
+}
+
+.q-statcard--success .q-statcard-value,
+.q-statcard--success .q-statcard-label {
+  color: var(--q-success);
+}
+
+.q-sevfilter {
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: var(--q-space-2) var(--q-space-3);
+  margin: 0 0 var(--q-space-3);
+  display: flex;
+  gap: var(--q-space-4);
+  align-items: center;
+}
+
+.q-sevfilter legend {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-700);
+  padding: 0 4px;
+}
+
+.q-sevfilter label {
+  font-size: var(--q-text-md);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--q-space-1);
+}
+
+/* Download (primary) + Re-run side by side; wraps when the panel narrows */
+.q-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--q-space-2);
+}
+
+.q-panel-actions .q-btn--primary {
+  flex: 1 1 auto;
+}
+
+/* Excel export progress — replaces the action buttons while the workbook
+   builds. Tier 1 sticker like the run progress card. */
+.q-export-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-3);
+  padding: var(--q-space-3);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+}
+
+.q-export-progress .q-duckprogress {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Missing variables */
+.q-missing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.q-missing-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  font-size: var(--q-text-md);
+}
+
+.q-missing-list code {
+  font-family: var(--q-font-mono);
+  background: var(--q-gray-100);
+  border-radius: var(--q-radius-sm);
+  padding: 1px 5px;
+}
+
+.q-missing-text {
+  flex-basis: 100%;
+  color: var(--q-gray-700);
+}
+
+/* Dataset findings */
+.q-findings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-2);
+  max-height: 480px;
+  overflow: auto;
+  font-size: var(--q-text-md);
+}
+
+.q-findings-list li {
+  display: flex;
+  gap: var(--q-space-2);
+  align-items: baseline;
+}
+
+/* Schema ruleIds embed the source file id — a full URL for URL-loaded sets —
+   which a flex item will not shrink below. Without these the finding text
+   spills past the panel's right edge and squeezes the severity pill to a
+   sliver. */
+.q-findings-list li > span:not(.q-pill) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.q-findings-list li > .q-pill {
+  flex: none;
+}
+
+/* Repeat offenders */
+.q-offenders-scroll {
+  overflow: auto;
+  max-height: 480px;
+}
+
+.q-offenders {
+  width: 100%;
+  /* Below this the scroller scrolls instead of shredding header words. */
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: var(--q-text-xs);
+  /* `auto` sizes columns from max-content: one URL-bearing schema ruleId blew
+     the table to ~3x the panel width and left only the Rule column on screen. */
+  table-layout: fixed;
+}
+
+.q-offenders th,
+.q-offenders td {
+  text-align: left;
+  padding: 6px;
+  border-bottom: var(--q-border-hairline);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+/* Rule · Severity · Targets · Count · % rows — proportions chosen so every
+   header word still fits on one line at the table's min-width. */
+.q-offenders th:nth-child(1) {
+  width: 32%;
+}
+
+.q-offenders th:nth-child(2) {
+  width: 16%;
+}
+
+.q-offenders th:nth-child(3) {
+  width: 26%;
+}
+
+.q-offenders th:nth-child(4),
+.q-offenders th:nth-child(5) {
+  width: 13%;
+}
+
+/* Rule cell: breakable mono id over a muted source sub-tag */
+.q-offenders-ruleid {
+  display: block;
+  font-family: var(--q-font-mono);
+}
+
+.q-offenders-source {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.6875rem;
+  color: var(--q-gray-500);
+}
+
+.q-offenders th {
+  position: sticky;
+  top: 0;
+  background: var(--q-paper);
+  font-weight: 600;
+}
+
+.q-offenders .q-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-offender--clickable {
+  cursor: pointer;
+}
+
+.q-offender--clickable:hover {
+  background: var(--q-gray-50);
+}
+
+.q-offender--clickable:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: -2px;
+}

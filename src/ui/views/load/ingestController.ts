@@ -38,7 +38,7 @@ export async function ingestFromUrl(ctx: ShellContext, url: string, ui: IngestUi
   ui.setProgress('Fetching', null);
   try {
     const { bytes, filename } = await fetchArtifact(url);
-    await runIngest(ctx, ui, new Blob([bytes]), filename, previous);
+    await runIngest(ctx, ui, new Blob([bytes]), filename, previous, url);
   } catch (err) {
     reportError(err, { fallbackCode: 'FETCH_HTTP', slot });
   }
@@ -50,6 +50,7 @@ async function runIngest(
   source: Blob,
   name: string,
   restoreState = ctx.store.slots.data.get(),
+  sourceUrl?: string,
 ): Promise<void> {
   const slot = ctx.store.slots.data;
   try {
@@ -97,6 +98,7 @@ async function runIngest(
       parseWarnings: result.parseWarnings,
       source,
       ...(sheetName === undefined ? {} : { sheetName }),
+      ...(sourceUrl === undefined ? {} : { sourceUrl }),
       generation: (previous?.generation ?? 0) + 1,
     });
 

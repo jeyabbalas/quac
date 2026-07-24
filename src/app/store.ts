@@ -97,6 +97,8 @@ export interface DatasetSession {
   /** Original source bytes, kept for the session (reruns / schema change). */
   source: Blob;
   sheetName?: string;
+  /** URL it was fetched from (P16 share provenance); absent for uploads. */
+  sourceUrl?: string;
   /** Bumped on every (re)ingest — the Report view rebuilds when it changes. */
   generation: number;
 }
@@ -111,6 +113,8 @@ export interface AppStore {
   /** "Apply corrections" run toggle (qc-rules-engine.md §2); false = assess-only. */
   applyCorrections: Signal<boolean>;
   shareables: Signal<readonly ArtifactProvenance[]>;
+  /** True once the boot flow (P16) loaded any slot from a URL/config= link. */
+  preconfigured: Signal<boolean>;
 }
 
 const emptySlot = (): SlotState => ({ status: 'empty', detail: '' });
@@ -132,5 +136,6 @@ export function createAppStore(): AppStore {
     runArtifacts: signal<RunArtifacts | null>(null),
     applyCorrections: signal(true),
     shareables: signal<readonly ArtifactProvenance[]>([]),
+    preconfigured: signal(false),
   };
 }

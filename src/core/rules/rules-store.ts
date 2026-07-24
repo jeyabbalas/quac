@@ -33,6 +33,8 @@ export interface RulesSlotState {
   lintedWithData: boolean;
   /** URL-fetch failures from the last addRuleUrls call. */
   fetchErrors: readonly string[];
+  /** Aligned with `files`: the URL each came from, or null for uploads (P16). */
+  sources: readonly (string | null)[];
 }
 
 const EMPTY: RulesSlotState = {
@@ -41,6 +43,7 @@ const EMPTY: RulesSlotState = {
   results: [],
   lintedWithData: false,
   fetchErrors: [],
+  sources: [],
 };
 
 export const rulesState: Signal<RulesSlotState> = signal<RulesSlotState>(EMPTY);
@@ -74,18 +77,26 @@ async function relint(files: readonly ParsedRuleFile[]): Promise<void> {
  * correction-order contract (engine §2).
  */
 export async function addRuleFiles(
-  entries: readonly { name: string; text: string }[],
+  entries: readonly { name: string; text: string; sourceUrl?: string }[],
 ): Promise<void> {
   if (entries.length === 0) return;
   const { parseRuleFile } = await import('./parse');
-  const files = [...rulesState.get().files];
+  const current = rulesState.get();
+  const files = [...current.files];
+  const sources = [...current.sources];
   for (const entry of entries) {
     const parsed = parseRuleFile(entry.text, entry.name);
+    const source = entry.sourceUrl ?? null;
     const existing = files.findIndex((f) => f.file.name === entry.name);
-    if (existing >= 0) files[existing] = parsed;
-    else files.push(parsed);
+    if (existing >= 0) {
+      files[existing] = parsed;
+      sources[existing] = source; // provenance follows a same-name replace
+    } else {
+      files.push(parsed);
+      sources.push(source);
+    }
   }
-  rulesState.set({ ...rulesState.get(), phase: 'loading', files });
+  rulesState.set({ ...rulesState.get(), phase: 'loading', files, sources });
   await relint(files);
 }
 
@@ -93,7 +104,7 @@ export async function addRuleFiles(
 export async function addRuleUrls(urls: readonly string[]): Promise<void> {
   const targets = urls.map((u) => u.trim()).filter((u) => u !== '');
   if (targets.length === 0) return;
-  const entries: { name: string; text: string }[] = [];
+  const entries: { name: string; text: string; sourceUrl?: string }[] = [];
   const fetchErrors: string[] = [];
   for (const url of targets) {
     try {
@@ -102,7 +113,7 @@ export async function addRuleUrls(urls: readonly string[]): Promise<void> {
         fetchErrors.push(`Fetch failed for ${url}: HTTP ${String(response.status)}.`);
         continue;
       }
-      entries.push({ name: nameFromUrl(url), text: await response.text() });
+      entries.push({ name: nameFromUrl(url), text: await response.text(), sourceUrl: url });
     } catch {
       fetchErrors.push(
         `Could not fetch ${url} — the server may not allow cross-origin requests (CORS).`,

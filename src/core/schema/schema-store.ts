@@ -20,11 +20,14 @@ export interface SchemaSlotState {
   phase: SchemaSlotPhase;
   /** Full result incl. errors; null until the first load resolves. */
   set: SchemaSet | null;
+  /** User-provided crawl-base URLs (P16 share provenance); `[]` for uploads. */
+  sourceUrls: readonly string[];
 }
 
 export const schemaState: Signal<SchemaSlotState> = signal<SchemaSlotState>({
   phase: 'empty',
   set: null,
+  sourceUrls: [],
 });
 
 /** True when the IndexPickerModal is required (§A.3.4) and nothing chose yet. */
@@ -37,12 +40,12 @@ export function needsRootChoice(set: SchemaSet): boolean {
 
 /** Load uploaded files (browse, folder, or drop) into the schema slot. */
 export async function loadSchemaEntries(entries: readonly IntakeEntry[]): Promise<void> {
-  schemaState.set({ phase: 'loading', set: null });
+  schemaState.set({ phase: 'loading', set: null, sourceUrls: [] });
   try {
     const set = await buildSchemaSet(entries, { origin: 'upload' });
-    schemaState.set({ phase: 'ready', set });
+    schemaState.set({ phase: 'ready', set, sourceUrls: [] });
   } catch (err) {
-    schemaState.set({ phase: 'empty', set: null });
+    schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
     throw err;
   }
 }
@@ -55,10 +58,11 @@ export async function loadSchemaEntries(entries: readonly IntakeEntry[]): Promis
 export async function loadSchemaUrls(
   urls: readonly string[],
   fetchJson: FetchJson = browserFetchJson,
+  indexParam?: string,
 ): Promise<void> {
   const targets = urls.map((u) => u.trim()).filter((u) => u !== '');
   if (targets.length === 0) return;
-  schemaState.set({ phase: 'loading', set: null });
+  schemaState.set({ phase: 'loading', set: null, sourceUrls: targets });
   try {
     const entries: IntakeEntry[] = [];
     const fetchErrors: SchemaLoadError[] = [];
@@ -81,11 +85,17 @@ export async function loadSchemaUrls(
         );
       }
     }
-    const set = await buildSchemaSet(entries, { origin: 'url', fetchJson });
+    // §A.4: buildSchemaSet resolves `index=` atomically before we publish, so
+    // a matched index suppresses the IndexPickerModal (no flash — signals sync).
+    const set = await buildSchemaSet(entries, {
+      origin: 'url',
+      fetchJson,
+      ...(indexParam !== undefined ? { indexParam } : {}),
+    });
     set.errors.unshift(...fetchErrors);
-    schemaState.set({ phase: 'ready', set });
+    schemaState.set({ phase: 'ready', set, sourceUrls: targets });
   } catch (err) {
-    schemaState.set({ phase: 'empty', set: null });
+    schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
     throw err;
   }
 }
@@ -94,11 +104,15 @@ export async function loadSchemaUrls(
 export function chooseRoot(fileId: string): void {
   const current = schemaState.get();
   if (current.phase !== 'ready' || current.set === null) return;
-  schemaState.set({ phase: 'ready', set: applyRootSelection(current.set, fileId) });
+  schemaState.set({
+    phase: 'ready',
+    set: applyRootSelection(current.set, fileId),
+    sourceUrls: current.sourceUrls,
+  });
 }
 
 export function resetSchemaSlot(): void {
-  schemaState.set({ phase: 'empty', set: null });
+  schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
 }
 
 /** Pure SlotState projection — the slot card and the P14 bridge share it. */

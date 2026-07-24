@@ -40,11 +40,34 @@ import type {
   RuleFile,
   RuleFileLintResult,
   RuleLintIssue,
+  RuleScope,
+  RuleType,
   SQLRunner,
 } from './types';
 import { computePertinence } from '../pertinence';
 
 export type { LintCode, RuleFileLintResult, RuleLintIssue } from './types';
+
+/**
+ * The (type, scope) validity matrix (qc-rules-format.md §4): the only invalid
+ * pairs are correct×column and correct×dataset. Returns the pinned lint
+ * message for an invalid pair, null for a valid one. The Studio rule form
+ * disables invalid options with exactly these strings as tooltips — stage 2
+ * below consumes the same helper, so form and lint can never disagree.
+ */
+export function typeScopeComboError(type: RuleType, scope: RuleScope): string | null {
+  if (type === 'correct' && scope === 'column') {
+    return 'correct rules cannot use rule_scope=column — use rule_scope=row with __value__.';
+  }
+  if (type === 'correct' && scope === 'dataset') {
+    return 'correct rules cannot use rule_scope=dataset.';
+  }
+  return null;
+}
+
+export function isValidTypeScope(type: RuleType, scope: RuleScope): boolean {
+  return typeScopeComboError(type, scope) === null;
+}
 
 const RULE_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SMART_QUOTES_RE = /[‘’“”]/;
@@ -146,14 +169,9 @@ function collectStaticIssues(
       }
 
       // ---- (type, scope) matrix ----
-      if (type === 'correct' && scope === 'column') {
-        err(
-          'bad-scope-combo',
-          'rule_scope',
-          'correct rules cannot use rule_scope=column — use rule_scope=row with __value__.',
-        );
-      } else if (type === 'correct' && scope === 'dataset') {
-        err('bad-scope-combo', 'rule_scope', 'correct rules cannot use rule_scope=dataset.');
+      if (type !== null && scope !== null) {
+        const comboError = typeScopeComboError(type, scope);
+        if (comboError !== null) err('bad-scope-combo', 'rule_scope', comboError);
       }
 
       // ---- update_expression presence ----

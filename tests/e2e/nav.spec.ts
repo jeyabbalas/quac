@@ -17,7 +17,7 @@ test('default view is Load with the privacy line and hidden siblings', async ({ 
   await expect(page.getByRole('heading', { name: 'Dataset' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'JSON Schema' })).toBeVisible();
   await expect(page.getByText('No flags yet.')).toBeHidden();
-  await expect(page.getByText('Compose, test, and export QC rules')).toBeHidden();
+  await expect(page.getByText('Load a dataset to compose rules against it')).toBeHidden();
   // Exactly one instance in the DOM (strict mode) — it lives in the footer.
   await expect(
     page.getByText('Your data never leaves this browser. No uploads, no servers, no storage.'),
@@ -45,7 +45,7 @@ test('tab clicks update the hash and the visible view', async ({ page }) => {
 
   await page.getByRole('link', { name: 'Rule Studio' }).click();
   expect(await rawHash(page)).toBe('#/studio');
-  await expect(page.getByText('Compose, test, and export QC rules', { exact: false })).toBeVisible();
+  await expect(page.getByText('Load a dataset to compose rules against it', { exact: false })).toBeVisible();
 });
 
 test('deep link #/studio lands on Studio', async ({ page }) => {
@@ -55,7 +55,7 @@ test('deep link #/studio lands on Studio', async ({ page }) => {
     'aria-current',
     'page',
   );
-  await expect(page.getByText('Compose, test, and export QC rules', { exact: false })).toBeVisible();
+  await expect(page.getByText('Load a dataset to compose rules against it', { exact: false })).toBeVisible();
 });
 
 test('unknown routes render Load without rewriting the address bar', async ({ page }) => {
@@ -87,7 +87,7 @@ test('browser history walks back and forward through tabs', async ({ page }) => 
 
   await page.goForward();
   expect(await rawHash(page)).toBe('#/studio');
-  await expect(page.getByText('Compose, test, and export QC rules', { exact: false })).toBeVisible();
+  await expect(page.getByText('Load a dataset to compose rules against it', { exact: false })).toBeVisible();
 });
 
 test('keyboard: disabled Share is skipped; Enter activates a tab and keeps focus', async ({

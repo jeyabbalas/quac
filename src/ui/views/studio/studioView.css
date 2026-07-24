@@ -1,0 +1,598 @@
+/* Rule Studio (P17): rail + rule grid stickers, editor drawer, the app's
+   first styled <select>/<textarea>/text inputs (scoped .q-studio, on the
+   input-border/radius tokens), chips + combobox, and the CodeMirror theme
+   (mono, input border, orange focus, severity-tinted diagnostics).
+   .q-studio-newfile / .q-studio-addrule are bare e2e hooks (studio-edit.spec)
+   — no styles on purpose. Imported by the lazy studioWorkspace chunk. */
+
+/* ---- notice banner (rules loaded, no dataset) ---- */
+.q-studio-banner {
+  margin: 0 0 var(--q-space-3);
+  padding: var(--q-space-2) var(--q-space-3);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-info-fill);
+  color: var(--q-info);
+  font-size: var(--q-text-md);
+}
+
+.q-studio-banner a {
+  color: inherit;
+  font-weight: 600;
+}
+
+/* ---- workspace layout: rail + grid, drawer spanning below ---- */
+.q-studio-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--q-space-4);
+  align-items: start;
+}
+
+.q-studio-drawer {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1023px) {
+  .q-studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .q-studio-drawer {
+    grid-column: auto;
+  }
+}
+
+/* Tier 1 stickers */
+.q-studio-rail,
+.q-studio-gridcard,
+.q-studio-drawer {
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+  padding: var(--q-space-4);
+  min-width: 0;
+}
+
+/* ---- rail ---- */
+.q-studio-railhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-2);
+  margin-bottom: var(--q-space-2);
+}
+
+.q-studio-railtitle {
+  font-size: var(--q-text-lg);
+}
+
+.q-studio-files {
+  display: flex;
+  flex-direction: column;
+}
+
+.q-filebtn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--q-space-2);
+  border: none;
+  border-bottom: var(--q-border-hairline);
+  border-left: 3px solid transparent;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.q-filebtn:hover {
+  background: var(--q-gray-50);
+}
+
+.q-filebtn:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: -2px;
+}
+
+.q-filebtn[aria-current='true'] {
+  border-left-color: var(--q-yellow);
+  background: var(--q-yellow-tint);
+}
+
+.q-filebtn-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--q-space-1);
+  min-width: 0;
+}
+
+.q-filebtn-group {
+  font-family: var(--q-font-mono);
+  font-weight: 700;
+  font-size: var(--q-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.q-filebtn-dirty {
+  color: var(--q-warning);
+  font-weight: 700;
+}
+
+.q-filebtn-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-2);
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+}
+
+.q-filebtn-pertinence {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-500);
+}
+
+/* ---- rule grid ---- */
+.q-studio-gridhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-2);
+  margin-bottom: var(--q-space-2);
+}
+
+.q-studio-gridtitle {
+  font-size: var(--q-text-lg);
+  font-family: var(--q-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.q-studio-gridbody {
+  overflow-x: auto;
+}
+
+.q-rulegrid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--q-text-sm);
+}
+
+.q-rulegrid th {
+  text-align: left;
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-700);
+  padding: 6px 8px;
+  border-bottom: var(--q-border-input);
+  white-space: nowrap;
+}
+
+.q-rulegrid td {
+  padding: 6px 8px;
+  border-bottom: var(--q-border-hairline);
+  vertical-align: middle;
+}
+
+.q-rulegrid tbody tr {
+  cursor: pointer;
+}
+
+.q-rulegrid tbody tr:hover {
+  background: var(--q-gray-50);
+}
+
+.q-rulegrid tbody tr:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: -2px;
+}
+
+.q-rulegrid-id {
+  font-family: var(--q-font-mono);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.q-rulegrid-targets {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-xs);
+}
+
+.q-rulegrid-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.q-rowbtn {
+  padding: 2px 8px;
+  font-size: var(--q-text-sm);
+}
+
+/* ---- drawer ---- */
+.q-studio-drawerhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-2);
+  margin-bottom: var(--q-space-3);
+}
+
+.q-studio-drawertitle {
+  font-size: var(--q-text-xl);
+  overflow-wrap: anywhere;
+}
+
+/* ---- form controls: the app's first styled select/textarea/text inputs.
+   Scoped to the studio (+ the New-file modal, which mounts on <body>). ---- */
+.q-studio input[type='text'],
+.q-studio select,
+.q-studio textarea,
+.q-newfile-field input {
+  font: inherit;
+  font-size: var(--q-text-md);
+  padding: 6px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-paper);
+  color: var(--q-ink);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.q-studio input[type='text']:focus-visible,
+.q-studio select:focus-visible,
+.q-studio textarea:focus-visible,
+.q-newfile-field input:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+.q-studio textarea {
+  resize: vertical;
+  width: 100%;
+}
+
+.q-rf-mono {
+  font-family: var(--q-font-mono);
+}
+
+/* ---- rule form ---- */
+.q-ruleform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-3);
+}
+
+.q-rf-head {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(120px, 1fr)) auto;
+  gap: var(--q-space-3);
+  align-items: start;
+}
+
+@media (max-width: 1023px) {
+  .q-rf-head {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+
+.q-rf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.q-rf-label {
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-xs);
+  font-weight: 700;
+  color: var(--q-gray-700);
+}
+
+.q-rf-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--q-text-md);
+  /* baseline-align the checkbox row with the neighbouring labelled inputs */
+  padding-top: 22px;
+}
+
+.q-rf-correction {
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: var(--q-space-3);
+  min-width: 0;
+}
+
+.q-rf-correction legend {
+  font-size: var(--q-text-xs);
+  font-weight: 700;
+  color: var(--q-gray-700);
+  padding: 0 4px;
+}
+
+.q-rf-langtabs {
+  margin-bottom: var(--q-space-2);
+}
+
+.q-rf-preview {
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-500);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.q-rf-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--q-space-2);
+  border-top: var(--q-border-hairline);
+  padding-top: var(--q-space-3);
+}
+
+.q-field-error {
+  color: var(--q-error);
+  font-size: var(--q-text-sm);
+  margin: 0;
+}
+
+.q-field-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--q-text-sm);
+}
+
+.q-field-issue--error {
+  color: var(--q-error);
+}
+
+.q-field-issue--warning {
+  color: var(--q-warning);
+}
+
+.q-field-issue--info {
+  color: var(--q-info);
+}
+
+.q-form-general {
+  list-style: none;
+  margin: 0;
+  padding: var(--q-space-2) var(--q-space-3);
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-gray-50);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+}
+
+.q-newfile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--q-space-2);
+}
+
+.q-newfile-field label {
+  font-size: var(--q-text-sm);
+  font-weight: 600;
+}
+
+/* ---- targets: chips + combobox ---- */
+.q-targets {
+  position: relative;
+}
+
+.q-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-paper);
+  cursor: text;
+}
+
+.q-chips:focus-within {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+/* The combobox input lives INSIDE the bordered chips box — no double frame */
+.q-studio .q-chips-input {
+  border: none;
+  padding: 4px 2px;
+  flex: 1;
+  min-width: 140px;
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-sm);
+}
+
+.q-studio .q-chips-input:focus-visible {
+  outline: none;
+}
+
+.q-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-pill);
+  background: var(--q-gray-100);
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-sm);
+}
+
+.q-chip--unknown {
+  background: var(--q-warning-fill);
+  border-color: var(--q-warning);
+  color: var(--q-warning);
+}
+
+.q-chip-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: var(--q-radius-pill);
+  color: var(--q-gray-600);
+}
+
+.q-chip-remove:hover {
+  color: var(--q-ink);
+  background: var(--q-gray-200);
+}
+
+.q-chip-remove:focus-visible {
+  outline: 2px solid var(--q-orange);
+}
+
+.q-combolist {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: var(--q-z-sticky);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--q-paper);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-md);
+  box-shadow: var(--q-shadow-3);
+  max-height: 240px;
+  overflow: auto;
+}
+
+.q-combolist li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--q-space-3);
+  padding: 6px 8px;
+  border-radius: var(--q-radius-sm);
+  cursor: pointer;
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-sm);
+}
+
+.q-combolist li:hover,
+.q-combolist li.q-combolist-active {
+  background: var(--q-gray-100);
+}
+
+.q-combolist-type {
+  color: var(--q-gray-500);
+  font-size: var(--q-text-xs);
+}
+
+/* ---- CodeMirror editors ---- */
+.q-editor {
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-paper);
+}
+
+.q-editor:focus-within {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+.q-studio .cm-editor {
+  background: var(--q-paper);
+  border-radius: var(--q-radius-sm);
+}
+
+.q-studio .cm-editor.cm-focused {
+  outline: none; /* the .q-editor wrapper carries the focus ring */
+}
+
+.q-studio .cm-content {
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-sm);
+  min-height: 63px; /* ~3 lines */
+  padding: 6px 0;
+}
+
+.q-studio .cm-scroller {
+  max-height: 264px; /* ~12 lines before the editor scrolls */
+  overflow: auto;
+  line-height: 1.5;
+}
+
+.q-studio .cm-tooltip {
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-sm);
+}
+
+/* Syntax colors on the design tokens (classHighlighter's stable tok-* set) */
+.q-studio .tok-keyword {
+  color: var(--q-info);
+  font-weight: 600;
+}
+
+.q-studio .tok-string,
+.q-studio .tok-string2 {
+  color: var(--q-success);
+}
+
+.q-studio .tok-number {
+  color: var(--q-warning);
+}
+
+.q-studio .tok-comment {
+  color: var(--q-gray-500);
+  font-style: italic;
+}
+
+.q-studio .tok-operator,
+.q-studio .tok-punctuation {
+  color: var(--q-gray-600);
+}
+
+.q-studio .tok-typeName {
+  color: var(--q-info);
+}
+
+/* Mirrored diagnostics list — the stable e2e target under each editor */
+.q-editor-diags {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px;
+  border-top: var(--q-border-hairline);
+  background: var(--q-gray-50);
+  border-radius: 0 0 var(--q-radius-sm) var(--q-radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--q-text-sm);
+}
+
+.q-editor-diag--error {
+  color: var(--q-error);
+}
+
+.q-editor-diag--warning {
+  color: var(--q-warning);
+}
+
+.q-editor-diag--info {
+  color: var(--q-info);
+}

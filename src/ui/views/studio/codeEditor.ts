@@ -1,7 +1,8 @@
 /**
  * CodeMirror 6 wrapper for the Studio editors (P17) — the ONLY module that
- * imports @codemirror/* (bundle gate: `cm-announced` must never reach the
- * entry chunk; this file is part of the lazy studio workspace chunk).
+ * imports @codemirror/* (bundle gate: check-bundle-size.mjs greps the entry
+ * chunk for a @codemirror/view dist marker; this file must stay inside the
+ * lazy studio workspace chunk).
  *
  * Modes: 'sql' (PostgreSQL dialect, lang-sql schema completion over the
  * canonical `data` view, plus the custom feed from completionSource.ts),

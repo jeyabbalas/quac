@@ -25,6 +25,9 @@
 
 html {
   color-scheme: light;
+  /* The Load view's sticky run bar covers the viewport's bottom edge —
+     keep scrolled-to targets (Playwright auto-scroll included) clear of it. */
+  scroll-padding-bottom: 96px;
 }
 
 html,

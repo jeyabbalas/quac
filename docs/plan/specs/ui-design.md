@@ -64,29 +64,31 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 
 ## 4. Wireframes
 
-**Load (`#/load`)**
+**Load (`#/load`)** — the first-run hero recedes once any slot fills (or the session came pre-configured from a link); the run bar is sticky at the viewport bottom so the CTA is always in reach (`html { scroll-padding-bottom }` keeps scrolled-to targets clear of it).
 ```
 +------------------------------------------------------------------------------+
 | [duck] QuaC  in-browser data quality control            [Share] [GitHub]     |
 |  Load   |   QC Report (•12)   |   Rule Studio                                |
 +------------------------------------------------------------------------------+
-|  Your data never leaves this browser. No uploads, no servers, no storage.    |
-|                                                                              |
-|  +--- DATASET ------------+  +--- JSON SCHEMA --------+  +--- QC RULES ----+ |
-|  | [OK Valid]             |  | [OK Valid]             |  | [! 2 warnings]  | |
-|  | hesp_dirty.csv         |  | 14 files               |  | 2 files         | |
-|  | 100 rows x 265 cols    |  | root: core.schema.json |  | 60 rules        | |
-|  |  ....................  |  |  ....................  |  |  .............. | |
-|  |  : drop file          :|  |  : drop file(s)/dir  : |  |  : drop CSV(s) :| |
-|  |  : [browse]           :|  |  : [browse]          : |  |  : [browse]    :| |
-|  |  :....................:|  |  :...................: |  |  :.............:| |
-|  | URL: [________][Fetch] |  | URL: [________][Fetch] |  | URL: [___][Fetch]||
-|  | [details v]            |  | [details v]            |  | [details v]     | |
-|  +------------------------+  +------------------------+  +-----------------+ |
-|                                                                              |
-|  Pertinence: 263/265 schema variables present · 2 missing · 3 extra   [OK]  |
-|  Preview (first 50 rows)  [plain table..................................]   |
-|                                                        [ Run QC  > ]        |
+|  Files stay in this tab and are gone on reload — re-upload then, or load    |
+|  by URL and let QuaC re-fetch for you.                                       |
+|  +==========================================================================+ |
+|  | (duck)  New here? Take QuaC for a spin.         [ Load example files ]  | |  <- first-run hero
+|  |         One click loads the bundled HESP example…                       | |     (Tier 1 sticker)
+|  +==========================================================================+ |
+|  +== Dataset ======[Valid]=+  +== JSON Schema ==[Valid]=+  +== QC Rules ===+ |
+|  | hesp_dirty.csv · 101x266|  | 14 files · root: core…  |  | 3 files · 22  | |
+|  |  .....................  |  |  .....................  |  |   businesses.. | |
+|  |  : drop file / browse:  |  |  : drop files/folder :  |  |  : drop CSVs: | |
+|  |  :...................:  |  |  :...................:  |  |  :..........: | |
+|  | Dataset URL [___][Fetch]|  | URL [________][Fetch]   |  | Rules URL […] | |
+|  | [details v]             |  | [Browse folder]         |  | [details v]   | |
+|  +-------------------------+  | [details v]             |  +---------------+ |
+|                               +-------------------------+                    |
+|  [OK] Pertinence: 265/265 schema variables present · Rules: 28/28 present    |
+|  Preview (first 50 rows)  [plain table...................................]  |
++------------------------------------------------------------------------------+
+|  Load a dataset to run QC.       [x] Apply corrections          [ Run QC ]  |  <- sticky bottom bar
 +------------------------------------------------------------------------------+
 ```
 

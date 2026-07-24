@@ -611,7 +611,14 @@
   font-weight: 600;
 }
 
+/* Two-abreast band for mid widths; phones stack. */
 @media (max-width: 1023px) {
+  .q-slotgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
   .q-slotgrid {
     grid-template-columns: 1fr;
   }
@@ -1213,15 +1220,22 @@
   outline-offset: -2px;
 }
 
-/* Run bar (Load view, P14) */
+/* Run bar (Load view, P14) — sticky at the viewport bottom while the page
+   scrolls, in-flow when content is short. Solid paper: content scrolling
+   beneath must never ghost through the CTA. */
 .q-runbar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--q-z-sticky);
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--q-space-4);
   margin-top: var(--q-space-4);
-  padding-top: 12px;
-  border-top: var(--q-border-hairline);
+  padding: var(--q-space-3) 0;
+  background: var(--q-paper);
+  border-top: var(--q-stroke);
+  box-shadow: 0 -6px 12px -8px rgb(17 17 17 / 0.25);
 }
 
 .q-runbar-reason {
@@ -1241,16 +1255,44 @@
   font-weight: 700;
 }
 
-/* Example strip (Load view, P14 demo) */
+/* First-run hero (Load view) — Tier 1 sticker; recedes once any slot fills */
 .q-example {
   display: flex;
   align-items: center;
-  gap: var(--q-space-3);
+  gap: var(--q-space-4);
   flex-wrap: wrap;
   margin: 0 0 var(--q-space-4);
-  padding: 10px 14px;
-  border: 1px dashed var(--q-gray-300);
-  border-radius: var(--q-radius-md);
-  background: var(--q-gray-50);
+  padding: var(--q-space-4) var(--q-space-5);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+}
+
+.q-example-duck {
+  width: 56px;
+  height: 56px;
+  flex: none;
+}
+
+.q-example-body {
+  flex: 1;
+  min-width: min(32ch, 100%);
+}
+
+.q-example-title {
+  margin: 0;
+  font-size: var(--q-text-xl);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.q-example-pitch {
+  margin: 2px 0 0;
   font-size: var(--q-text-md);
+  color: var(--q-gray-700);
+}
+
+.q-example .q-example-load {
+  flex: none;
 }

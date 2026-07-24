@@ -7,6 +7,7 @@
  */
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
+import { assetUrl } from '../../../app/urlBase';
 import { registerDatasetUrlLoader } from '../../../app/bootConfig';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { addRuleUrls } from '../../../core/rules/rules-store';
@@ -28,17 +29,32 @@ interface ExampleIndex {
 export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const hint = document.createElement('p');
   hint.className = 'q-load-hint';
-  hint.textContent = 'Uploads live only in this tab. Reload = re-upload. URLs reload themselves.';
+  hint.textContent =
+    'Files stay in this tab and are gone on reload — re-upload then, or load by URL and let QuaC re-fetch for you.';
 
-  // ---- Example strip (P14 demo affordance): one click fills all 3 slots ----
+  // ---- First-run hero (P14 demo affordance): one click fills all 3 slots.
+  // Recedes the moment any slot holds something (or a link pre-configured
+  // the session) — returning users go straight to their cards. ----
   const example = document.createElement('section');
   example.className = 'q-example';
-  const exampleText = document.createElement('span');
-  exampleText.textContent =
-    'New here? Try the bundled HESP example — dirty dataset, 14-file schema, 3 rules files.';
+  const exampleDuck = document.createElement('img');
+  exampleDuck.className = 'q-example-duck';
+  exampleDuck.src = assetUrl('logo/quac-duck.svg');
+  exampleDuck.alt = '';
+  const exampleBody = document.createElement('div');
+  exampleBody.className = 'q-example-body';
+  const exampleTitle = document.createElement('h2');
+  exampleTitle.className = 'q-example-title';
+  exampleTitle.textContent = 'New here? Take QuaC for a spin.';
+  const examplePitch = document.createElement('p');
+  examplePitch.className = 'q-example-pitch';
+  examplePitch.textContent =
+    'One click loads the bundled HESP example — a dirty dataset, its 14-file JSON Schema, ' +
+    'and 3 QC rules files — ready for a full QC run.';
+  exampleBody.append(exampleTitle, examplePitch);
   const exampleButton = document.createElement('button');
   exampleButton.type = 'button';
-  exampleButton.className = 'q-btn q-example-load';
+  exampleButton.className = 'q-btn q-btn--primary q-example-load';
   exampleButton.textContent = 'Load example files';
   exampleButton.addEventListener('click', () => {
     exampleButton.disabled = true;
@@ -61,7 +77,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
         exampleButton.disabled = false;
       });
   });
-  example.append(exampleText, exampleButton);
+  example.append(exampleDuck, exampleBody, exampleButton);
 
   const grid = document.createElement('div');
   grid.className = 'q-slotgrid';
@@ -117,7 +133,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const runButton = document.createElement('button');
   runButton.type = 'button';
   runButton.className = 'q-btn q-btn--primary q-runbar-button';
-  runButton.textContent = 'Run QC ▸';
+  runButton.textContent = 'Run QC';
   runButton.addEventListener('click', () => {
     void (async () => {
       const { startRun } = await import('../../../app/runController');
@@ -132,6 +148,16 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
 
   const usable = (slot: SlotState): boolean =>
     slot.status === 'valid' || slot.status === 'warning';
+
+  // Hero visibility: first-run only. Any filled slot (or a pre-configured
+  // link) means the user is past the pitch.
+  effect(() => {
+    const anyFilled =
+      ctx.store.slots.data.get().status !== 'empty' ||
+      ctx.store.slots.schema.get().status !== 'empty' ||
+      ctx.store.slots.rules.get().status !== 'empty';
+    example.hidden = anyFilled || ctx.store.preconfigured.get();
+  });
   effect(() => {
     const data = ctx.store.slots.data.get();
     const schema = ctx.store.slots.schema.get();

@@ -99,7 +99,9 @@ e2e replicates the dirty dataset ×20 through the JSON path instead. Also: annot
   Count column looked unsorted (spec §4 says sorted desc).
 
 **Also here:** `.q-main--wide` (report route only, 1600px) — 266 columns plus the panel column do not fit
-the 1280px reading width; `.dt-col-tooltip__chip` height override (data-table sizes `string[]` tooltip
+the 1280px reading width. *(Superseded 2026-07-23: the rail is now 1600px on every route — `#app
+{--q-shell-max: 1600px}` with no route-conditional class — because the report route jumping wider than
+Load/Studio read as a layout bug. `.q-main--wide` no longer exists.)* `.dt-col-tooltip__chip` height override (data-table sizes `string[]` tooltip
 items as 1.4em pills; QuaC's QC-rule lines are sentences and overflowed their neighbours — the override
 needs two classes because data-table's stylesheet ships in the lazy grid chunk, i.e. after ours); slot-card
 disclosure label `details` → `Details` to match the schema card.

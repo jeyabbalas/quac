@@ -147,7 +147,6 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   const mounted = new Set<RouteId>();
   effect(() => {
     const current = ctx.router.route.get();
-    main.classList.toggle('q-main--wide', current === 'report');
     for (const id of ROUTE_IDS) {
       const isActive = id === current;
       if (isActive && !mounted.has(id)) {

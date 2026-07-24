@@ -8,12 +8,9 @@
   min-height: 100dvh;
 
   /* One rail width for the header and the main column, so the banner's brand,
-     tabs and actions sit on the cards' edges. The report route widens both
-     together (see .q-main--wide). */
-  --q-shell-max: 1280px;
-}
-
-#app:has(.q-main--wide) {
+     tabs and actions sit on the cards' edges. Every route shares it: the report
+     grid needs the width for 266 columns plus the panel column, and the Load and
+     Studio views read as the same app only if their rail matches. */
   --q-shell-max: 1600px;
 }
 

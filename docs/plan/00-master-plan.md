@@ -73,6 +73,12 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-23 · P14-ui · One shell rail for all three routes (user request): `#app{--q-shell-max:1600px}` unconditionally;
+`.q-main--wide` and its `#app:has()` rule are gone, as is the class toggle in shell.ts. Load/Studio previously sat at 1280px
+while QC Report jumped to 1600px — the report width won because it buys work surface. Header and main share the variable, so
+the banner rail widened with them. No layout regressions at 1600px (Load cards/preview/pertinence checked in-browser on the
+HESP example). Unit 440 + browser 44 + e2e 35 green; entry 26.2 KB gz unchanged.
+
 2026-07-23 · P14-review · Demo-readiness pass over the shipped UI (browser-driven, no scope added). CRITICAL: `.q-report-grid`
 had no definite height, so data-table's `.dt-root{height:100%}` resolved to auto, its VirtualScroller measured the full content
 height and rendered EVERY row (101×266 = 27k cells / 51k nodes froze the tab; a real dataset would kill it) — now a `clamp()`

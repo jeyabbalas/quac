@@ -3,7 +3,8 @@
 // them by CSV column for the form, route file-level issues to `general`, and
 // mirror lint's cross-file duplicate-id message with editing-self exclusion.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runDraftLint } from '../../../src/ui/views/studio/draftLint';
+import { bucketStoredIssues, runDraftLint } from '../../../src/ui/views/studio/draftLint';
+import { lintRuleFilesWithDataset } from '../../../src/core/rules/lint';
 import { parseRuleFile } from '../../../src/core/rules/parse';
 import type { DatasetLintContext } from '../../../src/core/rules/lint';
 import type { QCRule } from '../../../src/core/rules/types';
@@ -159,6 +160,41 @@ describe('runDraftLint', () => {
         { ctx, files: [loaded] },
       );
       expect(editingOther.byField.rule_id?.[0]?.code).toBe('duplicate-id');
+    });
+  });
+
+  describe('bucketStoredIssues (P18 import-back seed)', () => {
+    it('picks only the opened row, bucketed by field', async () => {
+      const stored = parseRuleFile(
+        `${HEADER}R1,validate,row,record_id,record_id IS NULL,fine\n` +
+          `R2,validate,row,record_id,recrd_id IS NULL,broken re-import\n`,
+        'stored.quac.csv',
+      );
+      const [result] = await lintRuleFilesWithDataset([stored], ctx);
+      if (result === undefined) throw new Error('lint returned no result');
+
+      const broken = bucketStoredIssues(result, 2);
+      expect(broken.ok).toBe(false);
+      expect(broken.byField.condition?.[0]?.code).toBe('sql-error');
+      expect(broken.byField.condition?.[0]?.detail).toContain('recrd_id');
+      expect(broken.general).toEqual([]);
+
+      const clean = bucketStoredIssues(result, 1);
+      expect(clean.ok).toBe(true);
+      expect(clean.issues).toEqual([]);
+    });
+
+    it('drops file-level issues — the live draft lint owns those', async () => {
+      const stored = parseRuleFile(
+        `${HEADER}R1,validate,row,record_id,record_id IS NULL,fine\n`,
+        'stored.quac.csv',
+      );
+      const [result] = await lintRuleFilesWithDataset([stored], null); // no dataset yet
+      if (result === undefined) throw new Error('lint returned no result');
+      expect(result.issues.some((i) => i.code === 'pending-data')).toBe(true);
+      const bucket = bucketStoredIssues(result, 1);
+      expect(bucket.issues).toEqual([]); // pending-data is file-level, not row 1's
+      expect(bucket.ok).toBe(true);
     });
   });
 });

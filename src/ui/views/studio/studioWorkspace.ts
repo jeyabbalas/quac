@@ -34,9 +34,11 @@ import {
   updateRule,
 } from '../../../core/rules/rules-store';
 import { loadJSSandbox } from '../../../core/rules/sandbox-loader';
+import { exportFileName, serializeRuleFile } from '../../../core/rules/serialize';
 import { describeColumns } from '../../../core/schema/casting';
 import { QUAC_WORK } from '../../../core/bridge/tables';
-import { runDraftLint } from './draftLint';
+import { triggerDownload } from '../../components/download';
+import { bucketStoredIssues, runDraftLint } from './draftLint';
 import { createPreviewPane } from './previewPane';
 import { createRuleForm } from './ruleForm';
 import { runRuleTest } from './ruleTest';
@@ -90,11 +92,18 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   gridHead.className = 'q-studio-gridhead';
   const gridTitle = document.createElement('h2');
   gridTitle.className = 'q-studio-gridtitle';
+  const downloadButton = document.createElement('button');
+  downloadButton.type = 'button';
+  downloadButton.className = 'q-btn q-btn--small q-studio-download';
+  downloadButton.textContent = 'Download rules CSV';
   const addRuleButton = document.createElement('button');
   addRuleButton.type = 'button';
   addRuleButton.className = 'q-btn q-btn--small q-studio-addrule';
   addRuleButton.textContent = 'Add rule';
-  gridHead.append(gridTitle, addRuleButton);
+  const gridActions = document.createElement('div');
+  gridActions.className = 'q-studio-gridactions';
+  gridActions.append(downloadButton, addRuleButton);
+  gridHead.append(gridTitle, gridActions);
   const gridBody = document.createElement('div');
   gridBody.className = 'q-studio-gridbody';
   gridCard.append(gridHead, gridBody);
@@ -328,6 +337,14 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       target.kind === 'edit' ? `Edit rule — ${target.fileName}` : `New rule — ${target.fileName}`;
     drawer.hidden = false;
     form.load(rule, { mode: target.kind === 'edit' ? 'edit' : 'new' });
+    if (target.kind === 'edit' && rule !== null) {
+      // Import-back path (P18 task 4): seed the stored file-lint issues for
+      // this row instantly — a broken re-imported rule opens with its issues
+      // already pinned above the offending fields; the 400 ms debounced draft
+      // lint then refreshes them.
+      const stored = state.results.find((r) => r.file === target.fileName);
+      if (stored !== undefined) form.setIssues(bucketStoredIssues(stored, rule.rowNumber));
+    }
     resetTest();
     syncGate();
     scheduleDraftLint();
@@ -811,6 +828,18 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       openDrawer({ kind: 'edit', fileName, index });
     });
   }
+
+  // Export (P18 task 3): the §7 writer's bytes, filename <group>.quac.csv.
+  // The dirty * is NOT cleared — only a same-name re-import supersedes the
+  // session edits (rules-store contract).
+  downloadButton.addEventListener('click', () => {
+    const selected = selectedFile.get();
+    if (selected === null) return;
+    const parsed = rulesState.get().files.find((f) => f.file.name === selected);
+    if (parsed === undefined) return;
+    const text = serializeRuleFile(parsed.file);
+    triggerDownload(new Blob([text], { type: 'text/csv' }), exportFileName(parsed.file.name));
+  });
 
   addRuleButton.addEventListener('click', () => {
     const selected = selectedFile.get();

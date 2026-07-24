@@ -13,7 +13,12 @@ import { lintRuleFilesWithDataset } from '../../../core/rules/lint';
 import { CANONICAL_COLUMNS, deriveGroup } from '../../../core/rules/parse';
 import type { DatasetLintContext } from '../../../core/rules/lint';
 import type { CanonicalColumn, ParsedRuleFile } from '../../../core/rules/parse';
-import type { JSSandbox, QCRule, RuleLintIssue } from '../../../core/rules/types';
+import type {
+  JSSandbox,
+  QCRule,
+  RuleFileLintResult,
+  RuleLintIssue,
+} from '../../../core/rules/types';
 
 export interface DraftLintDeps {
   /** Current dataset lint context (rules-store's getLintContext()); null = pending. */
@@ -104,7 +109,11 @@ export async function runDraftLint(
     }
   }
 
-  const sorted = sortDraftIssues(issues);
+  return bucketIssues(sortDraftIssues(issues));
+}
+
+/** The shared byField/general bucketing over an already-sorted issue list. */
+function bucketIssues(sorted: RuleLintIssue[]): DraftLintResult {
   const byField: Partial<Record<CanonicalColumn, RuleLintIssue[]>> = {};
   const general: RuleLintIssue[] = [];
   for (const issue of sorted) {
@@ -116,4 +125,15 @@ export async function runDraftLint(
     }
   }
   return { ok: !sorted.some((i) => i.severity === 'error'), issues: sorted, byField, general };
+}
+
+/**
+ * Bucket a stored file-lint result down to ONE rule for the editor (P18
+ * import-back path): opening a broken re-imported row seeds the form with its
+ * issues pinned above the offending fields instantly, before the 400 ms
+ * debounced draft lint refreshes them. Row-scoped issues only — file-level
+ * context (pending-data, pertinence banner) is re-derived by the live lint.
+ */
+export function bucketStoredIssues(result: RuleFileLintResult, rowNumber: number): DraftLintResult {
+  return bucketIssues(sortDraftIssues(result.issues.filter((i) => i.rowNumber === rowNumber)));
 }

@@ -157,6 +157,12 @@
   margin-bottom: var(--q-space-2);
 }
 
+.q-studio-gridactions {
+  display: flex;
+  gap: var(--q-space-2);
+  flex-shrink: 0;
+}
+
 .q-studio-gridtitle {
   font-size: var(--q-text-lg);
   font-family: var(--q-font-mono);

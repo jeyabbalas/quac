@@ -14,11 +14,21 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    // CI builds before running e2e; locally rebuild so tests never hit a stale dist/.
-    command: process.env.CI ? 'npm run preview' : 'npm run build && npm run preview',
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      // CI builds before running e2e; locally rebuild so tests never hit a stale dist/.
+      command: process.env.CI ? 'npm run preview' : 'npm run build && npm run preview',
+      url: BASE_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // P16: cross-origin fixture host (ACAO:* except /no-cors/) for the share
+      // journeys — a different port makes every fetch genuinely cross-origin.
+      command: 'node tests/e2e/support/cors-server.mjs',
+      url: 'http://localhost:4199/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
 });

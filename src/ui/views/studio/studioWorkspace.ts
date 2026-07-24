@@ -1,7 +1,7 @@
 /**
- * Rule Studio workspace (P17) — the lazy chunk behind studioView's route gate:
- * file rail + rule grid (row 1) and the full-width editor drawer (row 2,
- * user-approved layout; P18 docks the live preview beside the grid).
+ * Rule Studio workspace (P17/P18) — the lazy chunk behind studioView's route
+ * gate: file rail + rule grid + live preview pane (row 1) and the full-width
+ * editor drawer (row 2, user-approved layout).
  *
  * Owns every workspace effect — all created once here and never disposed
  * (views live for the app lifetime). The drawer + both CodeMirror editors are
@@ -37,6 +37,7 @@ import { loadJSSandbox } from '../../../core/rules/sandbox-loader';
 import { describeColumns } from '../../../core/schema/casting';
 import { QUAC_WORK } from '../../../core/bridge/tables';
 import { runDraftLint } from './draftLint';
+import { createPreviewPane } from './previewPane';
 import { createRuleForm } from './ruleForm';
 import type { RuleFormCatalog } from './ruleForm';
 import type { ShellContext } from '../../../app/shell';
@@ -108,7 +109,9 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   drawerHead.append(drawerTitle);
   drawer.append(drawerHead);
 
-  layout.append(rail, gridCard, drawer);
+  const previewPane = createPreviewPane();
+
+  layout.append(rail, gridCard, previewPane.el, drawer);
   host.append(banner, layout);
 
   // ---------- state ----------
@@ -800,6 +803,34 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     ctx.store.pipeline.get();
     rulesState.get();
     refreshCatalog();
+  });
+
+  // Live-preview sample: sync only while the studio route is ACTIVE
+  // (data-table mis-measures in hidden containers). A run settling marks the
+  // sample stale — post-run `data` holds corrected values — so the next sync
+  // refreshes the same generation via loadData.
+  let sampleRunInFlight = false;
+  let sampleStale = false;
+  effect(() => {
+    const dataset = ctx.store.dataset.get();
+    const stage = ctx.store.pipeline.get().stage;
+    const route = ctx.router.route.get();
+    if (isRunningStage(stage)) {
+      sampleRunInFlight = true;
+      return;
+    }
+    if (sampleRunInFlight) {
+      sampleRunInFlight = false;
+      sampleStale = true;
+    }
+    if (dataset === null) {
+      sampleStale = false;
+      previewPane.syncDataset(null);
+      return;
+    }
+    if (route !== 'studio') return;
+    previewPane.syncDataset(dataset, { refresh: sampleStale });
+    sampleStale = false;
   });
 
   // Push catalog updates into the form (editors + targets list).

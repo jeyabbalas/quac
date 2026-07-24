@@ -28,6 +28,19 @@ export const DISPLAY_EXPORT_SQL = `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} 
 export const reportRowsSQL = (offset: number, limit: number): string =>
   `SELECT * FROM ${DATA_VIEW} ORDER BY __row__ LIMIT ${String(limit)} OFFSET ${String(offset)}`;
 
+/** Studio live-preview sample size (P18): the browsing grid caps at 10k rows;
+ *  rule-test counts always run against the FULL `data` view. */
+export const STUDIO_SAMPLE_ROW_CAP = 10_000;
+
+/**
+ * Studio preview sample export (P18): first 10k rows in canonical order with
+ * __row__ excluded — the DISPLAY_EXPORT_SQL trick (V7), so the sample grid's
+ * __rowid__ equals QuaC's __row__ for every sampled row.
+ */
+export const STUDIO_SAMPLE_SQL =
+  `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} ORDER BY __row__ ` +
+  `LIMIT ${String(STUDIO_SAMPLE_ROW_CAP)}`;
+
 /** CREATE OR REPLACE TABLE <table> AS <selectSql>. */
 export async function ctas(bridge: WorkerBridge, table: string, selectSql: string): Promise<void> {
   await bridge.query(`CREATE OR REPLACE TABLE ${quoteIdentifier(table)} AS ${selectSql}`);

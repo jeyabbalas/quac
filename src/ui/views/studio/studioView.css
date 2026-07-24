@@ -28,8 +28,21 @@
   align-items: start;
 }
 
-.q-studio-drawer {
+.q-studio-drawer,
+.q-studio-preview {
   grid-column: 1 / -1;
+}
+
+/* Wide screens: the live preview docks beside the grid (P18); the drawer
+   keeps its full-width row below. */
+@media (min-width: 1280px) {
+  .q-studio-layout {
+    grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .q-studio-preview {
+    grid-column: 3;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -37,7 +50,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .q-studio-drawer {
+  .q-studio-drawer,
+  .q-studio-preview {
     grid-column: auto;
   }
 }
@@ -45,6 +59,7 @@
 /* Tier 1 stickers */
 .q-studio-rail,
 .q-studio-gridcard,
+.q-studio-preview,
 .q-studio-drawer {
   border: var(--q-stroke);
   border-radius: var(--q-radius-lg);
@@ -209,6 +224,32 @@
 .q-rowbtn {
   padding: 2px 8px;
   font-size: var(--q-text-sm);
+}
+
+/* ---- live preview pane (P18) ---- */
+.q-studio-previewhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--q-space-2);
+  margin-bottom: var(--q-space-2);
+}
+
+.q-studio-previewtitle {
+  font-size: var(--q-text-lg);
+}
+
+.q-studio-previewmeta {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+  white-space: nowrap;
+}
+
+/* Definite height is load-bearing (like .q-report-grid): an auto-height host
+   makes data-table render every row. Chrome allowance covers the app header,
+   the pane head, the test panel and page padding. */
+.q-studio-samplegrid {
+  height: clamp(320px, calc(100dvh - 380px), 820px);
 }
 
 /* ---- drawer ---- */

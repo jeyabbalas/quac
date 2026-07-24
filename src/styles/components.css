@@ -975,6 +975,22 @@
   gap: 8px;
 }
 
+/* Excel export progress — replaces the action buttons while the workbook builds. */
+.q-export-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--q-gray-200);
+  border-radius: 8px;
+  background: var(--q-gray-50);
+}
+
+.q-export-progress .q-duckprogress {
+  flex: 1;
+  min-width: 0;
+}
+
 .q-btn--small {
   padding: 2px 8px;
   font-size: 0.75rem;

@@ -8,7 +8,10 @@
  */
 import { effect } from '../../../app/signals';
 import { signal } from '../../../app/signals';
+import { reportError } from '../../../app/errors';
+import { showToast } from '../../../app/toast';
 import { createBadge } from '../../components/badge';
+import { createDuckProgress } from '../../components/duckProgress';
 import { createEmptyState } from '../../components/emptyState';
 import { renderFlag } from '../../../core/flags/messages';
 import { columnDigest, missingVariables } from '../../../core/schema/column-meta';
@@ -199,8 +202,6 @@ export function mountReportPanels(
     download.type = 'button';
     download.className = 'q-btn q-btn--primary';
     download.textContent = 'Download QC Report (.xlsx)';
-    download.disabled = true;
-    download.title = 'The Excel export arrives in the next release.';
     const rerun = document.createElement('button');
     rerun.type = 'button';
     rerun.className = 'q-btn';
@@ -210,6 +211,51 @@ export function mountReportPanels(
     });
     actions.append(download, rerun);
     target.append(actions);
+
+    // Excel export: swap the action buttons for a duck-progress + Cancel while
+    // it runs. The orchestrator (and exceljs) load only on first click.
+    let exporting = false;
+    download.addEventListener('click', () => {
+      if (exporting) return;
+      exporting = true;
+      const controller = new AbortController();
+      const progress = createDuckProgress();
+      progress.setProgress('Building the workbook', null);
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'q-btn q-run-cancel';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => {
+        controller.abort();
+        cancel.disabled = true;
+        cancel.textContent = 'Cancelling…';
+      });
+      const exportWrap = document.createElement('div');
+      exportWrap.className = 'q-export-progress';
+      exportWrap.append(progress.el, cancel);
+      actions.replaceWith(exportWrap);
+
+      void (async () => {
+        try {
+          const { runReportExport } = await import('./reportExport');
+          await runReportExport(ctx, {
+            signal: controller.signal,
+            onProgress: (done, total) => {
+              const pct = total > 0 ? Math.min(100, (done / total) * 100) : null;
+              progress.setProgress(done >= total ? 'Finishing the workbook' : 'Writing rows', pct);
+            },
+          });
+          showToast('QC report downloaded.', { kind: 'info' });
+        } catch (err) {
+          if (controller.signal.aborted) showToast('Export cancelled.', { kind: 'info' });
+          else reportError(err, { fallbackCode: 'EXPORT_FAILED' });
+        } finally {
+          progress.dispose();
+          exporting = false;
+          exportWrap.replaceWith(actions);
+        }
+      })();
+    });
   };
 
   // ---- Missing variables ----

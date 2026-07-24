@@ -20,6 +20,14 @@ export const QUAC_STUDIO_DISPLAY = 'quac_studio_display';
  */
 export const DISPLAY_EXPORT_SQL = `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} ORDER BY __row__`;
 
+/**
+ * Excel-export row page (qc-report-spec.md §5): post-correction values ordered
+ * by __row__, `__row__` INCLUDED — it keys the report model's per-row
+ * decoration lookup and is dropped when the workbook cell array is built.
+ */
+export const reportRowsSQL = (offset: number, limit: number): string =>
+  `SELECT * FROM ${DATA_VIEW} ORDER BY __row__ LIMIT ${String(limit)} OFFSET ${String(offset)}`;
+
 /** CREATE OR REPLACE TABLE <table> AS <selectSql>. */
 export async function ctas(bridge: WorkerBridge, table: string, selectSql: string): Promise<void> {
   await bridge.query(`CREATE OR REPLACE TABLE ${quoteIdentifier(table)} AS ${selectSql}`);

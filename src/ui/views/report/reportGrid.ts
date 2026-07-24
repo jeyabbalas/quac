@@ -22,7 +22,7 @@ import {
   QUAC_DISPLAY,
   copyToParquetBytes,
 } from '../../../core/bridge/tables';
-import { createDuckProgress } from '../../components/duckProgress';
+import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import type { PresentPayload } from '../../../core/pipeline';
 import type { HeaderTooltipPlan } from '../../../core/report/headerTooltips';
 
@@ -68,17 +68,22 @@ async function ensureTable(
   host: HTMLElement,
   generation: number,
   bytes: Uint8Array | null,
+  showLocalProgress: boolean,
 ): Promise<DataTable> {
   if (table !== undefined && tableGeneration === generation) {
     if (bytes !== null) await table.loadData(bytes.slice().buffer);
     return table;
   }
 
-  const progress = createDuckProgress();
-  progress.setProgress('Preparing the grid', null);
+  // One progress surface at a time: during a run the run-level duck already
+  // covers this work, so the local "Preparing the grid" bar renders only for
+  // the pre-run path (renderGrid).
+  const progress = showLocalProgress ? createDuckProgress() : null;
+  progress?.setProgress(PROGRESS_LABELS.gridPrep, null);
   const gridHost = document.createElement('div');
   gridHost.className = 'q-report-grid';
-  host.replaceChildren(progress.el, gridHost);
+  if (progress !== null) host.replaceChildren(progress.el, gridHost);
+  else host.replaceChildren(gridHost);
 
   try {
     if (table !== undefined) {
@@ -105,15 +110,17 @@ async function ensureTable(
     }
     return t;
   } finally {
-    progress.dispose();
-    progress.el.remove();
+    if (progress !== null) {
+      progress.dispose();
+      progress.el.remove();
+    }
   }
 }
 
 /** Initial (pre-run) display of the ingested dataset. */
 export function renderGrid(host: HTMLElement, generation: number): Promise<void> {
   return enqueue(async () => {
-    await ensureTable(host, generation, null);
+    await ensureTable(host, generation, null, true);
   });
 }
 
@@ -129,7 +136,7 @@ export function presentPayload(
   severity: SeverityToggles,
 ): Promise<void> {
   return enqueue(async () => {
-    const t = await ensureTable(host, generation, payload.displayBytes);
+    const t = await ensureTable(host, generation, payload.displayBytes, false);
     t.annotations.clear();
     // PlannedAnnotation is structurally a NewAnnotation by construction
     // (annotations.ts emits rowId/column per scope); the cast bridges the

@@ -11,7 +11,7 @@ import { signal } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
 import { createBadge } from '../../components/badge';
-import { createDuckProgress } from '../../components/duckProgress';
+import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { createEmptyState } from '../../components/emptyState';
 import { createSeverityLabel } from '../../components/severityPill';
 import { renderFlag } from '../../../core/flags/messages';
@@ -214,7 +214,7 @@ export function mountReportPanels(
       exporting = true;
       const controller = new AbortController();
       const progress = createDuckProgress();
-      progress.setProgress('Building the workbook', null);
+      progress.setProgress(PROGRESS_LABELS.exportBuild, null);
       const cancel = document.createElement('button');
       cancel.type = 'button';
       cancel.className = 'q-btn q-run-cancel';
@@ -236,7 +236,10 @@ export function mountReportPanels(
             signal: controller.signal,
             onProgress: (done, total) => {
               const pct = total > 0 ? Math.min(100, (done / total) * 100) : null;
-              progress.setProgress(done >= total ? 'Finishing the workbook' : 'Writing rows', pct);
+              progress.setProgress(
+                done >= total ? PROGRESS_LABELS.exportFinish : PROGRESS_LABELS.exportRows,
+                pct,
+              );
             },
           });
           showToast('QC report downloaded.', { kind: 'info' });

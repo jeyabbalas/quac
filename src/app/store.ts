@@ -63,6 +63,20 @@ export interface PipelineState {
   cancel: CancelToken;
 }
 
+const RUNNING_STAGES: ReadonlySet<PipelineStage> = new Set([
+  'prepare',
+  'corrections',
+  'schema',
+  'rules',
+  'annotate',
+]);
+
+/** True while a QC run is in flight — the one shared predicate (run button
+ *  gating, progress surfaces, run-aware panel empties). */
+export function isRunningStage(stage: PipelineStage): boolean {
+  return RUNNING_STAGES.has(stage);
+}
+
 export interface FlagsSummary {
   errors: number;
   warnings: number;

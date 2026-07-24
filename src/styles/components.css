@@ -406,21 +406,27 @@
 }
 
 /* Duck progress — the duck rides the leading edge of a channel of water.
-   `--q-dp-pct` positions both the fill and the duck; JS never animates. */
+   `--q-dp-pct` positions both the fill and the duck; `--q-dp-glide` is the
+   transition length (long = asymptotic crawl); JS never animates. */
 .q-duckprogress {
   --q-dp-pct: 0%;
   --q-dp-duck: 44px;
+  --q-dp-glide: var(--q-dur-3);
 
   position: relative; /* the duck floats above the track, anchored here */
   width: 100%;
   max-width: 520px;
+  /* Headroom for the duck riding above the track. Padding, not a track
+     margin: a margin collapses out of the container in block contexts but
+     not in flex ones, seating the duck differently per parent — padding
+     keeps the geometry identical everywhere. */
+  padding-top: 34px;
 }
 
 .q-duckprogress-track {
   position: relative;
   overflow: hidden; /* clips the fill (and the indeterminate wake) to the channel */
   height: 16px;
-  margin-top: 34px; /* headroom for the duck riding above the track */
   border: var(--q-stroke);
   border-radius: var(--q-radius-pill);
   background: var(--q-gray-100);
@@ -438,7 +444,7 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M0 5 Q6 1 12 5 T24 5' fill='none' stroke='%230099cc' stroke-width='2'/%3E%3C/svg%3E");
   background-repeat: repeat-x;
   background-position: 0 60%;
-  transition: width var(--q-dur-3) linear;
+  transition: width var(--q-dp-glide) var(--q-ease-out);
   /* Tile is 24px wide, so a -24px shift loops seamlessly: the water flows
      backwards past the duck, which reads as forward motion. */
   animation: q-duck-water 1.4s linear infinite;
@@ -452,14 +458,17 @@
 
 .q-duckprogress-duck {
   position: absolute;
-  /* Bottom of the art sits ~89% down its box; -33px sinks that a few pixels
-     into the channel so the duck floats in the water rather than on it. */
-  top: -33px;
-  left: var(--q-dp-pct);
+  /* The track top sits 34px down (container headroom padding) and the art's
+     waterline ~33px down its own box: 34 − 33 = 1px seats the duck a few
+     pixels into the channel, fully inside the container. */
+  top: 1px;
+  /* Clamped one half-duck inside each end so the art never hangs outside
+     the progress card at 0% or overlaps neighbours at 100%. */
+  left: clamp(22px, var(--q-dp-pct), calc(100% - 22px));
   width: var(--q-dp-duck);
   height: var(--q-dp-duck);
   transform: translateX(-50%);
-  transition: left var(--q-dur-3) linear;
+  transition: left var(--q-dp-glide) var(--q-ease-out);
   animation: q-duck-bob 1.1s ease-in-out infinite alternate;
 }
 
@@ -490,23 +499,25 @@
     q-duck-bob 1.1s ease-in-out infinite alternate;
 }
 
+/* Swim inside the same clamped insets as the determinate duck; the wake's
+   right edge (left + its 38% width) tracks the duck's position. */
 @keyframes q-duck-swim {
   from {
-    left: -5%;
+    left: 22px;
   }
 
   to {
-    left: 105%;
+    left: calc(100% - 22px);
   }
 }
 
 @keyframes q-duck-wake {
   from {
-    left: -43%;
+    left: calc(22px - 38%);
   }
 
   to {
-    left: 67%;
+    left: calc(62% - 22px);
   }
 }
 
@@ -538,8 +549,8 @@
     display: none;
   }
 
-  .q-duckprogress-track {
-    margin-top: 0;
+  .q-duckprogress {
+    padding-top: 0;
   }
 
   .q-duckprogress-fill,

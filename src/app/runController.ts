@@ -15,24 +15,11 @@ import { columnDigest } from '../core/schema/column-meta';
 import { schemaState } from '../core/schema/schema-store';
 import { runPipeline } from '../core/pipeline';
 import { presentRun } from '../ui/views/report/presenter';
-import { createCancelToken } from './store';
-import type { PipelineState } from './store';
+import { createCancelToken, isRunningStage } from './store';
 import type { RuleFile } from '../core/rules/types';
 import type { JSSandbox } from '../core/rules/types';
 import type { SchemaRunInput } from '../core/pipeline';
 import type { ShellContext } from './shell';
-
-const RUNNING_STAGES: readonly PipelineState['stage'][] = [
-  'prepare',
-  'corrections',
-  'schema',
-  'rules',
-  'annotate',
-];
-
-export function isRunning(stage: PipelineState['stage']): boolean {
-  return RUNNING_STAGES.includes(stage);
-}
 
 /** Schema input for the run: only a resolved, digestible set participates. */
 function schemaInput(): SchemaRunInput | null {
@@ -83,7 +70,7 @@ async function resolveSandbox(
  */
 export async function startRun(ctx: ShellContext): Promise<void> {
   const { store, router } = ctx;
-  if (isRunning(store.pipeline.get().stage)) return;
+  if (isRunningStage(store.pipeline.get().stage)) return;
 
   const dataset = store.dataset.get();
   if (dataset === null) {

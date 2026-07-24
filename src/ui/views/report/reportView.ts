@@ -8,30 +8,25 @@
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
-import { createDuckProgress } from '../../components/duckProgress';
+import {
+  collapseProgressSurface,
+  createDuckProgress,
+  revealProgressSurface,
+} from '../../components/duckProgress';
 import { createEmptyState } from '../../components/emptyState';
 import { buildHeaderTooltips } from '../../../core/report/headerTooltips';
 import { columnDigest } from '../../../core/schema/column-meta';
 import { schemaState } from '../../../core/schema/schema-store';
 import { rulesState } from '../../../core/rules/rules-store';
+import { isRunningStage } from '../../../app/store';
+import { createRunProgressMapper } from './runProgressModel';
 import { mountReportPanels } from './reportPanels';
 import { setPresenter } from './presenter';
-import type { PipelineStage } from '../../../app/store';
 import type { ShellContext } from '../../../app/shell';
 import type { HeaderTooltipPlan } from '../../../core/report/headerTooltips';
 import type { SeverityToggles } from './reportGrid';
 
 type GridModule = typeof import('./reportGrid');
-
-const STAGE_LABELS: Partial<Record<PipelineStage, string>> = {
-  prepare: 'Preparing tables',
-  corrections: 'Applying corrections',
-  schema: 'Validating against the schema',
-  rules: 'Running QC rules',
-  annotate: 'Painting the report',
-};
-
-const RUNNING = new Set<PipelineStage>(['prepare', 'corrections', 'schema', 'rules', 'annotate']);
 
 export function mountReportView(container: HTMLElement, ctx: ShellContext): void {
   const empty = createEmptyState({
@@ -144,7 +139,7 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     }
     empty.hidden = true;
     layout.hidden = false;
-    if (route !== 'report' || RUNNING.has(stage)) return;
+    if (route !== 'report' || isRunningStage(stage)) return;
     if (dataset.generation === renderedGeneration || rendering) return;
 
     rendering = true;
@@ -162,21 +157,29 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       });
   });
 
-  // Run progress overlay + cancel state.
+  // Run progress overlay + cancel state. The mapper folds per-stage
+  // {done,total} into one monotonic run bar (runProgressModel.ts); the
+  // surface animates in/out so nothing snaps.
+  const runProgress = createRunProgressMapper();
+  let wasRunning = false;
   effect(() => {
     const state = ctx.store.pipeline.get();
-    const running = RUNNING.has(state.stage);
-    progressWrap.hidden = !running;
+    const running = isRunningStage(state.stage);
     if (running) {
-      const label = STAGE_LABELS[state.stage] ?? 'Running QC';
-      const percent =
-        state.progress.total > 0
-          ? Math.min(100, (state.progress.done / state.progress.total) * 100)
-          : null;
-      progress.setProgress(label, percent);
+      if (!wasRunning) {
+        // New run: snap the bar to 0 before the first glide.
+        runProgress.reset();
+        progress.setProgress('Starting the run', 0, { glideMs: 0 });
+        revealProgressSurface(progressWrap);
+      }
+      const view = runProgress.view(state.stage, state.progress.done, state.progress.total);
+      progress.setProgress(view.label, view.pct, { glideMs: view.glideMs });
       cancelButton.disabled = state.cancel.cancelled;
       if (!state.cancel.cancelled) cancelButton.textContent = 'Cancel';
+    } else if (wasRunning) {
+      collapseProgressSurface(progressWrap);
     }
+    wasRunning = running;
   });
 
   // Header tooltips recompute on schema/rules/dataset change (spec §3) so the

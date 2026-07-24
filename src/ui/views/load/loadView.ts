@@ -15,6 +15,7 @@ import { mountDatasetCard } from './datasetCard';
 import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
 import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
+import { isRunningStage } from '../../../app/store';
 import type { ShellContext } from '../../../app/shell';
 import type { SlotState } from '../../../app/store';
 
@@ -135,8 +136,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
     const data = ctx.store.slots.data.get();
     const schema = ctx.store.slots.schema.get();
     const rules = ctx.store.slots.rules.get();
-    const stage = ctx.store.pipeline.get().stage;
-    const running = stage !== 'idle' && stage !== 'done' && stage !== 'cancelled' && stage !== 'failed';
+    const running = isRunningStage(ctx.store.pipeline.get().stage);
 
     let why = '';
     if (running) why = 'A QC run is in progress…';

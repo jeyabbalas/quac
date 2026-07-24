@@ -13,6 +13,7 @@ import { showToast } from '../../../app/toast';
 import { createBadge } from '../../components/badge';
 import { createDuckProgress } from '../../components/duckProgress';
 import { createEmptyState } from '../../components/emptyState';
+import { createSeverityLabel } from '../../components/severityPill';
 import { renderFlag } from '../../../core/flags/messages';
 import { columnDigest, missingVariables } from '../../../core/schema/column-meta';
 import { schemaState } from '../../../core/schema/schema-store';
@@ -74,13 +75,6 @@ function statCard(label: string, value: string): HTMLElement {
   l.textContent = label;
   card.append(v, l);
   return card;
-}
-
-function severityPillEl(severity: 'error' | 'warning' | 'info'): HTMLSpanElement {
-  const el = document.createElement('span');
-  el.className = `q-pill q-pill--${severity}`;
-  el.textContent = severity;
-  return el;
 }
 
 export function mountReportPanels(
@@ -338,7 +332,7 @@ export function mountReportPanels(
     list.className = 'q-findings-list';
     for (const row of rows) {
       const item = document.createElement('li');
-      item.append(severityPillEl(row.severity));
+      item.append(createSeverityLabel(row.severity));
       const text = document.createElement('span');
       text.textContent = row.text;
       item.append(text);

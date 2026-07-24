@@ -22,6 +22,14 @@ function part(count: number, singular: string, plural: string): string {
   return `${String(count)} ${count === 1 ? singular : plural}`;
 }
 
+/** Small tinted label pill naming a severity (offenders/findings rows). */
+export function createSeverityLabel(severity: 'error' | 'warning' | 'info'): HTMLSpanElement {
+  const el = document.createElement('span');
+  el.className = `q-pill q-pill--${severity}`;
+  el.textContent = severity;
+  return el;
+}
+
 export function createSeverityPill(): SeverityPill {
   const el = document.createElement('span');
   el.className = 'q-pill';

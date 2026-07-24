@@ -116,7 +116,7 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
     body.className = 'q-pertinence-modaltext';
     body.textContent = blockCopy(result, declaredCount);
     const actions = document.createElement('div');
-    actions.className = 'q-idxpick-actions';
+    actions.className = 'q-modal-actions';
     const continueButton = document.createElement('button');
     continueButton.type = 'button';
     continueButton.className = 'q-btn q-btn--primary';

@@ -81,7 +81,7 @@ export function openIndexPickerModal(options: IndexPickerOptions): void {
   });
 
   const actions = document.createElement('div');
-  actions.className = 'q-idxpick-actions';
+  actions.className = 'q-modal-actions';
   const confirm = document.createElement('button');
   confirm.type = 'button';
   confirm.className = 'q-btn q-btn--primary';

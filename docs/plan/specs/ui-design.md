@@ -136,6 +136,11 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 
 AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PertinenceStrip, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
+Conventions:
+- **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker, IndexPicker, and the pertinence block modal share it. One primary per modal at most.
+- **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
+- **Empty states**: framed `createEmptyState` is for view-level empties only (a whole route with nothing to show). In-panel empties are a quiet `.q-panel-note` paragraph — a dashed box inside a sticker card reads as a broken drop zone.
+
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 
 - Logo in header; `quac-logo.svg` used as a static asset (280 KB embedded-raster SVG — never inline it into the bundle).

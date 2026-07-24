@@ -28,10 +28,16 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+      # Deliberately no `--with-deps` / `install-deps`. The ubuntu-latest image already
+      # ships every library Playwright asks for (apt reports each one "already the newest
+      # version"); the only packages it ever adds are CJK/Thai/Cyrillic X fonts and
+      # libasound2, which headless Chromium does not need for this Latin-only,
+      # self-hosted-font UI. The step's entire cost is `apt-get update` against
+      # azure.archive.ubuntu.com + packages.microsoft.com + dl.google.com: 12 s on a good
+      # day, 4m57s on a bad one (run 30023387988 — 68% of that whole build). If a future
+      # runner image drops a library, the browser tests fail loudly — re-add it here then.
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: npx playwright install chromium
       - run: npm run test:browser
       - run: npm run build
       - run: npm run size
@@ -43,11 +49,9 @@ jobs:
           name: playwright-report
           path: playwright-report
           retention-days: 7
-      - name: Upload dist
-        uses: actions/upload-artifact@v7
-        with:
-          name: dist
-          path: dist
+      # dist is not uploaded as a standalone artifact: nothing consumes it, and at 102 MB
+      # (duckdb-wasm mvp+eh + vendored extensions) it cost 4m14s in run 30014623083. The
+      # Pages artifact below ships the same bytes to the deploy job.
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v5

@@ -1,6 +1,7 @@
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
+import { applyBootConfig } from './app/bootConfig';
 import { startRouter } from './app/router';
 import { mountShell } from './app/shell';
 import { createAppStore } from './app/store';
@@ -14,4 +15,7 @@ const store = createAppStore();
 // the Run-button state machine reads plain store signals.
 bindSchemaSlot(store.slots.schema);
 bindRulesSlot(store.slots.rules);
+// mountShell renders the default Load view synchronously, so the Dataset card's
+// URL loader is registered before P16's boot flow reads the fragment below.
 mountShell(root, { store, router: startRouter() });
+void applyBootConfig(store);

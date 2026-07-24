@@ -537,6 +537,25 @@
   gap: 16px;
 }
 
+/* P16 partial-config nudge: highlights the empty Dataset slot after a link
+   pre-fills Schema/Rules. The host wrapper gets a soft ring; the note sits above
+   the card. */
+.q-slot-highlight {
+  border-radius: 12px;
+  outline: 2px solid var(--q-info);
+  outline-offset: 3px;
+}
+
+.q-preconfig-hint {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--q-info-fill);
+  color: var(--q-info);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
 @media (max-width: 1023px) {
   .q-slotgrid {
     grid-template-columns: 1fr;

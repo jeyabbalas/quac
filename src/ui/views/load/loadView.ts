@@ -7,6 +7,7 @@
  */
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
+import { registerDatasetUrlLoader } from '../../../app/bootConfig';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { addRuleUrls } from '../../../core/rules/rules-store';
 import { loadSchemaUrls } from '../../../core/schema/schema-store';
@@ -75,6 +76,16 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   mountSchemaSlotCard(schemaHost);
   mountRulesSlotCard(rulesHost, ctx);
 
+  // P16: the boot flow drives the Dataset card's own URL loader (real progress).
+  registerDatasetUrlLoader(dataCard.fetchUrl);
+
+  // P16 partial-config UX: a pre-configured link that filled Schema/Rules but
+  // not the Dataset highlights the empty slot with a nudge (never auto-runs).
+  const preconfigHint = document.createElement('p');
+  preconfigHint.className = 'q-preconfig-hint';
+  preconfigHint.hidden = true;
+  dataHost.prepend(preconfigHint);
+
   // Pertinence verdict sits between the slot cards and the preview (§E.5).
   const pertinenceHost = document.createElement('div');
   mountPertinenceStrip(pertinenceHost, ctx);
@@ -136,6 +147,22 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
     runButton.disabled = why !== '';
     reason.textContent = why;
     reason.hidden = why === '';
+  });
+
+  // Partial-config highlight (P16): only for pre-configured sessions, and only
+  // while the Dataset is still empty. Clears the moment a dataset loads.
+  effect(() => {
+    const preconfigured = ctx.store.preconfigured.get();
+    const dataEmpty = ctx.store.slots.data.get().status === 'empty';
+    const schemaReady = usable(ctx.store.slots.schema.get());
+    const rulesReady = usable(ctx.store.slots.rules.get());
+    const show = preconfigured && dataEmpty && (schemaReady || rulesReady);
+    preconfigHint.hidden = !show;
+    dataHost.classList.toggle('q-slot-highlight', show);
+    if (show) {
+      const subject = rulesReady && schemaReady ? 'Rules and a schema are' : rulesReady ? 'Rules are' : 'A schema is';
+      preconfigHint.textContent = `${subject} pre-loaded. Add your dataset to run QC.`;
+    }
   });
 
   // Preview refresh: engine access stays behind a dynamic import so the

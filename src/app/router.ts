@@ -43,7 +43,7 @@ export interface Router {
 }
 
 /** Fragment from `href`, not `location.hash` — the latter percent-decodes in Firefox. */
-function readRawHash(): string {
+export function readRawHash(): string {
   const href = window.location.href;
   const i = href.indexOf('#');
   return i === -1 ? '' : href.slice(i);

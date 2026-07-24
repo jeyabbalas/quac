@@ -20,9 +20,9 @@ function hespSchemaPaths(): string[] {
   return paths;
 }
 
-const card = (page: Page): Locator => page.locator('.q-schemaslot');
+const card = (page: Page): Locator => page.locator('[data-slot="schema"] .q-slotcard');
 const badge = (page: Page): Locator => card(page).locator('.q-badge');
-const detail = (page: Page): Locator => card(page).locator('.q-schemaslot-detail');
+const detail = (page: Page): Locator => card(page).locator('.q-slotcard-summary');
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/quac/');

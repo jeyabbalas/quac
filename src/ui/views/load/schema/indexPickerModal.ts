@@ -9,6 +9,7 @@ import { openModal } from '../../../../app/modal';
 import { chooseRoot } from '../../../../core/schema/schema-store';
 import type { SchemaSet } from '../../../../core/schema/types';
 import { createBadge } from '../../../components/badge';
+import './indexPickerModal.css';
 
 export interface IndexPickerOptions {
   set: SchemaSet;

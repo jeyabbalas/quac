@@ -2,6 +2,11 @@
  * Drag-drop zone with real button semantics (ui-design §7): the whole zone is
  * a <button> wrapping a hidden file input, so it is keyboard-activatable and
  * focusable by default. Drag styling is class-based.
+ *
+ * `dropTarget` promotes drag/drop to an ancestor (the whole slot card): the
+ * drag listeners attach there instead of the zone button, so dropping
+ * anywhere on the card works and events that bubble from the zone are
+ * handled exactly once.
  */
 
 export interface DropZoneOptions {
@@ -10,6 +15,12 @@ export interface DropZoneOptions {
   /** `accept` attribute for the hidden input (e.g. '.csv,.tsv'). */
   accept?: string;
   multiple?: boolean;
+  /** aria-label for the hidden file input (a stable automation hook). */
+  inputAriaLabel?: string;
+  /** Element that receives the drag/drop listeners; defaults to the zone. */
+  dropTarget?: HTMLElement;
+  /** Raw DataTransfer drops (folder walks); wins over onFiles for drops. */
+  onDropTransfer?: (dt: DataTransfer) => void;
   onFiles: (files: File[]) => void;
 }
 
@@ -23,6 +34,7 @@ export function createDropZone(options: DropZoneOptions): DropZone {
   input.type = 'file';
   input.hidden = true;
   if (options.accept !== undefined) input.accept = options.accept;
+  if (options.inputAriaLabel !== undefined) input.setAttribute('aria-label', options.inputAriaLabel);
   input.multiple = options.multiple ?? false;
   input.addEventListener('change', () => {
     const files = [...(input.files ?? [])];
@@ -44,18 +56,25 @@ export function createDropZone(options: DropZoneOptions): DropZone {
     input.click();
   });
 
-  button.addEventListener('dragover', (event) => {
+  const target = options.dropTarget ?? button;
+  target.addEventListener('dragover', (event) => {
     event.preventDefault();
     if (!button.disabled) button.classList.add('q-dropzone--over');
   });
-  button.addEventListener('dragleave', () => {
+  target.addEventListener('dragleave', () => {
     button.classList.remove('q-dropzone--over');
   });
-  button.addEventListener('drop', (event) => {
+  target.addEventListener('drop', (event) => {
     event.preventDefault();
     button.classList.remove('q-dropzone--over');
     if (button.disabled) return;
-    const files = [...(event.dataTransfer?.files ?? [])];
+    const dt = event.dataTransfer;
+    if (dt === null) return;
+    if (options.onDropTransfer !== undefined) {
+      options.onDropTransfer(dt);
+      return;
+    }
+    const files = [...dt.files];
     if (files.length > 0) options.onFiles(options.multiple ? files : files.slice(0, 1));
   });
 

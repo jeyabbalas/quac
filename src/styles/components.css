@@ -571,6 +571,16 @@
   gap: var(--q-space-4);
 }
 
+/* Equal-height cards: slot hosts are flex columns, the card fills the row */
+.q-slotgrid > * {
+  display: flex;
+  flex-direction: column;
+}
+
+.q-slotgrid .q-slotcard {
+  flex: 1;
+}
+
 /* P16 partial-config nudge: highlights the empty Dataset slot after a link
    pre-fills Schema/Rules. The host wrapper gets a soft ring; the note sits above
    the card. */
@@ -633,6 +643,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Card-level secondary actions (e.g. "Browse folder", "Choose index…") */
+.q-slotcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--q-space-2);
 }
 
 .q-slotcard-details {

@@ -73,7 +73,7 @@ async function loadAllThreeSlots(page: Page): Promise<void> {
   await datasetInput(page).setInputFiles(DATA);
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await page.getByLabel('Browse schema files').setInputFiles(SCHEMA_FILES);
-  await expect(page.locator('.q-schemaslot .q-badge').first()).toHaveText('Valid', {
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
     timeout: INGEST_TIMEOUT,
   });
   await rulesInput(page).setInputFiles(RULE_FILES);
@@ -190,7 +190,7 @@ test('cancel mid-run leaves a sane partial state', async ({ page }) => {
   });
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await page.getByLabel('Browse schema files').setInputFiles(SCHEMA_FILES);
-  await expect(page.locator('.q-schemaslot .q-badge').first()).toHaveText('Valid', {
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
     timeout: INGEST_TIMEOUT,
   });
 

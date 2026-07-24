@@ -21,15 +21,15 @@ test('resolve ambiguous index → Share link has index=, uploaded rules excluded
   // Load both roots by URL (space-separated) → ambiguous → IndexPickerModal.
   const a = `${CORS}/synthetic/two-roots/a.schema.json`;
   const b = `${CORS}/synthetic/two-roots/b.schema.json`;
-  await page.locator('.q-schemaslot').getByLabel('Schema URL').fill(`${a} ${b}`);
-  await page.locator('.q-schemaslot').getByRole('button', { name: 'Fetch' }).click();
+  await page.locator('[data-slot="schema"]').getByLabel('Schema URL').fill(`${a} ${b}`);
+  await page.locator('[data-slot="schema"]').getByRole('button', { name: 'Fetch' }).click();
 
   const modal = page.getByRole('dialog', { name: 'Choose the index schema' });
   await expect(modal).toBeVisible({ timeout: LOAD_TIMEOUT });
   await modal.getByRole('radio', { name: /Root A/ }).check();
   await modal.getByRole('button', { name: 'Use this file' }).click();
   await expect(modal).toBeHidden();
-  await expect(page.locator('.q-schemaslot .q-badge').first()).toHaveText('Valid');
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid');
 
   // Upload a rules file (an upload → excluded from any link).
   await page

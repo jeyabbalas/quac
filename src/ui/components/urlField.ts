@@ -1,8 +1,11 @@
-/** Labeled URL input + Fetch button (ingestion.md §1). */
+/** Labeled URL input + Fetch submit, as a real <form> (ingestion.md §1). */
 
 export interface UrlFieldOptions {
-  /** Accessible label, e.g. 'Dataset URL'. */
+  /** Visible label, e.g. 'Dataset URL'. */
   label: string;
+  /** Accessible-name override when the visible label is generic ('URL'). */
+  inputAriaLabel?: string;
+  placeholder?: string;
   onFetch: (url: string) => void;
 }
 
@@ -14,7 +17,7 @@ export interface UrlField {
 let urlFieldSeq = 0;
 
 export function createUrlField(options: UrlFieldOptions): UrlField {
-  const el = document.createElement('div');
+  const el = document.createElement('form');
   el.className = 'q-urlfield';
 
   urlFieldSeq += 1;
@@ -29,24 +32,21 @@ export function createUrlField(options: UrlFieldOptions): UrlField {
   input.type = 'url';
   input.id = id;
   input.className = 'q-urlfield-input';
-  input.placeholder = 'https://…';
+  input.placeholder = options.placeholder ?? 'https://…';
   input.spellcheck = false;
+  if (options.inputAriaLabel !== undefined) {
+    input.setAttribute('aria-label', options.inputAriaLabel);
+  }
 
   const button = document.createElement('button');
-  button.type = 'button';
+  button.type = 'submit';
   button.className = 'q-btn q-urlfield-btn';
   button.textContent = 'Fetch';
 
-  const submit = (): void => {
+  el.addEventListener('submit', (event) => {
+    event.preventDefault();
     const url = input.value.trim();
     if (url !== '') options.onFetch(url);
-  };
-  button.addEventListener('click', submit);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      submit();
-    }
   });
 
   el.append(label, input, button);

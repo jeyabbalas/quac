@@ -66,6 +66,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
   const dropZone = createDropZone({
     label: 'Drop dataset file (CSV, TSV, JSON, Excel, Parquet) or',
     accept: '.csv,.tsv,.tab,.json,.xlsx,.parquet,.pq',
+    dropTarget: card.el, // whole card accepts drops
     onFiles: (files) => {
       const file = files[0];
       if (file) run('file', file);

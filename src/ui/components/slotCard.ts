@@ -1,7 +1,8 @@
 /**
  * Input slot card frame (ingestion.md §1): title + status badge, a body area
- * (drop zone / URL field), an expandable details area. Generic — the Dataset
- * slot uses it in P05; Schema (P06) and Rules (P12) adopt the same frame.
+ * (drop zone / URL field), an optional actions row, an expandable details
+ * area. Generic — all three Load slots (Dataset · JSON Schema · QC Rules)
+ * share this frame.
  */
 import { createBadge } from './badge';
 import type { BadgeTone } from './badge';
@@ -11,10 +12,14 @@ export interface SlotCard {
   readonly el: HTMLElement;
   /** Mount point for drop zone / URL field / progress. */
   readonly bodyHost: HTMLElement;
+  /** Row for card-level actions (e.g. "Browse folder"); hidden while empty. */
+  readonly actionsHost: HTMLElement;
   /** Mount point for extra detail content inside <details>. */
   readonly detailHost: HTMLElement;
   /** Re-render badge + summary line from a SlotState. */
   update: (state: SlotState) => void;
+  /** Expand/collapse the details area (e.g. auto-open on fatal findings). */
+  setDetailsOpen: (open: boolean) => void;
 }
 
 const BADGE_TONE: Record<SlotStatus, BadgeTone> = {
@@ -27,7 +32,7 @@ const BADGE_TONE: Record<SlotStatus, BadgeTone> = {
 
 const BADGE_TEXT: Record<SlotStatus, string> = {
   empty: 'Empty',
-  loading: 'Loading',
+  loading: 'Loading…',
   valid: 'Valid',
   warning: 'Warning',
   error: 'Error',
@@ -54,6 +59,10 @@ export function createSlotCard(title: string): SlotCard {
   const bodyHost = document.createElement('div');
   bodyHost.className = 'q-slotcard-body';
 
+  const actionsHost = document.createElement('div');
+  actionsHost.className = 'q-slotcard-actions';
+  actionsHost.hidden = true;
+
   const details = document.createElement('details');
   details.className = 'q-slotcard-details';
   const detailsToggle = document.createElement('summary');
@@ -62,16 +71,21 @@ export function createSlotCard(title: string): SlotCard {
   details.append(detailsToggle, detailHost);
   details.hidden = true;
 
-  el.append(header, summary, bodyHost, details);
+  el.append(header, summary, bodyHost, actionsHost, details);
 
   return {
     el,
     bodyHost,
+    actionsHost,
     detailHost,
     update: (state) => {
       badgeHost.replaceChildren(createBadge(BADGE_TEXT[state.status], BADGE_TONE[state.status]));
       summary.textContent = state.detail;
+      actionsHost.hidden = actionsHost.childElementCount === 0;
       details.hidden = detailHost.childElementCount === 0;
+    },
+    setDetailsOpen: (open) => {
+      details.open = open;
     },
   };
 }

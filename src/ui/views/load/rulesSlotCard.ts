@@ -48,6 +48,7 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
     label: 'Drop QC rules files (.quac.csv) or',
     accept: '.csv',
     multiple: true,
+    dropTarget: card.el, // whole card accepts drops
     onFiles: (files) => {
       run(async () => {
         const entries = await Promise.all(

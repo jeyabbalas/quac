@@ -1,98 +1,12 @@
-/* Schema slot card + IndexPickerModal. Scoped q-schemaslot / q-idxpick class
-   prefixes on purpose — the generic SlotCard family is P05's; consolidation
-   into components.css is deferred to the merge. */
-
-.q-schemaslot {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(360px, 100%);
-  padding: var(--q-space-4);
-  border: var(--q-stroke);
-  border-radius: var(--q-radius-lg);
-  background: var(--q-paper);
-  box-shadow: var(--q-shadow-2);
-}
-
-.q-schemaslot-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--q-space-2);
-}
-
-.q-schemaslot-head h3 {
-  margin: 0;
-  font-size: var(--q-text-lg);
-}
-
-.q-schemaslot-detail {
-  margin: 0;
-  min-height: 1.2em;
-  font-size: var(--q-text-md);
-  color: var(--q-gray-700);
-}
-
-.q-schemaslot-drop {
-  padding: 20px 12px;
-  border: 2px dashed var(--q-gray-400);
-  border-radius: 10px;
-  background: var(--q-gray-50);
-  color: var(--q-gray-700);
-  font: inherit;
-  font-size: var(--q-text-md);
-  cursor: pointer;
-}
-
-.q-schemaslot-drop:hover,
-.q-schemaslot--dragging .q-schemaslot-drop {
-  border-color: var(--q-orange);
-  background: var(--q-gray-100);
-}
-
-.q-schemaslot-browse {
-  display: flex;
-  gap: var(--q-space-2);
-}
-
-.q-schemaslot-url {
-  display: flex;
-  align-items: end;
-  gap: var(--q-space-2);
-}
-
-.q-schemaslot-urllabel {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--q-text-xs);
-  font-weight: 600;
-  color: var(--q-gray-700);
-}
-
-.q-schemaslot-url input {
-  padding: 5px 8px;
-  border: 1.5px solid var(--q-gray-400);
-  border-radius: var(--q-radius-sm);
-  font: inherit;
-  font-size: var(--q-text-sm);
-}
-
-.q-schemaslot-details {
-  font-size: var(--q-text-sm);
-}
-
-.q-schemaslot-details summary {
-  cursor: pointer;
-  font-weight: 600;
-}
+/* Schema slot detail renderer — the card frame itself is the shared
+   .q-slotcard; only the bespoke details body (facts, ignored files, findings)
+   keeps scoped q-schemaslot-* classes (pinned by schemaLoad.spec). */
 
 .q-schemaslot-detailsbody {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--q-space-2);
+  margin-top: var(--q-space-2);
 }
 
 .q-schemaslot-detailsbody ul {
@@ -101,7 +15,7 @@
 }
 
 .q-schemaslot-subhead {
-  margin: 4px 0 0;
+  margin: var(--q-space-1) 0 0;
   font-weight: 600;
 }
 
@@ -115,69 +29,4 @@
 
 .q-schemaslot-finding--info {
   color: var(--q-gray-700);
-}
-
-/* IndexPickerModal */
-
-.q-idxpick-note {
-  margin: 0 0 var(--q-space-3);
-}
-
-.q-idxpick-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--q-space-2);
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.q-idxpick-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: var(--q-border-input);
-  border-radius: var(--q-radius-md);
-  cursor: pointer;
-}
-
-.q-idxpick-row:has(input:checked) {
-  border-color: var(--q-ink);
-  background: var(--q-gray-50);
-}
-
-.q-idxpick-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.q-idxpick-title {
-  font-size: var(--q-text-sm);
-  color: var(--q-gray-700);
-}
-
-.q-idxpick-id {
-  overflow: hidden;
-  font-family: var(--q-font-mono);
-  font-size: var(--q-text-xs);
-  color: var(--q-gray-600);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.q-idxpick-actions {
-  display: flex;
-  justify-content: end;
-  margin-top: 14px;
-}
-
-/* Slot row shared by the three cards (dataset P05 · schema · rules P12) */
-.q-slot-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--q-space-4);
-  align-items: flex-start;
 }

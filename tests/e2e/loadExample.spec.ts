@@ -19,7 +19,7 @@ test('one click fills all three slots and enables Run QC', async ({ page }) => {
   await expect(page.locator('[data-slot="data"] .q-slotcard-summary')).toContainText(
     'hesp_dirty_100.csv',
   );
-  await expect(page.locator('.q-schemaslot .q-badge').first()).toHaveText('Valid', {
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
     timeout: INGEST_TIMEOUT,
   });
   await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(

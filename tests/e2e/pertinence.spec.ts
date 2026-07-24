@@ -23,7 +23,7 @@ const datasetInput = (page: Page): Locator =>
 
 async function loadHespSchema(page: Page): Promise<void> {
   await page.getByLabel('Browse schema folder').setInputFiles(HESP_SCHEMA_DIR);
-  await expect(page.locator('.q-schemaslot .q-badge')).toHaveText('Valid');
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge')).toHaveText('Valid');
 }
 
 test('HESP schema + hesp_dirty_100.csv → 265/265 OK strip', async ({ page }) => {

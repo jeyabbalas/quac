@@ -26,11 +26,11 @@ test('preconfigured link: auto-load schema/rules → upload data → run', async
   await page.goto(`/quac/#/load?${params.toString()}`);
 
   // Schema crawls categories + common/defs over HTTP; no index modal (matched).
-  await expect(page.locator('.q-schemaslot .q-badge').first()).toHaveText('Valid', {
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
     timeout: INGEST_TIMEOUT,
   });
   await expect(page.getByRole('dialog', { name: 'Choose the index schema' })).toHaveCount(0);
-  await expect(page.locator('.q-schemaslot-detail')).toContainText('root: core/core.schema.json');
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-summary')).toContainText('root: core/core.schema.json');
 
   // Rules land Valid (data checks pending until a dataset loads).
   await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText('Valid', {

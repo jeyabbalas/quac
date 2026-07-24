@@ -360,6 +360,9 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     requestConfirmIfDirty(() => {
       closeDrawer(false);
       selectedFile.set(name);
+      // The rail re-rendered (synchronously, in the render effect) — put
+      // focus back on the selection so keyboard flow continues from it.
+      fileList.querySelector<HTMLElement>('.q-filebtn[aria-current="true"]')?.focus();
     });
   }
 

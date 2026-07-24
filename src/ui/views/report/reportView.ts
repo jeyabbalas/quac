@@ -8,6 +8,7 @@
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
+import { assetUrl } from '../../../app/urlBase';
 import {
   collapseProgressSurface,
   createDuckProgress,
@@ -29,10 +30,22 @@ import type { SeverityToggles } from './reportGrid';
 type GridModule = typeof import('./reportGrid');
 
 export function mountReportView(container: HTMLElement, ctx: ShellContext): void {
+  // View-level empty (title + body copy pinned by nav.spec) with the duck
+  // mark and a way back to the inputs.
   const empty = createEmptyState({
     title: 'No flags yet.',
     body: 'Load a dataset to see it here, then run QC and see what floats up.',
   });
+  const emptyDuck = document.createElement('img');
+  emptyDuck.className = 'q-empty-duck';
+  emptyDuck.src = assetUrl('logo/quac-duck.svg');
+  emptyDuck.alt = '';
+  empty.prepend(emptyDuck);
+  const emptyAction = document.createElement('a');
+  emptyAction.className = 'q-btn q-empty-action';
+  emptyAction.href = '#/load';
+  emptyAction.textContent = 'Go to Load';
+  empty.append(emptyAction);
 
   const layout = document.createElement('div');
   layout.className = 'q-report-layout';

@@ -138,15 +138,15 @@ test('full run: progress → annotated grid + popover → counts → panels → 
   await expect(errorCells.first()).toBeVisible({ timeout: 20_000 });
 
   // ---- Panels ----
-  await panelTab(page, 'Missing variables').click();
+  await panelTab(page, 'Missing vars').click();
   await expect(page.getByText('All schema variables are present in the dataset.')).toBeVisible();
 
-  await panelTab(page, 'Dataset findings').click();
+  await panelTab(page, 'Findings').click();
   await expect(page.getByText('identical records', { exact: false }).first()).toBeVisible();
   await expect(page.getByText("Column 'notes'", { exact: false }).first()).toBeVisible();
   await expect(page.getByText('external reference data', { exact: false }).first()).toBeVisible();
 
-  await panelTab(page, 'Repeat offenders').click();
+  await panelTab(page, 'Offenders').click();
   const offenders = page.locator('.q-offenders tbody tr');
   await expect(offenders.first()).toBeVisible();
   await expect(page.locator('.q-offenders td', { hasText: 'Q003' }).first()).toBeVisible();

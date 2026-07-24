@@ -6,13 +6,13 @@
  * the entry graph; no data-table imports here). Grid interactions travel
  * through the hooks the view provides.
  */
-import { effect } from '../../../app/signals';
+import { computed, effect } from '../../../app/signals';
 import { signal } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
+import { isRunningStage } from '../../../app/store';
 import { createBadge } from '../../components/badge';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
-import { createEmptyState } from '../../components/emptyState';
 import { createSeverityLabel } from '../../components/severityPill';
 import { renderFlag } from '../../../core/flags/messages';
 import { columnDigest, missingVariables } from '../../../core/schema/column-meta';
@@ -37,8 +37,39 @@ export interface PanelHooks {
   onRerun: () => void;
 }
 
-const TABS = ['Summary', 'Missing variables', 'Dataset findings', 'Repeat offenders'] as const;
+/* Short one-line tab labels (they must fit a single row at 1280×720 — the
+   pinned e2e viewport); full names travel via title/aria-label. */
+const TABS = ['Summary', 'Missing vars', 'Findings', 'Offenders'] as const;
 type TabName = (typeof TABS)[number];
+
+const TAB_FULL_NAMES: Record<TabName, string> = {
+  Summary: 'Summary',
+  'Missing vars': 'Missing variables',
+  Findings: 'Dataset findings',
+  Offenders: 'Repeat offenders',
+};
+
+const RUNNING_NOTE = 'QC run in progress — results land here when it finishes.';
+
+function panelNote(text: string): HTMLParagraphElement {
+  const p = document.createElement('p');
+  p.className = 'q-panel-note';
+  p.textContent = text;
+  return p;
+}
+
+/** Mono identifiers (rule ids, variable names) get soft break opportunities
+ *  after underscores so `wage_income_annual` wraps between words instead of
+ *  mid-character. */
+function monoBreakable(text: string): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const segments = text.split(/(?<=_)/);
+  segments.forEach((segment, index) => {
+    if (index > 0) frag.append(document.createElement('wbr'));
+    frag.append(segment);
+  });
+  return frag;
+}
 
 const num = (n: number): string => n.toLocaleString('en-US');
 const pct = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
@@ -64,9 +95,13 @@ function findRule(ruleId: string): QCRule | undefined {
   return undefined;
 }
 
-function statCard(label: string, value: string): HTMLElement {
+function statCard(
+  label: string,
+  value: string,
+  tone?: 'error' | 'warning' | 'info' | 'success',
+): HTMLElement {
   const card = document.createElement('div');
-  card.className = 'q-statcard';
+  card.className = tone === undefined ? 'q-statcard' : `q-statcard q-statcard--${tone}`;
   const v = document.createElement('div');
   v.className = 'q-statcard-value';
   v.textContent = value;
@@ -86,6 +121,10 @@ export function mountReportPanels(
   const activeTab = signal<TabName>('Summary');
   const severity = signal<SeverityToggles>({ error: true, warning: true, info: true });
 
+  // Deduped run predicate: pipeline progress ticks set the signal every few
+  // ms — panels only care about the boolean edge.
+  const running = computed(() => isRunningStage(ctx.store.pipeline.get().stage));
+
   const tablist = document.createElement('div');
   tablist.className = 'q-paneltabs';
   tablist.setAttribute('role', 'tablist');
@@ -99,6 +138,10 @@ export function mountReportPanels(
     button.setAttribute('role', 'tab');
     button.id = `q-tab-${name.replaceAll(' ', '-')}`;
     button.textContent = name;
+    if (TAB_FULL_NAMES[name] !== name) {
+      button.title = TAB_FULL_NAMES[name];
+      button.setAttribute('aria-label', TAB_FULL_NAMES[name]);
+    }
     button.addEventListener('click', () => {
       activeTab.set(name);
     });
@@ -129,10 +172,9 @@ export function mountReportPanels(
     target.replaceChildren();
     if (artifacts === null) {
       target.append(
-        createEmptyState({
-          title: 'No findings yet.',
-          body: 'Results land here after a QC run.',
-        }),
+        panelNote(
+          running.get() ? RUNNING_NOTE : 'No findings yet. Results land here after a QC run.',
+        ),
       );
       return;
     }
@@ -156,19 +198,25 @@ export function mountReportPanels(
       target.append(note);
     }
 
-    const cards = document.createElement('div');
-    cards.className = 'q-statgrid';
-    cards.append(
+    // Hero row: the verdict numbers, severity-tinted so "39 Errors" cannot
+    // read like "266 Columns". Quiet fact row below.
+    const heroCards = document.createElement('div');
+    heroCards.className = 'q-statgrid q-statgrid--hero';
+    heroCards.append(
+      statCard('Errors', num(summary.severityTotals.error), 'error'),
+      statCard('Warnings', num(summary.severityTotals.warning), 'warning'),
+      statCard('Info', num(summary.severityTotals.info), 'info'),
+      statCard('Corrections applied', num(artifacts.rules?.correctedCells ?? 0), 'success'),
+    );
+    const factCards = document.createElement('div');
+    factCards.className = 'q-statgrid';
+    factCards.append(
       statCard('Rows', num(dataset?.rowCount ?? artifacts.rowsTotal)),
       statCard('Columns', num(dataset?.columnCount ?? 0)),
-      statCard('Errors', num(summary.severityTotals.error)),
-      statCard('Warnings', num(summary.severityTotals.warning)),
-      statCard('Info', num(summary.severityTotals.info)),
-      statCard('Corrections applied', num(artifacts.rules?.correctedCells ?? 0)),
       statCard('Rules run', num(rulesRun)),
       statCard('Rules skipped', num(rulesSkipped)),
     );
-    target.append(cards);
+    target.append(heroCards, factCards);
 
     const filter = document.createElement('fieldset');
     filter.className = 'q-sevfilter';
@@ -263,10 +311,10 @@ export function mountReportPanels(
     const digest = schema.phase === 'ready' && schema.set !== null ? columnDigest(schema.set) : null;
     if (digest === null || dataset === null) {
       target.append(
-        createEmptyState({
-          title: 'Nothing to compare.',
-          body: 'Load a JSON Schema and a dataset to see schema variables missing from the data.',
-        }),
+        panelNote(
+          'Nothing to compare. Load a JSON Schema and a dataset to see schema variables ' +
+            'missing from the data.',
+        ),
       );
       return;
     }
@@ -302,10 +350,11 @@ export function mountReportPanels(
     target.replaceChildren();
     if (artifacts === null) {
       target.append(
-        createEmptyState({
-          title: 'No dataset findings yet.',
-          body: 'Dataset- and column-level findings appear here after a run.',
-        }),
+        panelNote(
+          running.get()
+            ? RUNNING_NOTE
+            : 'No dataset findings yet. Dataset- and column-level findings appear here after a run.',
+        ),
       );
       return;
     }
@@ -356,10 +405,11 @@ export function mountReportPanels(
     target.replaceChildren();
     if (artifacts === null) {
       target.append(
-        createEmptyState({
-          title: 'No offenders yet.',
-          body: 'Frequently-firing rules appear here after a run.',
-        }),
+        panelNote(
+          running.get()
+            ? RUNNING_NOTE
+            : 'No offenders yet. Frequently-firing rules appear here after a run.',
+        ),
       );
       return;
     }
@@ -395,9 +445,20 @@ export function mountReportPanels(
     const table = document.createElement('table');
     table.className = 'q-offenders';
     const head = document.createElement('thead');
-    head.innerHTML =
-      '<tr><th>Rule</th><th>Source</th><th>Severity</th><th>Targets</th>' +
-      '<th class="q-num">Count</th><th class="q-num">% rows</th></tr>';
+    const headRow = document.createElement('tr');
+    for (const [text, cls] of [
+      ['Rule', ''],
+      ['Severity', ''],
+      ['Targets', ''],
+      ['Count', 'q-num'],
+      ['% rows', 'q-num'],
+    ] as const) {
+      const th = document.createElement('th');
+      th.textContent = text;
+      if (cls !== '') th.className = cls;
+      headRow.append(th);
+    }
+    head.append(headRow);
     const body = document.createElement('tbody');
     for (const aggregate of ranked) {
       const row = document.createElement('tr');
@@ -408,21 +469,34 @@ export function mountReportPanels(
           : [schemaRuleTargets(aggregate.ruleId)],
       );
       const exact = exactOf(aggregate.ruleId, aggregate.count);
-      const cells = [
-        aggregate.ruleId,
-        aggregate.source,
-        aggregate.severity,
-        targets.text,
-        num(exact),
-        aggregate.pctOfRows === undefined ? '—' : pct(aggregate.pctOfRows),
-      ];
-      for (const [i, textContent] of cells.entries()) {
-        const cell = document.createElement('td');
-        cell.textContent = textContent;
-        if (i === 3 && targets.text !== targets.full) cell.title = targets.full;
-        if (i >= 4) cell.className = 'q-num';
-        row.append(cell);
-      }
+
+      // Rule cell: breakable mono id + the source as a muted sub-tag (its own
+      // column wasted width on a two-value fact).
+      const ruleCell = document.createElement('td');
+      const ruleId = document.createElement('span');
+      ruleId.className = 'q-offenders-ruleid';
+      ruleId.append(monoBreakable(aggregate.ruleId));
+      const source = document.createElement('span');
+      source.className = 'q-offenders-source';
+      source.textContent = aggregate.source;
+      ruleCell.append(ruleId, source);
+
+      const severityCell = document.createElement('td');
+      severityCell.append(createSeverityLabel(aggregate.severity));
+
+      const targetsCell = document.createElement('td');
+      targetsCell.append(monoBreakable(targets.text));
+      if (targets.text !== targets.full) targetsCell.title = targets.full;
+
+      const countCell = document.createElement('td');
+      countCell.className = 'q-num';
+      countCell.textContent = num(exact);
+
+      const pctCell = document.createElement('td');
+      pctCell.className = 'q-num';
+      pctCell.textContent = aggregate.pctOfRows === undefined ? '—' : pct(aggregate.pctOfRows);
+
+      row.append(ruleCell, severityCell, targetsCell, countCell, pctCell);
       const filterable =
         rule !== undefined &&
         rule.ruleType !== 'correct' &&
@@ -452,16 +526,18 @@ export function mountReportPanels(
     target.append(scroller);
   };
 
-  // Re-render panels whenever the run artifacts / dataset / schema change.
+  // Re-render panels whenever the run artifacts / dataset / schema / run
+  // state change (the deduped `running` computed is read inside the
+  // artifact-less branches, so progress ticks never thrash the panels).
   effect(() => {
     const artifacts = ctx.store.runArtifacts.get();
     ctx.store.dataset.get();
     schemaState.get();
     rulesState.get();
     const summaryPanel = panels.get('Summary');
-    const missingPanel = panels.get('Missing variables');
-    const findingsPanel = panels.get('Dataset findings');
-    const offendersPanel = panels.get('Repeat offenders');
+    const missingPanel = panels.get('Missing vars');
+    const findingsPanel = panels.get('Findings');
+    const offendersPanel = panels.get('Offenders');
     if (summaryPanel) renderSummary(summaryPanel, artifacts);
     if (missingPanel) renderMissing(missingPanel);
     if (findingsPanel) renderFindings(findingsPanel, artifacts);

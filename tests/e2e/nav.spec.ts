@@ -37,7 +37,8 @@ test('tab clicks update the hash and the visible view', async ({ page }) => {
     'aria-current',
     'page',
   );
-  await expect(page.getByRole('link', { name: 'Load' })).not.toHaveAttribute(
+  // exact: the report empty state's "Go to Load" action also contains 'Load'.
+  await expect(page.getByRole('link', { name: 'Load', exact: true })).not.toHaveAttribute(
     'aria-current',
     'page',
   );

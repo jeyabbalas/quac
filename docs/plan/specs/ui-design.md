@@ -92,20 +92,23 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 +------------------------------------------------------------------------------+
 ```
 
-**QC Report (`#/report`)** — during a run the grid area shows DuckProgress (`~~~(duck)~~~ 62% — Quacking the checks…  [Cancel]`).
+**QC Report (`#/report`)** — during a run one monotonic DuckProgress card sits above the grid area (`~(duck)~ Validating against the schema · 43%  [Cancel]`); the panel column is a sticky Tier 1 sticker with one-line tabs.
 ```
 +------------------------------------------------------------------------------+
 | header + nav                                                                 |
 +-------------------------------------------+----------------------------------+
-| [data-table: annotated grid, filters,     | [Summary][Missing][Dataset][Top] |
-|  header tooltips, severity tints]         |  Rows 100 · Cols 265             |
-|                                           |  312 errors · 41 warn · 9 info   |
-|                                           |  27 corrections applied          |
-|                                           |  Filter: [err][warn][info]       |
-|                                           |  ------------------------------  |
-|                                           |  [ Download QC Report (.xlsx) ]  |
-|  ! Painting 20,000 of 143,201 flags —     |  Repeat offenders                |
-|    full detail in Excel report            |   Q001 dup record_id ....... 18  |
+| [data-table: annotated grid, filters,     | +== panel sticker (sticky) ====+ |
+|  header tooltips, severity tints]         | | Summary · Missing vars ·     | |
+|                                           | |  Findings · Offenders        | |
+|                                           | | +--39----+ +--13----+        | |
+|                                           | | | Errors | | Warnings|  <- severity-tinted hero
+|                                           | | +--10----+ +---6----+        | |
+|                                           | | | Info   | | Corrections|    | |
+|                                           | | Rows 101 · Cols 266 · run/skip| |
+|                                           | | Show annotations [x][x][x]   | |
+|                                           | | [ Download QC Report (.xlsx) ]| |
+|  ! Painting 20,000 of 143,201 flags —     | |            [ Re-run QC ]     | |
+|    full detail in Excel report            | +------------------------------+ |
 +-------------------------------------------+----------------------------------+
 ```
 

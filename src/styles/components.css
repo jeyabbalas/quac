@@ -405,6 +405,18 @@
   color: var(--q-gray-600);
 }
 
+.q-empty-duck {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--q-space-3);
+}
+
+.q-empty-action {
+  display: inline-block;
+  margin-top: var(--q-space-4);
+  text-decoration: none;
+}
+
 /* Duck progress — the duck rides the leading edge of a channel of water.
    `--q-dp-pct` positions both the fill and the duck; `--q-dp-glide` is the
    transition length (long = asymptotic crawl); JS never animates. */
@@ -835,8 +847,14 @@
    nodes, and a large dataset would kill it. A definite height is therefore load-
    bearing, not cosmetic: keep one here. */
 .q-report-grid {
+  /* Vertical chrome around the grid at 100dvh: header banner + tabs (~130px)
+     + main padding, grid margin and cap-banner allowance (~56px) + footer
+     (~24px). Keeps the grid filling the viewport without pushing the page
+     into a scroll on its own. */
+  --q-report-chrome: 210px;
+
   margin-top: var(--q-space-2);
-  height: clamp(420px, calc(100dvh - 210px), 1200px);
+  height: clamp(420px, calc(100dvh - var(--q-report-chrome)), 1200px);
 }
 
 /* data-table renders a string[] tooltip item as pills sized for short values
@@ -968,34 +986,49 @@
   min-width: 0;
 }
 
+/* Two-column layouts: the panel rides along while the grid scrolls */
+@media (min-width: 1024px) {
+  .q-report-panels {
+    position: sticky;
+    top: var(--q-space-4);
+    max-height: calc(100dvh - 120px);
+    overflow: auto;
+  }
+}
+
+/* One line at the pinned 1280×720 viewport (short labels; full names in
+   title/aria-label). Active = ink text over a yellow underline that fuses
+   with the hairline rule — the sticker language, not a sky pill. */
 .q-paneltabs {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--q-space-1);
   border-bottom: var(--q-border-hairline);
-  padding-bottom: 8px;
   margin-bottom: var(--q-space-3);
 }
 
 .q-paneltab {
   border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px; /* the underline sits ON the hairline rule */
   background: none;
-  padding: 6px 10px;
-  border-radius: var(--q-radius-sm);
+  padding: 6px 10px 8px;
+  border-radius: var(--q-radius-sm) var(--q-radius-sm) 0 0;
   font: inherit;
   font-size: var(--q-text-md);
+  font-weight: 600;
   cursor: pointer;
-  color: var(--q-gray-700);
+  color: var(--q-gray-600);
+  white-space: nowrap;
 }
 
 .q-paneltab:hover {
   background: var(--q-gray-100);
+  color: var(--q-ink);
 }
 
 .q-paneltab--active {
-  background: var(--q-sky);
   color: var(--q-ink);
-  font-weight: 600;
+  border-bottom-color: var(--q-yellow);
 }
 
 .q-panel {
@@ -1007,12 +1040,17 @@
   font-size: var(--q-text-md);
 }
 
-/* Summary stat cards */
+/* Summary stat cards — severity-tinted hero row above a quiet fact row */
 .q-statgrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: var(--q-space-2);
   margin-bottom: var(--q-space-3);
+}
+
+.q-statgrid--hero {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--q-space-2);
 }
 
 .q-statcard {
@@ -1029,10 +1067,58 @@
   font-variant-numeric: tabular-nums;
 }
 
+.q-statgrid--hero .q-statcard-value {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
 .q-statcard-label {
   font-size: var(--q-text-xs);
   color: var(--q-gray-700);
   margin-top: 2px;
+}
+
+/* Severity tints: the verdict numbers carry their severity colors so counts
+   cannot be mistaken for neutral facts (fills pair with their AA text colors
+   exactly like .q-badge--*). */
+.q-statcard--error {
+  background: var(--q-error-fill);
+  border-color: var(--q-error);
+}
+
+.q-statcard--error .q-statcard-value,
+.q-statcard--error .q-statcard-label {
+  color: var(--q-error);
+}
+
+.q-statcard--warning {
+  background: var(--q-warning-fill);
+  border-color: var(--q-warning);
+}
+
+.q-statcard--warning .q-statcard-value,
+.q-statcard--warning .q-statcard-label {
+  color: var(--q-warning);
+}
+
+.q-statcard--info {
+  background: var(--q-info-fill);
+  border-color: var(--q-info);
+}
+
+.q-statcard--info .q-statcard-value,
+.q-statcard--info .q-statcard-label {
+  color: var(--q-info);
+}
+
+.q-statcard--success {
+  background: var(--q-success-fill);
+  border-color: var(--q-success);
+}
+
+.q-statcard--success .q-statcard-value,
+.q-statcard--success .q-statcard-label {
+  color: var(--q-success);
 }
 
 .q-sevfilter {
@@ -1058,10 +1144,15 @@
   gap: var(--q-space-1);
 }
 
+/* Download (primary) + Re-run side by side; wraps when the panel narrows */
 .q-panel-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--q-space-2);
+}
+
+.q-panel-actions .q-btn--primary {
+  flex: 1 1 auto;
 }
 
 /* Excel export progress — replaces the action buttons while the workbook
@@ -1172,27 +1263,36 @@
   overflow-wrap: anywhere;
 }
 
-/* Rule · Source · Severity · Targets · Count · % rows — proportions chosen so
-   every header word still fits on one line at the table's min-width. */
+/* Rule · Severity · Targets · Count · % rows — proportions chosen so every
+   header word still fits on one line at the table's min-width. */
 .q-offenders th:nth-child(1) {
-  width: 30%;
+  width: 32%;
 }
 
-.q-offenders th:nth-child(2),
-.q-offenders th:nth-child(6) {
-  width: 13%;
+.q-offenders th:nth-child(2) {
+  width: 16%;
 }
 
 .q-offenders th:nth-child(3) {
-  width: 15%;
+  width: 26%;
 }
 
-.q-offenders th:nth-child(4) {
-  width: 17%;
-}
-
+.q-offenders th:nth-child(4),
 .q-offenders th:nth-child(5) {
-  width: 12%;
+  width: 13%;
+}
+
+/* Rule cell: breakable mono id over a muted source sub-tag */
+.q-offenders-ruleid {
+  display: block;
+  font-family: var(--q-font-mono);
+}
+
+.q-offenders-source {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.6875rem;
+  color: var(--q-gray-500);
 }
 
 .q-offenders th {

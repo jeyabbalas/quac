@@ -63,7 +63,7 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-23 · 3cf097e | P13 | QuickJS sandbox & JS corrections | P12 |
 | [x] 2026-07-23 · 0e817b9 | P14 | Run orchestration & in-app report | P09, P12 (P13 integrates if done) |
 | [x] 2026-07-24 · 46b3b3a | P15 | Excel QC report export | P14 |
-| [ ] | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
+| [x] 2026-07-24 · bbd3a25 | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
 | [ ] | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [ ] | P18 | Rule Studio: preview, gate, export | P17 |
 | [ ] | P19 | Branding polish & accessibility | P14, P16, P18 |
@@ -72,6 +72,25 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-24 · P16 · URL config & sharing shipped on main: core/share/{urlConfig (fragment grammar decode/encode/assemble,
+unknown-param + repeated-key order preserving),configManifest (shape validation + applyPrecedence — config= first, inline
+overrides each key WHOLESALE + override toast),shareModel (pure provenance→link),corsHosts} + fetchArtifact finalized (30 s
+AbortController timeout so a fetch never hangs, retry hook default-off). Boot: app/bootConfig.ts applyBootConfig parses the
+fragment → expands config= → loads schema (with index=)/rules/dataset (via the card loader registered on Load-view mount, with a
+pending-url flush) → never auto-runs; a preconfigured session syncs index= back into the address bar once the URL-loaded root
+resolves (never a bare index=). `index=` was nearly FREE — buildSchemaSet already accepted indexParam (P06 built §A.4 ahead);
+loadSchemaUrls just threads it, and effects are synchronous so a matched index suppresses the modal with no flash. Provenance is
+co-located in the slot states (DatasetSession.sourceUrl, SchemaSlotState.sourceUrls = crawl bases, RulesSlotState.sources aligned
+with files) — the reserved `shareables` signal is SUPERSEDED by on-demand buildShareModel (kept unused; remove in P20). ShareModal
+(ui/components/shareModal): ✓/✗ provenance list (uploads excluded + "host it by URL" copy), assembled link + char count + Copy,
+index-included callout, >2000 chars → config= manifest download; Share enabled once any slot is non-empty (empty keeps the nav
+keyboard-skip contract). FETCH_CORS UX: corsHelp host-table popover + Retry on the Dataset card (onCorsError hook), appended to
+schema/rules cross-origin fetch errors. tests/e2e/support/cors-server.mjs (:4199, ACAO:* except /no-cors/) as a 2nd Playwright
+webServer → journeys 2/4/6 exercise REAL cross-origin + the 14-file HESP schema crawl over HTTP from a single schema= URL
+(verified in-browser: "14 files · root: core/core.schema.json"). Deviation: new unit tests placed under tests/unit/core/share/
+(beside the existing fetchArtifact test) not the phase's tests/unit/share/. No new V-fact. Entry 33.2 KB gz. Unit 483 + browser 44
++ e2e 39 green. P17/P19 unblocked.
 
 2026-07-24 · P15 · Excel QC report export shipped on main: core/report/reportModel.ts (pure five-sheet layout — `<col>__review`
 sisters + deterministic collision escalation `age__review_2`, `__row_review` col A when row flags exist, per-cell merge in

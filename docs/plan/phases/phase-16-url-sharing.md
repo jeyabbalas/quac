@@ -29,4 +29,30 @@ Any new slot/report behavior.
 - **UI/UX:** Playwright — `preconfig.spec.ts` (journey 2: `#/load?schema=…&rules=…&index=…` from the fixture server → slots auto-load → upload data → run); `shareLink.spec.ts` (journey 4: ambiguous-root fixture → modal pick → Share link contains `index=`; an uploaded rules file is excluded with the explanation); `corsFallback.spec.ts` (journey 6: non-CORS URL → typed message + hosts popover → manual upload succeeds).
 
 ## Deferred notes
-*(agent fills in)*
+
+- **`index=` was nearly free.** P06's `buildSchemaSet` already accepts `options.indexParam` and runs the full §A.4
+  resolution atomically before publishing state (`schema-set.ts`). P16 only threads it through `loadSchemaUrls(urls,
+  fetchJson?, indexParam?)`. Because signals are synchronous, resolving inside the loader means a matched index
+  suppresses the IndexPickerModal with no flash — no boot-time race handling was needed.
+- **Provenance is co-located, not centralized.** The reserved `store.shareables` signal (`ArtifactProvenance[]`) is
+  **superseded** — the ShareModal computes its model on demand from the authoritative slot states via the pure
+  `buildShareModel`, which avoids keeping a denormalized list in sync across three loaders. Added instead:
+  `DatasetSession.sourceUrl`, `SchemaSlotState.sourceUrls` (the user-provided crawl bases), `RulesSlotState.sources`
+  (aligned with `files`, maintained through same-name replace-in-place). `shareables` is left unused — **P20 should
+  delete it** (and `ArtifactProvenance` if nothing else adopts it).
+- **Address-bar `index=` sync is deliberately narrow.** An app-layer effect writes `index=` back only when the current
+  fragment already carries `schema=` (a preconfigured session), so it never emits a bare `index=`-without-`schema=`
+  URL that would break on reload. Manual card loads (no `schema=` in the bar) rely solely on the ShareModal's assembled
+  link. This satisfies "manual modal resolution updates the fragment's index=" without continuous full-config syncing.
+- **CORS test server is real, not mocked.** `tests/e2e/support/cors-server.mjs` is a second Playwright `webServer` on
+  :4199; a different port from the app (:4173) makes every fetch genuinely cross-origin, so the journeys exercise real
+  CORS *and* the real 14-file schema `$ref` crawl over HTTP (a single `schema=core.schema.json` URL crawls the tree).
+  The `/no-cors/` prefix serves the same files with no ACAO for the opaque-failure path.
+- **Unit-test location deviation.** New tests live under `tests/unit/core/share/` (beside the pre-existing
+  `fetchArtifact.test.ts`) rather than the phase's stated `tests/unit/share/` — kept all share tests together. Trivial.
+- **`fetchArtifact` retry hook is off by default.** Added `{ signal?, timeoutMs?, retries? }`; `retries` (default 0)
+  re-attempts only the CORS-shaped opaque failure. The user-facing Retry is the Dataset card's button (re-runs the
+  fetch), independent of this internal count. The 30 s `AbortController` timeout is the load-bearing addition (§3: never
+  silently hang) and maps a timer-fired abort to `FETCH_HTTP` with a timeout message (distinct from `FETCH_CORS`).
+- **Partial-config nudge is state-driven.** Shown whenever `preconfigured && Dataset empty && (schema||rules usable)`;
+  copy adapts ("Rules are" / "A schema is" / "Rules and a schema are pre-loaded…"). Clears the moment a dataset loads.

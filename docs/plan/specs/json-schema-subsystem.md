@@ -415,7 +415,7 @@ Built by `buildColumnMeta(set, rootFileId)`: walk `items.allOf` → per category
 
 `summarizeColumnRules(meta, conditionals): string[]` — expectation string, "required", each conditional-as-target one-liner, property $comment. Reused verbatim by tooltips, the report appendix, and the Studio's column browser.
 
-### E.5 Data-pertinence check (shared `core/pertinence.ts`; runs when data + schema/rules resolve)
+### E.5 Data-pertinence check (shared `core/pertinence.ts`)
 
 ```ts
 interface PertinenceResult {
@@ -428,8 +428,44 @@ interface PertinenceResult {
 ```
 
 - **Matching: exact, case-sensitive only.** Near-misses detected and reported as `schema:column:<c>:case-mismatch` warnings ("Found column 'AGE'; the schema defines 'age'. Rename the column to validate it."). No silent auto-mapping in v1 — the report must reflect the user's actual headers.
-- **Thresholds:** denominator = required variables (fallback: all declared). `score < 0.5` → `block` modal ("This dataset doesn't look like it matches the schema — {m} of {n} expected variables found (e.g., missing {first 5}…). Load a different file, or continue anyway." — Continue downgrades to warn). `0.5 ≤ score < 1` → warn banner. `= 1` → ok (extras may still warn). `= 0` → block with stronger copy. Zero-property schema → skip, emit `schema:dataset:pertinence` info.
-- Rules-file pertinence (targets ∩ columns) is computed by the same module; rules with missing targets are skipped-with-flag (see `qc-rules-engine.md`).
+- **Thresholds:** denominator = required variables (fallback: all declared). `score < 0.5` → `block`; `0.5 ≤ score < 1` → `warn`; `= 1` → `ok` (extras may still warn). Zero-property universe → `null`, skip; the `schema:dataset:pertinence` info flag for that case is emitted by the engines.
+- Rules with missing targets are skipped-with-flag (see `qc-rules-engine.md`); the per-file `Targets: n/m present` line on the Rules slot card is the linter's, and is a different surface from the one below.
+
+#### Three-way cross-check (`crossCheckInputs`)
+
+The Load view holds three artifacts that all claim to describe the same table, so there are **three pairs**, not
+one. Each is the same question `computePertinence` answers — what fraction of the names B expects appear in A's
+name universe? — so there is no second matching rule:
+
+| Edge | Universe | Expected names |
+| --- | --- | --- |
+| `data-schema` | `DatasetSession.columns` (the *sanitized* headers) | `columnDigest(set).meta` — required, falling back to all declared |
+| `data-rules` | `DatasetSession.columns` | distinct `targetVariables` of `validate`/`correct` rules |
+| `schema-rules` | `columnDigest(set).meta[].name` | the same distinct rule targets |
+
+An edge exists only when both its artifacts are loaded and carry names — a zero-column dataset is nothing to
+compare against, not a 0% match — so `edges.length` is only ever 0, 1, or 3. The overall verdict is the worst edge
+present (`ok` when there is none); the **weakest** edge (lowest score, ties by the order above) is the one the copy
+reports.
+
+**Triangulation.** Call an edge *bad* at `score < 0.5`. With all three present, exactly two bad edges always share
+exactly one vertex, and that shared artifact is the one both failures run through:
+
+| Bad edges | Suspect |
+| --- | --- |
+| `data-schema` + `data-rules` | the **dataset** |
+| `data-schema` + `schema-rules` | the **JSON Schema** |
+| `data-rules` + `schema-rules` | the **QC rules** |
+
+Anything else names nobody: one bad edge is a disagreeing PAIR with no third opinion to break the tie, three bad
+edges mean all three inputs are mutually foreign, and fewer than three edges cannot triangulate at all. `warn`-level
+edges deliberately do not accuse anyone — 90% coverage is ordinary partial data, not a file from another project.
+
+**Presentation.** One line in the Preview section's head (`previewModel.ts` owns the copy, `previewSection.ts`
+renders it), Tier 2 inside the existing sticker, `role="status"`, badge `OK` / `Warning` / `Mismatch`. **There is no
+block modal and no override.** Nothing here gates Run QC, so nothing pretends to: the caution is the whole
+intervention. Numbers appear only when something is wrong — the per-panel meta lines already carry the counts —
+and when it is, the line names the suspect rather than reciting arithmetic.
 
 ---
 

@@ -73,6 +73,33 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · UIX-5 · **Pertinence is a line in the Preview head, not a strip with a modal.** The check compared
+Dataset↔Schema and Dataset↔Rules and never Schema↔Rules, so it could say some numbers disagreed but structurally
+could not say WHICH of the three files was from another project — one bad edge names a disagreeing PAIR with no
+third opinion to break the tie — and it returned early on a null dataset, so a mismatched schema/rules pair already
+on screen got nothing at all. `crossCheckInputs` (`core/pertinence.ts`) now runs the unchanged `computePertinence`
+over all three pairs and triangulates: an edge is bad at `score < 0.5`, exactly two bad edges always share exactly
+one vertex, and that vertex is the suspect. 0, 1 or 3 bad edges name nobody, and `warn` edges never accuse anyone —
+90% coverage is partial data, not a stranger. Full rules in `json-schema-subsystem.md §E.5`.
+
+The strip, the block modal, `blockCopy`, the `overrideKey` signal and the `prompted` set are **all deleted**.
+Nothing was ever blocked, so nothing pretends to be: one Tier 2 line inside the existing Preview sticker
+(`role="status"`, badge `OK`/`Warning`/`Mismatch`), rendered from `mountPreviewSection`'s existing availability
+effect rather than a second one — the write to `tabs.active` stays last, per the hazard note that cost a real bug in
+UIX-4. `Pertinence: 265/265 schema variables present · 0 missing · 1 extra` becomes `Inputs look consistent — the
+dataset, JSON Schema, and QC rules all describe the same variables`, and a mismatch reads `The dataset doesn't look
+like it belongs with the other two inputs — only 0 of 265 schema variables match.` Numbers appear only when
+something is wrong; a test asserts the consistent line contains no digit.
+
+Two things the copy deck did not settle, decided in the code: the missing-examples ellipsis is conditional (`…` only
+when the list is truly capped at three, or it promises names that are not there — and the near-miss clause is
+appended to the same sentence and needs a terminator), and the suspect phrase carries its own verb, since one shared
+template yields `The QC rules doesn't look like it belongs` for a slot that holds a list of files. Tints use
+`--q-warning-ink`/`--q-error-ink`; the strip painted `--q-gray-800` on both fills, 4.7:1 on the error tint, which is
+what `tokens.css:20` warns about — and a new axe scan covers both tinted tones, since the populated Load scan only
+ever saw the untinted OK. Unit 660 → 676, e2e 69 → 74 (three suspect cases, the no-dataset edge, the near-miss),
+entry JS 42.9 → 43.0 KB gz. Manually verified against all five cases in the browser.
+
 2026-07-25 · UIX-4d · **The QC rules tab has content.** `rulesPreview.ts` was a 41-line stub: you could load three
 `.quac.csv` files, see `3 files · 22 rules` and read per-file lint on the slot card, and still not read a single rule
 anywhere on the Load tab — the Studio's grid is the only place they were tabulated, and at ~510–710px wide it

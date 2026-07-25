@@ -16,7 +16,7 @@ Three `SlotCard`s — **Dataset**, **JSON Schema**, **QC Rules** — each with:
 - expandable detail area — Dataset: "hesp_dirty.csv · 100 rows × 265 cols"; Schema: "14 files · root: core.schema.json"; Rules: "2 files · 60 rules · 2 lint warnings"
 - persistent one-line hint on the view: "Uploads live only in this tab. Reload = re-upload. URLs reload themselves."
 
-The **pertinence strip** appears under the cards once Dataset + (Schema or Rules) are valid (`core/pertinence.ts`; thresholds in `json-schema-subsystem.md §E.5`). **Run QC** enables when Dataset + at least one of Schema/Rules are valid; it **never auto-runs**, even for fully URL-preconfigured links (user consent to compute).
+The **input-consistency line** sits in the Preview section's head, not in a container of its own, and appears as soon as ANY TWO of the three inputs are loaded — including Schema + Rules with no dataset at all (`core/pertinence.ts`; the three edges, the suspect rule and the copy in `json-schema-subsystem.md §E.5`). It is a caution, never a gate: **Run QC** enables when Dataset + at least one of Schema/Rules are valid regardless of what the line says, and it **never auto-runs**, even for fully URL-preconfigured links (user consent to compute).
 
 ## 2. Dataset formats → engine tables
 

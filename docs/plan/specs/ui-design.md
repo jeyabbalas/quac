@@ -67,7 +67,7 @@ Structural tokens (all `src/styles/tokens.css`; component CSS uses these, not ra
 | Motion | `--q-ease-out` · `--q-dur-1 / 2 / 3` | easeOutCubic · 120 / 200 / 300 ms |
 
 Surface tiers (the "sticker" language — decided in the UIX overhaul):
-- **Tier 1 — sticker containers** (`--q-stroke`, `--q-radius-lg`, paper, `--q-shadow-2`): slot cards, report panel, pertinence strip, run/export progress cards. Bold ink outline = a thing you act on.
+- **Tier 1 — sticker containers** (`--q-stroke`, `--q-radius-lg`, paper, `--q-shadow-2`): slot cards, report panel, Preview section, run/export progress cards. Bold ink outline = a thing you act on.
 - **Tier 2 — inner structure** (`--q-border-hairline`/`--q-border-input`, `--q-radius-sm/md`): stat tiles, choice rows, inputs, table rules. Quiet gray lines organize inside a sticker.
 - **Tier 3 — data surfaces** (borderless or hairline, white): preview table, report grid container, finding lists. The data is the interface.
 - **Chrome** (header, tabs, buttons, toasts, modals) keeps its existing ink-stroke language.
@@ -106,8 +106,9 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |  | [details v]             |  | [Browse folder]         |  | [details v]   | |
 |  +-------------------------+  | [details v]             |  +---------------+ |
 |                               +-------------------------+                    |
-|  [OK] Pertinence: 265/265 schema variables present · Rules: 28/28 present    |
 |  +== Preview =============================================================+ |
+|  |  [OK] Inputs look consistent — the dataset, JSON Schema, and QC rules   | |  <- §E.5 line
+|  |       all describe the same variables.                                 | |     (Tier 2, in the head)
 |  |  Dataset | JSON Schema | QC rules            <- PanelTabs (APG tablist) | |
 |  |------------------------------------------------------------------------| |
 |  |  Dataset preview             first 50 of 101 rows · 266 columns         | |
@@ -195,16 +196,18 @@ collapse goes inert (remembered, not honoured) until the window is wide again.
 - **IndexPickerModal** — radio list of candidate root schemas (relativePath, `$id`, title, array-shape badge) + "why this is ambiguous" note; selection recorded → `index=` param.
 - **SheetPickerModal** — Excel sheet names, Sheet 1 preselected.
 - **ShareModal** — per `url-params.md §4`. Opens **wide** (`openModal({ size: 'wide' })`). Order: intro → "Shareable link" (readonly input + Copy primary + char count + index callout, or the `config=` manifest path) → "Loaded files" provenance. Schema's per-crawl-base rows render as ONE grouped ✓ row ("Schema: N files · root …") with the URLs behind a `<details>`; grouping is render-time only — `shareModel.ts` stays per-URL. Uploaded artifacts keep their ✗ row + "host it by URL" note.
-- **Pertinence block modal** — per `json-schema-subsystem.md §E.5`.
+
+There is deliberately **no pertinence modal**. Input consistency is a caution, not a gate — nothing about it blocks
+Run QC — so it is one line in the Preview head (`json-schema-subsystem.md §E.5`), never a dialog to dismiss.
 
 ## 5. Component inventory
 
-AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, DataDictionaryTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PertinenceStrip, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
+AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, DataDictionaryTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
 Conventions:
 - **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body).
 - **Modal sizes**: `openModal({ size: 'default' | 'wide' })` — 560px / 720px caps. Wide is for content-heavy dialogs; ShareModal is the only wide modal today.
-- **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker, IndexPicker, and the pertinence block modal share it. One primary per modal at most.
+- **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker and IndexPicker share it. One primary per modal at most.
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
 - **Empty states**: framed `createEmptyState` is for view-level empties only (a whole route with nothing to show). In-panel empties are a quiet `.q-panel-note` paragraph — a dashed box inside a sticker card reads as a broken drop zone.
 - **Preview tabs are named for the INPUT, the panel says what it renders.** The three Load Preview tabs carry the three slot-card names verbatim — `Dataset` · `JSON Schema` · `QC rules` — so the strip under the cards names the same three things the cards do. Where a panel shows something other than the raw input, a `.q-preview-panelcaption` line under its head says so: the JSON Schema panel's is `JSON Schema formatted as a data dictionary`, the QC rules panel's is `QC rules files, one table per file`, both present in every state including empty. The tab IDs (`dataset`/`dictionary`/`rules`) are internal and do not follow the labels.
@@ -212,7 +215,7 @@ Conventions:
 - **Neither preview panel restates its slot card's findings.** The dictionary points at the schema card, the QC rules panel at the rules card. What the rules panel *does* show is properties of the rule rather than findings about it: `enabled: false` as an `off` badge plus a muted row, and `external` as an `external` badge. Its six columns are curated, not the ten CSV ones — `condition` and `update_expression` get the width, because the Studio's rule grid is ~510–710px wide and omits both.
 - **Progress**: DuckProgress v2 mechanics + the run-level monotonic mapper (`runProgressModel.ts`) and the `PROGRESS_LABELS` copy home are specified in §6.
 - **Tabbed panels go through `createPanelTabs`** (`components/panelTabs.ts`): the Report panel column (`idPrefix: 'q-report'`) and the Load view's Preview section (`'q-preview'`). `idPrefix` is mandatory because the shell keeps all views mounted and toggles `hidden`, so the tablists coexist in the document and a shared prefix would break `aria-controls` and trip `duplicate-id-aria`. The Studio's SQL/JS language switch borrows the `.q-paneltabs`/`.q-paneltab` *look* but is deliberately a pair of `aria-pressed` toggles, **not** a tablist — it switches an editor mode, it does not reveal a panel. Do not "fix" it into `createPanelTabs`.
-- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state, and — since UIX-4 — the panel-tab strip `.q-paneltabs`/`.q-paneltab*` plus `.q-panel`/`.q-panel-note`, and the syntax-token colours `.q-syntax .tok-*`; imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp,plainPreviewTable}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`, `preview/preview.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`.
+- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state, and — since UIX-4 — the panel-tab strip `.q-paneltabs`/`.q-paneltab*` plus `.q-panel`/`.q-panel-note`, and the syntax-token colours `.q-syntax .tok-*`; imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp,plainPreviewTable}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `preview/preview.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`.
   - The panel-tab move is the one sanctioned exception to "no additions", and it *relocated* shared primitives rather than adding a component's styles: `.q-paneltab` had been dual-consumer since P17 (a debt `phase-17-studio-editor.md:41` explicitly scheduled for P19/P20) and reached the Studio only because `reportView.css` happens to be eagerly bundled; `.q-panel-note` had nine consumers across three views. A third inline copy would have compounded it.
   - `.q-syntax .tok-*` moved on the same terms. `@lezer/highlight`'s `classHighlighter` emits those class names in both the Studio's CodeMirror editors and the Load view's QC rules preview, so the palette became cross-view and one definition is the only thing that keeps the two surfaces identical. It is **scoped to a `.q-syntax` marker**, never left bare: `@jeyabbalas/data-table` bundles its own CodeMirror, and an unscoped `.tok-*` rule would restyle the `.dt-root` markup QuaC does not author (the same subtree `a11y.spec.ts` excludes from the axe gate). The marker sits on `.q-editor` (`codeEditor.ts`) and is added by `renderExpr` to every expression cell it paints.
 - Bare e2e-hook classes (`.q-run-cancel`, `.q-example-load`) are noted in comments where they'd otherwise look like dead selectors.
@@ -365,8 +368,8 @@ modal at a time, and once you've agreed to delete the rule the discard question 
     *outside* the progress card (the card ends every run in `[hidden]`, and a live region in a hidden subtree
     announces nothing). DuckProgress itself is **not** a live region — it retargets every few ms and would narrate
     every percent — but it does carry an accessible name as well as a value (`aria-progressbar-name`).
-  - Severity is never colour-only: pills and labels keep their text, and the pertinence badge gets a `.q-sr-only`
-    prefix so "OK" says what is OK.
+  - Severity is never colour-only: pills and labels keep their text, and the input-consistency badge gets an
+    `Input consistency:` `.q-sr-only` prefix so "OK" — or "Mismatch" — says what it is about.
 - **Contrast**: every pairing AA-checked (3:1 for the focus indicator, SC 1.4.11). Never white text on sky or yellow.
   Text on a severity fill takes the `-ink` token of §2. Watch the *tinted* backgrounds specifically —
   `--q-gray-500` passes on white (4.74) but fails on `--q-yellow-tint` (4.49) and `--q-gray-100` (4.35), and

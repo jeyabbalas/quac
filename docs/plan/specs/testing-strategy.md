@@ -54,7 +54,7 @@ Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM
 | `unit/schema/conditional-attribution.test.ts` | node | then-target attribution, dedupe, `if`-drop, coexistence with value flags |
 | `unit/schema/casting.test.ts` | node+duckdb | storage-type table; CastPlan SQL snapshot; `'abc'`→flag, `'42.0'`→42, `'42.5'`→non-integral, `'007'` preserved |
 | `unit/schema/row-shaping.test.ts` | node | NULL→absent, null-typed columns, BigInt precision, NaN/Inf, mixed heuristic, extra-column exclusion |
-| `unit/schema/pertinence.test.ts` | node | thresholds 0/.4/.6/1.0; case near-miss; zero-property skip |
+| `unit/schema/pertinence.test.ts` | node | thresholds 0/.4/.6/1.0; case near-miss; zero-property skip; `crossCheckInputs` edge presence, worst-verdict, weakest-with-tie-break, and every triangulation branch (each of the three suspects, plus the 0/1/3-bad and fewer-than-three-edges cases that name nobody) |
 | `unit/flags/flagStore.test.ts` | node | dedupe, indexes, aggregates, cap ordering |
 | `unit/rules/parse.test.ts` (T-CSV-ROUNDTRIP) | node | fixpoint on the 3 example files; BOM/CRLF/semicolon-delimited/TRUE/smart-quotes/multiline/formula-guard |
 | `unit/rules/lint.test.ts` (T-LINT) | node | one per LintCode with exact file/ruleId/rowNumber/csvColumn; pending-data transition |

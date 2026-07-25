@@ -1,7 +1,10 @@
 /**
- * Rule Studio workspace (P17/P18) — the lazy chunk behind studioView's route
- * gate: file rail + rule grid + live preview pane (row 1) and the full-width
- * editor drawer (row 2, user-approved layout).
+ * Rule Studio workspace (P17/P18, relaid out in UIX-2) — the lazy chunk behind
+ * studioView's route gate. ONE Tier-1 card, three hairline-separated zones:
+ * file rail · work column · live preview. The work column has two faces — the
+ * rule table and the editor drawer — and shows exactly one at a time, so the
+ * form and its test result sit side by side instead of at opposite ends of a
+ * page that grows when you open a rule.
  *
  * Owns every workspace effect — all created once here and never disposed
  * (views live for the app lifetime). The drawer + both CodeMirror editors are
@@ -119,9 +122,15 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   drawerHead.append(drawerTitle);
   drawer.append(drawerHead);
 
+  // The work column holds BOTH faces of the middle zone — the rule table and
+  // the editor. Only one is ever visible (syncWorkView).
+  const work = document.createElement('section');
+  work.className = 'q-studio-work';
+  work.append(gridCard, drawer);
+
   const previewPane = createPreviewPane();
 
-  layout.append(rail, gridCard, previewPane.el, drawer);
+  layout.append(rail, work, previewPane.el);
   host.append(banner, layout);
 
   // ---------- state ----------

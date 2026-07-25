@@ -1,5 +1,7 @@
-/* Rule Studio (P17): rail + rule grid stickers, editor drawer, the app's
-   first styled <select>/<textarea>/text inputs (scoped .q-studio, on the
+/* Rule Studio (P17/P18, relaid out in UIX-2): ONE Tier-1 workspace card with
+   three hairline-separated zones — file rail, work column (rule table ⇄ rule
+   editor), live preview — plus the app's first styled
+   <select>/<textarea>/text inputs (scoped .q-studio, on the
    input-border/radius tokens), chips + combobox, and the CodeMirror theme
    (mono, input border, orange focus, severity-tinted diagnostics).
    .q-studio-newfile / .q-studio-addrule are bare e2e hooks (studio-edit.spec)
@@ -20,28 +22,53 @@
   font-weight: 600;
 }
 
-/* ---- workspace layout: rail + grid, drawer spanning below ---- */
+/* ---- workspace layout: ONE Tier-1 sticker, three zones ----
+   The sticker recipe lives on .q-studio-layout, not on its children: rail /
+   work / preview are zones INSIDE one card, separated by Tier-2 hairlines
+   (ui-design.md §2 surface tiers). Four competing outlined cards on one
+   screen is what the UIX-2 pass set out to fix.
+
+   `align-items: stretch` (grid's default, pinned here because the old rule
+   said `start`) is what makes the dividers run the full zone height.
+
+   NO `overflow: hidden` on the card: the targets combobox popup
+   (.q-combolist) is absolutely positioned and must escape the zone. */
 .q-studio-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: var(--q-space-4);
-  align-items: start;
+  grid-template-columns: 260px minmax(0, 1fr);
+  align-items: stretch;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
 }
 
-.q-studio-drawer,
+.q-studio-rail,
+.q-studio-work,
+.q-studio-preview {
+  padding: var(--q-space-4);
+  min-width: 0;
+}
+
+.q-studio-rail {
+  border-right: var(--q-border-hairline);
+}
+
+/* Below 1280 the preview drops under both columns. */
 .q-studio-preview {
   grid-column: 1 / -1;
+  border-top: var(--q-border-hairline);
 }
 
-/* Wide screens: the live preview docks beside the grid (P18); the drawer
-   keeps its full-width row below. */
 @media (min-width: 1280px) {
   .q-studio-layout {
-    grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1.1fr) minmax(380px, 1fr);
   }
 
   .q-studio-preview {
     grid-column: 3;
+    border-top: none;
+    border-left: var(--q-border-hairline);
   }
 }
 
@@ -50,23 +77,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .q-studio-drawer,
+  .q-studio-rail {
+    border-right: none;
+    border-bottom: var(--q-border-hairline);
+  }
+
   .q-studio-preview {
     grid-column: auto;
   }
-}
-
-/* Tier 1 stickers */
-.q-studio-rail,
-.q-studio-gridcard,
-.q-studio-preview,
-.q-studio-drawer {
-  border: var(--q-stroke);
-  border-radius: var(--q-radius-lg);
-  background: var(--q-paper);
-  box-shadow: var(--q-shadow-2);
-  padding: var(--q-space-4);
-  min-width: 0;
 }
 
 /* ---- rail ---- */

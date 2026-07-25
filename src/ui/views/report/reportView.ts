@@ -82,9 +82,45 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   runStatus.setAttribute('aria-live', 'polite');
   const gridHost = document.createElement('div');
   gridHost.className = 'q-report-gridhost';
-  gridArea.append(capBanner, progressWrap, runStatus, gridHost);
 
   const panelHost = document.createElement('aside');
+  panelHost.tabIndex = -1; // programmatic focus target for the skip control
+
+  // WCAG 2.4.1 (bypass blocks). Measured on the HESP example: the grid puts
+  // ~1600 focusable controls (266 columns × header buttons) between the nav and
+  // the panel column, so Download QC Report and Re-run QC were unreachable by
+  // keyboard in any practical sense. The count is data-table's; the DOM order
+  // is ours, and reordering would divorce focus order from reading order
+  // (2.4.3) — so: a skip control, visible only when focused.
+  //
+  // A <button>, NOT an <a href="#…">: QuaC routes on the hash, and an in-page
+  // anchor would rewrite it and navigate the app.
+  const skipGrid = document.createElement('button');
+  skipGrid.type = 'button';
+  skipGrid.className = 'q-skiplink';
+  skipGrid.textContent = 'Skip the data grid';
+  skipGrid.addEventListener('click', () => {
+    panelHost.focus();
+    panelHost.scrollIntoView({ block: 'nearest' });
+  });
+
+  // …and an escape hatch, because the grid is also a hard keyboard TRAP
+  // (WCAG 2.1.2, Level A). Measured: focus `.dt-root` and neither Tab nor
+  // Shift+Tab moves it — `document.querySelector('.dt-root :focus')` stays
+  // null through any number of presses. That is data-table's own doing and is
+  // logged as an upstream to-do; from here the fix is to give Escape a way
+  // out. It only fires for keydowns originating INSIDE the grid, so the
+  // annotation popover's own Escape (pinned in runQc.spec, pressed while focus
+  // is elsewhere) is untouched.
+  const gridEscapeNote = document.createElement('p');
+  gridEscapeNote.className = 'q-sr-only';
+  gridEscapeNote.textContent = 'The data grid captures Tab. Press Escape to leave it.';
+  gridHost.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    panelHost.focus();
+  });
+  gridArea.append(capBanner, progressWrap, runStatus, skipGrid, gridEscapeNote, gridHost);
+
   layout.append(gridArea, panelHost);
   container.append(empty, layout);
 

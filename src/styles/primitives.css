@@ -75,6 +75,32 @@
   border: 0;
 }
 
+/* Skip control — off-screen until focused, then a normal button in flow.
+   Not `display: none`: a hidden element is not focusable, and the whole point
+   is that Tab finds it. */
+.q-skiplink {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 6px 16px;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-md);
+  background: var(--q-yellow);
+  color: var(--q-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.q-skiplink:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  margin-bottom: var(--q-space-2);
+}
+
 /* Toast */
 .q-toast-region {
   position: fixed;

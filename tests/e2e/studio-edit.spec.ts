@@ -10,7 +10,11 @@
  * "← Rules" affordance brings it back, and it goes through the same
  * discard guard as Cancel once the draft is dirty.
  */
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+
+const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 
 const INGEST_TIMEOUT = 90_000;
 const LINT_TIMEOUT = 20_000; // 400 ms debounce + EXPLAIN round-trip, retried
@@ -152,4 +156,104 @@ test('create a rule in the studio: draft lint, completions, matrix, save', async
     'title',
     'Row order = correction order',
   );
+
+  // ---- UIX-3: collapsing the rail hands its width to the live preview ----
+  // Explicit viewport: this block asserts measured track widths, so it must not
+  // inherit whatever the default happens to be.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const layout = page.locator('.q-studio-layout');
+  const railToggle = page.locator('.q-studio-railtoggle');
+  await expect(railToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(railToggle).toHaveAttribute('aria-controls', 'q-studio-files');
+  const previewBefore = (await page.locator('.q-studio-preview').boundingBox())?.width ?? 0;
+  const gridHeightBefore = (await page.locator('.q-studio-samplegrid').boundingBox())?.height ?? 0;
+  // ≥1280 the card fills the viewport, so the grid is tall enough to clear
+  // data-table's own 273–306px header with rows to spare.
+  expect(gridHeightBefore).toBeGreaterThan(400);
+
+  await railToggle.click();
+  await expect(railToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(railToggle).toHaveAttribute('aria-label', 'Expand rule files');
+  await expect(page.locator('.q-studio-railtitle')).toBeHidden();
+  await expect(page.locator('.q-studio-newfile')).toBeHidden();
+  // The files survive as dots — still visible, still clickable, so switching
+  // files never needs a round trip through expand.
+  await expect(page.locator('.q-filebtn')).toHaveCount(4);
+  await expect(page.locator('.q-filebtn').first()).toBeVisible();
+  await expect(page.locator('.q-filebtn-group').first()).toBeHidden();
+
+  // The freed width lands in the preview: the work track pins to its 600px floor.
+  const previewAfter = (await page.locator('.q-studio-preview').boundingBox())?.width ?? 0;
+  expect(previewAfter - previewBefore).toBeGreaterThan(150);
+  expect((await page.locator('.q-studio-work').boundingBox())?.width ?? 0).toBeGreaterThan(595);
+  expect((await page.locator('.q-studio-work').boundingBox())?.width ?? 0).toBeLessThan(605);
+  // The pinned regression: the work surface must never scroll sideways.
+  expect(
+    await page.locator('.q-studio-gridbody').evaluate((el) => el.scrollWidth - el.clientWidth),
+  ).toBeLessThanOrEqual(0);
+  // Collapsing changes the preview's WIDTH, never its height. Before the preview
+  // column became a flex column the grid kept a fixed clamp while data-table's
+  // header grew with the pane, which squeezed the body to a row or two.
+  expect((await page.locator('.q-studio-samplegrid').boundingBox())?.height).toBe(gridHeightBefore);
+  expect(await page.evaluate(() => localStorage.getItem('quac.studio.railCollapsed'))).toBe('1');
+
+  // Switching files while collapsed works — the dot is the file button.
+  await page.locator('.q-filebtn').first().click();
+  await expect(page.locator('.q-filebtn[aria-current="true"]')).toHaveAttribute(
+    'aria-label',
+    /rules?$/,
+  );
+
+  // ≤1023 the rail is already a horizontal strip, so the preference goes inert:
+  // remembered, but not honoured, and the control is not offered.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(layout).toHaveClass(/q-studio-layout--railclosed/);
+  await expect(railToggle).toBeHidden();
+  await expect(page.locator('.q-studio-railtitle')).toBeVisible();
+  await expect(page.locator('.q-filebtn-group').first()).toBeVisible();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.q-studio-railtitle')).toBeHidden();
+  await railToggle.click();
+  await expect(railToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.q-studio-railtitle')).toBeVisible();
+  await page.locator('.q-filebtn', { hasText: 'my_rules' }).click();
+  await expect(page.locator('.q-studio-gridtitle')).toHaveText('my_rules.quac.csv');
+
+  // ---- UIX-3: deleting a rule asks first (delete has no undo) ----
+  const deleteButton = row.getByRole('button', { name: 'Delete rule E2E1' });
+  await deleteButton.click();
+  const deleteDialog = page.getByRole('dialog', { name: 'Delete rule?' });
+  await expect(deleteDialog).toBeVisible();
+  await expect(deleteDialog).toContainText('Delete E2E1 from my_rules.quac.csv?');
+  await expect(deleteDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await deleteDialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(deleteDialog).toBeHidden();
+  await expect(row).toBeVisible(); // cancelling keeps the rule
+
+  await deleteButton.click();
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole('button', { name: 'Delete rule' }).click();
+  await expect(deleteDialog).toBeHidden();
+  await expect(page.locator('.q-studio-gridbody .q-panel-note')).toHaveText(
+    'No rules in this file yet.',
+  );
+});
+
+test('the rail remembers that it was collapsed', async ({ page }) => {
+  // The one sanctioned localStorage key (architecture.md §5 — trivial UI prefs
+  // only). Rules alone mount the workspace, so this skips the 90 s ingest.
+  await page.addInitScript(() => {
+    localStorage.setItem('quac.studio.railCollapsed', '1');
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/quac/');
+  await page
+    .locator('[data-slot="rules"] input[type="file"]')
+    .setInputFiles(join(FIXTURES, 'tiny', 'people_rules.quac.csv'));
+  await page.getByRole('link', { name: 'Rule Studio' }).click();
+  await expect(page.locator('.q-filebtn')).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.locator('.q-studio-railtoggle')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.q-studio-railtitle')).toBeHidden();
+  await expect(page.locator('.q-filebtn').first()).toBeVisible();
 });

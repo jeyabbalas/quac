@@ -73,6 +73,38 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-24 · UIX-3 · Interstitial Rule Studio pass on main (post-P18, before P19): the rail collapses and deleting a
+rule asks first. Rail — every band's template now reads `--q-studio-rail` (240→44px on `.q-studio-layout--railclosed`),
+but flipping the variable ALONE hands the freed 196px to the `1.1fr:1fr` split (measured live: work +103 / preview +93
+at 1600 — caught only because the re-measurement ran), so ≥1280 collapsed also pins the work track to its 600px floor.
+Measured preview 623→904 (1600), 547→744 (1440), 474→670 (1366), 388→584 (1280), +196 to both zones at 1024;
+`.q-studio-gridbody` overflow 0px in BOTH states at 1600/1440/1366/1280/1024/768. Collapsed dress lives entirely inside
+`@media (min-width:1024px)` so ≤1023 keeps its horizontal strip and the toggle hides — a stored collapse is remembered
+but not honoured there. Files stay as dots (`.q-filebtn-top::before`, `aria-current` yellow + dirty `*` carried over,
+`title`/`aria-label` added in renderRail), so they stay clickable and every pinned `.q-filebtn` locator survives.
+`syncRailView()` mirrors `syncWorkView()` and is independent of it; state is a plain `let` + the app's FIRST localStorage
+key (`quac.studio.railCollapsed`, both accessors try/caught — architecture.md §5's trivial-UI-prefs carve-out).
+**Correction to a P14-review inference**: the ~4.5 s HESP block is a data-table *creation* cost, not a resize cost —
+`TableContainer`'s ResizeObserver has zero subscribers and column headers are fixed-px, so a width change fires none of
+the 266 visualization observers. One discrete flip measures ~46 ms. The track is still never animated: `minmax(600px,
+1.1fr)`→`600px` is `<flex>`→`<length>`, not interpolable, and CodeMirror's DOMObserver watches the work column. Only the
+rail contents fade (WAAPI 200 ms, expand only, reduced-motion skips). **Height fix (user-reported, same pass)**: the
+sample grid appeared to shrink to a row or two on collapse. The host height was in fact constant — data-table's own
+column-visualization header is 273–306px and GROWS with the pane's width, so widening the preview ate the body out of a
+fixed clamp: 900-tall gave 165px of body → 132px collapsed; 768-tall gave 33px → **0px**. Meanwhile the card used only
+505 of the 710px available. Now ≥1280 `.q-studio-layout` carries `min-height: calc(100dvh - var(--q-studio-chrome))`
+(`--q-studio-chrome: 210px`; min-height so a long rule table still grows the card), `.q-studio-preview` is a flex column
+and `.q-studio-samplegrid` is `flex: 1 1 0` + a 360px floor instead of a clamp → 625px/350px at 900-tall, 805px/530px at
+1080, 493px/218px at 768, and the host height is now IDENTICAL in both rail states (pinned in studio-edit.spec). Visible
+rows at 1600×900: 4 → 10 collapsed, 5 → 11 expanded. The stacked bands (≤1279) keep the clamp — the preview sits under
+the work column there and cannot take "what is left" — with its floor raised 260→360px so it can never hit 0 body again.
+Delete — `confirmDeleteRule` mirrors
+`confirmDiscard` (`Delete rule?`, `.q-panel-note` consequence line, `Cancel` focused explicitly since openModal always
+lands on the header ×) and SUBSUMES the dirty-draft guard when the deleted row is the open draft (one modal at a time);
+`run()`'s shiftDrawerIndex/revert/focus-restore is untouched. Deviation from the approved sketch: none. 545 unit + 44
+browser + 42 e2e green (studio-edit.spec gains the rail block + a 260 ms no-ingest persistence test); entry 37.1 KB gz
+unchanged — all of it lands in the lazy studio chunk.
+
 2026-07-24 · UIX-2 · Interstitial Rule Studio UI/UX pass on main (9 commits, post-P18, before P19) — the studio worked but
 put four Tier-1 stickers on one screen and split the form from its test result. Now ONE card, three hairline zones (rail ·
 work · preview): the editor REPLACES the rule table in the work column (`syncWorkView()`; ordering contract — it runs before

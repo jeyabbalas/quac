@@ -35,7 +35,10 @@
    (.q-combolist) is absolutely positioned and must escape the zone. */
 .q-studio-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  /* One name for the rail track so the collapsed block below flips a single
+     value instead of restating every band's template. */
+  --q-studio-rail: 240px;
+  grid-template-columns: var(--q-studio-rail) minmax(0, 1fr);
   align-items: stretch;
   border: var(--q-stroke);
   border-radius: var(--q-radius-lg);
@@ -80,7 +83,18 @@
    clears a 1280 viewport carrying a classic vertical scrollbar. */
 @media (min-width: 1280px) {
   .q-studio-layout {
-    grid-template-columns: 240px minmax(600px, 1.1fr) minmax(360px, 1fr);
+    grid-template-columns: var(--q-studio-rail) minmax(600px, 1.1fr) minmax(360px, 1fr);
+    /* Fill the screen. In this band all three zones are full-height columns, so
+       every pixel the card gains is a pixel of data-table body — and the body is
+       what was starving: the library's own column-visualization header is
+       273–306px tall, which a 440px host leaves barely 130px under (0px on a
+       768-tall window). Budget: ~154px of header/nav/page padding above the
+       card, ~56px of privacy footer and breathing room below — the same shape
+       as --q-report-chrome. min-height, NOT height: a long rule table or file
+       list must still be able to grow the card past the viewport. */
+    --q-studio-chrome: 210px;
+
+    min-height: calc(100dvh - var(--q-studio-chrome));
   }
 
   .q-studio-rail {
@@ -120,6 +134,87 @@
   }
 }
 
+/* ---- collapsed rail ----
+   Only ≥1024. Below that the rail is already a horizontal file strip sitting
+   above the work, so there is no side width to reclaim — the toggle hides and
+   the tracks are untouched.
+
+   At ≥1280 the work track drops to a FIXED 600px instead of keeping its 1.1fr
+   share. That is measured, not a guess: with the 6px cell gutters and the 130px
+   in-band targets cap the rule table asks 534px of min-content and the zone adds
+   32px of padding, so width past the 600px floor is wasted on it. Collapsing the
+   rail is an explicit "give me room to read the data" gesture, so ALL of the
+   freed 196px goes to the preview rather than splitting 1.1:1. The collapsed
+   minimum is 44 + 600 + 360 = 1004, comfortably inside 1280.
+
+   These win on specificity (0,2,0 over 0,1,0), not source order — but they sit
+   after the bands they override anyway, like the two blocks further down. */
+@media (min-width: 1024px) {
+  .q-studio-layout--railclosed {
+    --q-studio-rail: 44px;
+  }
+
+  /* 44px less 8px of inline padding leaves 28px: enough for the toggle and a
+     centred file dot, not for the 16px zone padding the other zones carry. */
+  .q-studio-layout--railclosed .q-studio-rail {
+    padding-inline: var(--q-space-2);
+  }
+
+  .q-studio-layout--railclosed .q-studio-railhead {
+    justify-content: center;
+  }
+
+  .q-studio-layout--railclosed .q-studio-railtitle,
+  .q-studio-layout--railclosed .q-studio-newfile,
+  .q-studio-layout--railclosed .q-studio-files > .q-panel-note,
+  .q-studio-layout--railclosed .q-filebtn-group,
+  .q-studio-layout--railclosed .q-filebtn-meta,
+  .q-studio-layout--railclosed .q-filebtn-pertinence {
+    display: none;
+  }
+
+  /* Each file becomes a dot. Identity moved to title/aria-label in renderRail;
+     the yellow left marker, the tint and the warning-coloured dirty * are the
+     expanded rail's own rules, kept verbatim so state reads the same either way. */
+  .q-studio-layout--railclosed .q-filebtn {
+    align-items: center;
+    padding-inline: 0;
+  }
+
+  .q-studio-layout--railclosed .q-filebtn-top {
+    justify-content: center;
+  }
+
+  .q-studio-layout--railclosed .q-filebtn-top::before {
+    content: '';
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: var(--q-radius-pill);
+    background: var(--q-gray-400);
+  }
+
+  .q-studio-layout--railclosed .q-filebtn[aria-current='true'] .q-filebtn-top::before {
+    background: var(--q-ink);
+  }
+}
+
+/* Flipping --q-studio-rail alone would hand the freed 196px to the 1.1fr/1fr
+   split (measured: work +103, preview +93 at 1600). Pinning the work track to
+   its floor is what makes the whole 196px land in the preview. In the
+   1024–1279 band work and preview share one column, so both widen there —
+   nothing to steer. */
+@media (min-width: 1280px) {
+  .q-studio-layout--railclosed {
+    grid-template-columns: var(--q-studio-rail) 600px minmax(360px, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .q-studio-railtoggle {
+    display: none;
+  }
+}
+
 /* ---- rail ---- */
 .q-studio-railhead {
   display: flex;
@@ -131,6 +226,19 @@
 
 .q-studio-railtitle {
   font-size: var(--q-text-lg);
+}
+
+.q-studio-railactions {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-1);
+}
+
+/* Matches .q-rowbtn's metrics — a glyph button, not a labelled one. */
+.q-studio-railtoggle {
+  padding: 2px 6px;
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
 }
 
 .q-studio-files {
@@ -396,11 +504,41 @@
 }
 
 /* Definite height is load-bearing (like .q-report-grid): an auto-height host
-   makes data-table render every row. Shorter than P18's 320–820px now that
-   the test panel sits ABOVE it — the chrome allowance covers the app header,
-   the pane head, a capped test panel and page padding. */
+   makes data-table render every row. This clamp serves the stacked bands
+   (≤1279), where the preview sits under the work column and cannot simply take
+   what is left. The 360px floor is not cosmetic: data-table's own header runs
+   273–306px, so a shorter host leaves literally zero rows. */
 .q-studio-samplegrid {
-  height: clamp(260px, calc(100dvh - 460px), 560px);
+  height: clamp(360px, calc(100dvh - 460px), 560px);
+}
+
+/* ≥1280 the preview is a full-height column, so the grid stops guessing at a
+   clamp and simply takes the space the head and the test panel don't use. That
+   is what makes the host height INDEPENDENT of the rail: collapsing changes the
+   preview's width, never its height, so the grid can no longer shrink to a
+   couple of rows when the pane widens.
+   `flex: 1 1 0` inside a definite-height column resolves to a definite used
+   height, which is what data-table's `.dt-root { height: 100% }` needs; the
+   min-height is the belt-and-braces floor if that chain is ever broken. */
+@media (min-width: 1280px) {
+  .q-studio-preview {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .q-studio-samplewrap {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .q-studio-samplegrid {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 360px;
+  }
 }
 
 /* ---- rule-test panel (P18; above the sample grid since UIX-2) ---- */

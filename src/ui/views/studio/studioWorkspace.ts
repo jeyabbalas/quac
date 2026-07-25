@@ -55,6 +55,30 @@ type DrawerTarget =
   | { kind: 'new'; fileName: string }
   | { kind: 'edit'; fileName: string; index: number };
 
+/**
+ * Whether the rules rail is collapsed. architecture.md §5 permits localStorage
+ * for TRIVIAL UI PREFS ONLY — never for dataset, schema or rule content, which
+ * still die with the tab. Both accessors swallow: storage access throws outright
+ * in some privacy modes, and a lost layout preference is not worth a broken view.
+ */
+const RAIL_PREF = 'quac.studio.railCollapsed';
+
+function readRailPref(): boolean {
+  try {
+    return localStorage.getItem(RAIL_PREF) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeRailPref(collapsed: boolean): void {
+  try {
+    localStorage.setItem(RAIL_PREF, collapsed ? '1' : '0');
+  } catch {
+    // Preference is best-effort.
+  }
+}
+
 export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void {
   // ---------- static DOM ----------
   const banner = document.createElement('p');
@@ -84,9 +108,24 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   newFileButton.type = 'button';
   newFileButton.className = 'q-btn q-btn--small q-studio-newfile';
   newFileButton.textContent = 'New file';
-  railHead.append(railTitle, newFileButton);
+  // The rail costs 240px of a 1280px viewport, and the live preview is the zone
+  // that wants it back. Collapsing keeps the file dots reachable (see the
+  // --railclosed block in studioView.css) so switching files never needs a
+  // round trip through expand.
+  const railToggle = document.createElement('button');
+  railToggle.type = 'button';
+  railToggle.className = 'q-btn q-btn--ghost q-btn--small q-studio-railtoggle';
+  railToggle.setAttribute('aria-controls', 'q-studio-files');
+  railToggle.addEventListener('click', () => {
+    toggleRail();
+  });
+  const railActions = document.createElement('div');
+  railActions.className = 'q-studio-railactions';
+  railActions.append(newFileButton, railToggle);
+  railHead.append(railTitle, railActions);
   const fileList = document.createElement('div');
   fileList.className = 'q-studio-files';
+  fileList.id = 'q-studio-files';
   rail.append(railHead, fileList);
 
   const gridCard = document.createElement('section');
@@ -146,6 +185,8 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   // ---------- state ----------
   const selectedFile = signal<string | null>(null);
   let drawerTarget: DrawerTarget | null = null;
+  let railCollapsed = readRailPref();
+  syncRailView();
 
   // ---------- form ----------
   const form = createRuleForm({
@@ -341,6 +382,47 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     });
   }
 
+  // ---------- rail ----------
+
+  /**
+   * The rail's two widths. Everything the collapse changes is CSS driven off
+   * one class, so renderRail() never has to know the state — a store update
+   * mid-collapse can't fight the toggle. Independent of syncWorkView(): it
+   * touches neither face of the work column.
+   */
+  function syncRailView(): void {
+    layout.classList.toggle('q-studio-layout--railclosed', railCollapsed);
+    railToggle.setAttribute('aria-expanded', String(!railCollapsed));
+    railToggle.setAttribute(
+      'aria-label',
+      railCollapsed ? 'Expand rule files' : 'Collapse rule files',
+    );
+    railToggle.title = railCollapsed ? 'Expand rule files' : 'Collapse rule files';
+    railToggle.textContent = railCollapsed ? '»' : '«';
+  }
+
+  function toggleRail(): void {
+    // `New file` is display:none while collapsed. A mouse user can be focused on
+    // it (the new-file modal restores focus there on close) when they click the
+    // toggle — Safari and Firefox don't focus a <button> on click — and hiding
+    // the focused element drops focus to <body>, restarting the tab order at the
+    // top of the page. Same class of bug as the rail focus drop fixed in 47179c2.
+    if (!railCollapsed && railHead.contains(document.activeElement)) railToggle.focus();
+    railCollapsed = !railCollapsed;
+    syncRailView();
+    writeRailPref(railCollapsed);
+    // Expand only, and only the contents: the track itself changes in ONE step.
+    // `minmax(600px, 1.1fr)` → `600px` swaps a <flex> for a <length>, which is
+    // not interpolable, so grid-template-columns would snap however it were
+    // transitioned — and the work column holds two CodeMirror editors whose
+    // DOMObserver re-measures on every resize. Measured: one flip costs ~46 ms
+    // with the 266-column example mounted, so the snap is not worth animating
+    // around.
+    if (!railCollapsed && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      fileList.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+    }
+  }
+
   // ---------- drawer ----------
 
   /**
@@ -450,6 +532,63 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       });
       actions.append(keep, discard);
       modal.body.append(text, actions);
+    });
+  }
+
+  /**
+   * Delete has no undo — the rules CSV download is the only recovery story —
+   * so the row `✕` asks first. When the deleted row is the open draft this
+   * dialog SUBSUMES the discard guard (one modal at a time is modal.ts's
+   * supported contract); `losesDraft` is what makes that honest.
+   */
+  function confirmDeleteRule(
+    ruleName: string,
+    fileName: string,
+    losesDraft: boolean,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (value: boolean): void => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+      const modal = openModal({
+        title: 'Delete rule?',
+        onClose: () => {
+          settle(false);
+        },
+      });
+      const text = document.createElement('p');
+      text.textContent = `Delete ${ruleName} from ${fileName}?`;
+      const note = document.createElement('p');
+      note.className = 'q-panel-note';
+      note.textContent = losesDraft
+        ? "It's open in the editor, so your unsaved changes go too. This can't be undone — download the rules CSV first if you want a copy."
+        : "This can't be undone. Download the rules CSV first if you want a copy.";
+      const actions = document.createElement('div');
+      actions.className = 'q-modal-actions';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'q-btn';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => {
+        modal.close();
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'q-btn q-btn--primary';
+      remove.textContent = 'Delete rule';
+      remove.addEventListener('click', () => {
+        settle(true);
+        modal.close();
+      });
+      actions.append(cancel, remove);
+      modal.body.append(text, note, actions);
+      // openModal focuses the first focusable it can see, which is always the
+      // header ×. A destructive dialog should open on the safe choice instead.
+      cancel.focus();
     });
   }
 
@@ -577,6 +716,12 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       button.type = 'button';
       button.className = 'q-filebtn';
       if (name === selected) button.setAttribute('aria-current', 'true');
+      // Collapsed, the button renders as a bare dot — the name lives here so
+      // the accessible name and the hover identity survive.
+      const n = parsed.file.rules.length;
+      const countLabel = n === 1 ? '1 rule' : `${String(n)} rules`;
+      button.title = parsed.file.group;
+      button.setAttribute('aria-label', `${parsed.file.group}, ${countLabel}`);
 
       const top = document.createElement('span');
       top.className = 'q-filebtn-top';
@@ -595,8 +740,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       const meta = document.createElement('span');
       meta.className = 'q-filebtn-meta';
       const count = document.createElement('span');
-      const n = parsed.file.rules.length;
-      count.textContent = n === 1 ? '1 rule' : `${String(n)} rules`;
+      count.textContent = countLabel;
       meta.append(count, fileLintBadge(result));
       button.append(top, meta);
 
@@ -773,7 +917,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
         });
       }),
       actionButton('✕', `Delete rule ${ruleName}`, 'Delete rule', false, () => {
-        deleteRuleAt(fileName, index, total);
+        deleteRuleAt(fileName, index, total, ruleName);
       }),
       moveUp,
       actionButton(
@@ -799,7 +943,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     return tr;
   }
 
-  function deleteRuleAt(fileName: string, index: number, total: number): void {
+  function deleteRuleAt(fileName: string, index: number, total: number, ruleName: string): void {
     const target = drawerTarget;
     const deletingOpen =
       target !== null &&
@@ -818,14 +962,14 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
         else addRuleButton.focus();
       });
     };
-    if (deletingOpen) {
-      requestConfirmIfDirty(() => {
-        closeDrawer(false);
-        run();
-      });
-    } else {
+    // The confirm replaces the dirty-draft guard rather than stacking on it:
+    // once you've agreed to delete the rule, "discard your unsaved edits?" is
+    // moot, and the dialog already said the draft goes with it.
+    void confirmDeleteRule(ruleName, fileName, deletingOpen && form.isDirty()).then((ok) => {
+      if (!ok) return;
+      if (deletingOpen) closeDrawer(false);
       run();
-    }
+    });
   }
 
   function moveRuleAt(fileName: string, index: number, dir: 'up' | 'down'): void {

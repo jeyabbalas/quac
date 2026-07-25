@@ -145,9 +145,22 @@ Editing — the editor takes the same column, the preview stays put:
 |                        | comment     [_____________________________]         |
 |                        | [Test rule] Tested ✓        [Cancel] [Save rule]    |
 ```
+Collapsed rail (UIX-3) — `«` in the rail head trades the file list for its width; the files stay as dots so
+switching never needs a round trip through expand:
+```
++------------------------------------------------------------------------------+
+| »  | my_rules.quac.csv  [Download CSV] [Add rule] | LIVE PREVIEW   101 rows    |
+| •  |  Q001 validate·col  record_id err OK [x] ⧉ ✕ | Test result: 7 rows match  |
+| ·  |  Q002 validate·row  hh_id,…    err OK [x] ⧉ ✕ | [data-table: 6 columns    |
+| ·* |                                              |  instead of 4]            |
++------------------------------------------------------------------------------+
+```
+
 Breakpoints: **≥1280** three zones side by side (`240px · minmax(600px, 1.1fr) · minmax(360px, 1fr)` — the work
 floor is measured against the rule table's min-content, see §5); **1024–1279** two columns, rail spanning both
 rows, preview under the work column; **≤1023** everything stacks and the rail becomes a horizontal file strip.
+The rail collapses to **44px** at ≥1024 only — below that it is already a strip, so the toggle hides and a stored
+collapse goes inert (remembered, not honoured) until the window is wide again.
 
 **Modals** (all: focus-trapped, `Esc` closes, `role="dialog"`, labelled):
 - **IndexPickerModal** — radio list of candidate root schemas (relativePath, `$id`, title, array-shape badge) + "why this is ambiguous" note; selection recorded → `index=` param.
@@ -182,6 +195,17 @@ Conventions:
 - **Preview column reads top-down: result, then the grid it describes.** `.q-studio-testpanel` is capped
   (`max-height: min(44vh, 460px)` + scroll) so a 20-row assert result can't push the sample grid off screen, and
   `.q-studio-samplegrid` keeps a **definite** height — an auto-height host makes data-table render every row.
+- **≥1280 the card fills the screen and the grid takes what is left (UIX-3).** `.q-studio-layout` carries
+  `min-height: calc(100dvh - var(--q-studio-chrome))` (`--q-studio-chrome: 210px` — ~154px of header/nav/page
+  padding above, ~56px of privacy footer below; `min-height`, never `height`, so a long rule table can still grow
+  the card). `.q-studio-preview` is then a flex column and `.q-studio-samplegrid` is `flex: 1 1 0` with a 360px
+  `min-height` floor rather than a clamp. **Why it's a contract, not a nicety:** data-table's own
+  column-visualization header is **273–306px tall and grows with the pane's width**, so a fixed-height host loses
+  body rows exactly when the pane widens — the pre-fix clamp gave 440px at a 900-tall window (165px of body,
+  dropping to 132px collapsed) and 308px at 768-tall (33px → **0px**: the grid showed no rows at all). Filling the
+  height gives 625px/350px and 493px/218px, and makes the host height **identical in both rail states**, which is
+  the invariant `studio-edit.spec` now pins. Below 1280 the preview is stacked under the work column and cannot
+  take "what is left", so it keeps the clamp — with the floor raised 260px → 360px for the same reason.
 - **Sizing is measured, not guessed.** The rule table's min-content is what sets the work track's floor; re-measure
   (`.q-studio-gridbody` `scrollWidth` vs `clientWidth` at 1600/1440/1366/1280/1024/768) before adding a column.
   `.q-rulegrid-targets` is the elastic one that yields first (200px, capped to 130px in the three-column band).
@@ -190,6 +214,24 @@ Conventions:
   color-only.
 - Two override blocks sit **after** the rules they override (`.q-filebtn` strip, in-band targets cap) because
   specificity ties and source order decides; the comments there say so.
+- **The rail collapses through one knob, and the work track pins when it does (UIX-3).** Every band reads
+  `--q-studio-rail` (240px → 44px on `.q-studio-layout--railclosed`), so collapsing is a variable flip, not a
+  re-declared template. Flipping it *alone* is not enough: the freed 196px would follow the `1.1fr : 1fr` split
+  (measured: work +103, preview +93 at 1600). At ≥1280 the collapsed state therefore also pins the work track to
+  its 600px floor, which lands the whole 196px in the preview — measured preview widths 623→904 at 1600,
+  547→744 at 1440, 388→584 at 1280, with 0px `.q-studio-gridbody` overflow in **both** states at
+  1600/1440/1366/1280/1024/768. In the 1024–1279 band work and preview share one column, so both widen. The
+  collapsed dress lives entirely inside `@media (min-width: 1024px)` so the ≤1023 strip can never inherit it.
+- **Never animate the grid track.** `minmax(600px, 1.1fr)` → `600px` swaps a `<flex>` for a `<length>`, which is
+  not interpolable — the template snaps however it is transitioned. The work column also holds two CodeMirror
+  editors whose `DOMObserver` re-measures on resize. One discrete flip measures ~46 ms with the 266-column
+  example mounted; only the rail's contents fade (WAAPI, 200 ms, expand only, skipped under reduced motion).
+  The preview grid needs no nudge: its column widths are fixed px and its row count derives from height.
+- **Collapsed, the file buttons stay visible as dots** — `.q-filebtn-group`/`-meta`/`-pertinence` hide, a
+  `::before` dot appears, and the `aria-current` yellow marker and dirty `*` carry over verbatim. `renderRail`
+  sets `title` + `aria-label` per file so identity survives the text going away, and must **not** branch on the
+  collapse state — a store update mid-collapse would fight the toggle. Because the buttons stay in the tab order
+  and expanded is the default, the pinned `.q-filebtn` e2e locators are unaffected.
 
 **P18 copy additions (pinned):** footer test status (aria-live) `Untested` / `Testing…` / `Tested ✓` / `Test failed — see the preview panel.`; submit labels `Add to file` / `Save rule` / `Save untested` (the last only for data-shaped lint-only — no dataset or inapplicable targets; external keeps the normal label); buttons `Test rule` · `Download rules CSV` · `Filter preview to matches` ⇄ `Clear preview filter`; preview head `Live preview` with meta `previewing on a 10,000-row sample` past the cap else `N row(s)`, and the no-dataset note `Load a dataset to preview rules against it.`; result lines `Test result: N row(s) match` (validate) · `Test result: N cell(s) would change` (sql correction) · `Test result: N row(s) match · corrections sampled on K row(s) [· E sample error(s)]` (js correction) · `Test result: N result row(s)` (dataset) · `Test result: V of N target(s) violating` with per-target heads + `Expanded SQL` disclosures (column asserts) · `Not testable: <reason>` · `Test failed: <message>` (engine text verbatim); truncation note `showing first 20`; `PROGRESS_LABELS.ruleTest` = `Testing the rule`.
 
@@ -199,6 +241,16 @@ drawer title) — it routes through the same discard guard as the footer `Cancel
 `validate · row`). Everything else is unchanged — the Studio empty state keeps `No rules yet.` /
 `Load a dataset to compose rules against it — completions and previews need your columns.` verbatim (nav.spec pins
 it, and `studioWorkspace.ts`'s banner shares the first clause).
+
+**UIX-3 copy additions (pinned):** the rail toggle (`.q-studio-railtoggle`, ghost, right of `New file`) is glyph
+`«` / `»` with `aria-label` + `title` `Collapse rule files` / `Expand rule files` and `aria-expanded` carrying the
+state; each `.q-filebtn` gains `aria-label` `<group>, N rules`. The delete confirm is `Delete rule?` /
+`Delete <id> from <file>?` + a `.q-panel-note` second line — `This can't be undone. Download the rules CSV first
+if you want a copy.`, or, when the row is the open draft, `It's open in the editor, so your unsaved changes go
+too. This can't be undone — download the rules CSV first if you want a copy.` — with buttons `Cancel` ·
+`Delete rule` (primary, exactly as `Discard` is). Plain and serious: §6 reserves puns for empty states. This
+dialog **subsumes** the `Discard changes?` guard when the deleted row is the open draft — `modal.ts` supports one
+modal at a time, and once you've agreed to delete the rule the discard question is moot.
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 

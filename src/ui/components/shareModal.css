@@ -149,7 +149,7 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-md);
   background: var(--q-info-fill);
-  color: var(--q-info);
+  color: var(--q-info-ink);
   font-size: var(--q-text-sm);
 }
 
@@ -158,6 +158,6 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-md);
   background: var(--q-warning-fill);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
   font-size: var(--q-text-sm);
 }

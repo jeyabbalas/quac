@@ -125,6 +125,9 @@ export function createPreviewPane(): PreviewPane {
         tableName: QUAC_STUDIO_DISPLAY,
         bridge,
         persistence: false,
+        // See reportGrid.ts: the default 'auto' would turn this grid dark on a
+        // dark-OS machine while the rest of the Studio stays on paper.
+        colorScheme: 'light',
       });
       tableGeneration = generation;
     } catch (err) {

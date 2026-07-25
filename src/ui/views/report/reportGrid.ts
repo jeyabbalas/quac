@@ -101,6 +101,12 @@ async function ensureTable(
       tableName: QUAC_DISPLAY,
       bridge,
       persistence: false,
+      // NOT the library default ('auto'), which flips the whole grid dark under
+      // prefers-color-scheme: dark unless the instance carries
+      // data-dt-color-scheme="light" — a dark grid inside QuaC's white work
+      // area. The white work area is a brief requirement and dark mode is out
+      // of scope for v1 (ui-design.md §2).
+      colorScheme: 'light',
     });
     table = t;
     tableGeneration = generation;

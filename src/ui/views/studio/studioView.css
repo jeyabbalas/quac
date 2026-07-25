@@ -13,7 +13,7 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-sm);
   background: var(--q-info-fill);
-  color: var(--q-info);
+  color: var(--q-info-ink);
   font-size: var(--q-text-md);
 }
 
@@ -853,7 +853,7 @@
 .q-chip--unknown {
   background: var(--q-warning-fill);
   border-color: var(--q-warning);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
 }
 
 .q-chip-remove {

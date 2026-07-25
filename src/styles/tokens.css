@@ -18,15 +18,31 @@
   --q-gray-700: #404040;
   --q-gray-800: #262626;
 
-  /* Semantic (distinct from brand; duck-yellow never means "warning") */
+  /* Semantic (distinct from brand; duck-yellow never means "warning").
+     Each severity has THREE roles and they are not interchangeable:
+       --q-*        border / pill background / text on WHITE or --q-gray-50
+       --q-*-fill   tinted background
+       --q-*-ink    text ON the matching fill  <- use this one for text-on-fill
+     The ink values are the font colours the Excel workbook already pairs with
+     these fills (qc-report-spec.md §5), so workbook, grid, and chrome now agree
+     on one palette. They exist because the mid-tone --q-* on its own fill fails
+     AA: error 3.38, success 3.97. Measured on-fill with ink: 5.92 / 5.33 / 7.14
+     / 4.56. Changing the FILLS instead would break the P05 e2e that asserts
+     --dt-annotation-error-bg computes to #ffc7ce. */
   --q-error: #d7263d;
   --q-error-fill: #ffc7ce;
+  --q-error-ink: #9c0006;
   --q-warning: #b45309;
   --q-warning-fill: #fff4cc;
+  /* already 4.56 on its fill — aliased so every text-on-fill call site reads
+     the same way, and so a future warning re-tint has one place to fix */
+  --q-warning-ink: var(--q-warning);
   --q-info: #0369a1;
   --q-info-fill: #ddebf7;
+  --q-info-ink: #1f4e79;
   --q-success: #15803d;
   --q-success-fill: #c6efce;
+  --q-success-ink: #276749;
 
   /* Brand tints (washes derived from brand hues; never semantic) */
   --q-yellow-tint: #fff8ec; /* warm hover wash (drop zones) */
@@ -85,8 +101,16 @@
   --q-dur-2: 200ms;
   --q-dur-3: 300ms;
 
-  /* Focus ring — 2px orange, visible on every interactive element */
+  /* Focus ring — 2px orange, visible on every interactive element.
+     The orange ALONE is not visible: it measures 2.05:1 on paper, 1.42:1 on
+     --q-yellow, and 1.08:1 on --q-sky, so keyboard focus on the header's Share
+     / GitHub / nav tabs was effectively unmarked. --q-focus-edge is an ink
+     companion painted (as a box-shadow, behind the outline) on both sides of
+     the orange band; ink is 18.9:1 on paper, 13.0:1 on yellow, 10.0:1 on sky,
+     so the indicator clears SC 1.4.11's 3:1 against every surface QuaC paints
+     while the orange stays the brand flourish ui-design.md §2 asks for. */
   --q-focus-ring: 2px solid var(--q-orange);
+  --q-focus-edge: 0 0 0 6px var(--q-ink);
 }
 
 /* data-table annotation mapping — grid tints match app semantics (ui-design §2).
@@ -96,13 +120,23 @@
    in P05. The lib's -bg-hover variants derive from -bg/-bdr via color-mix, so
    they need no override. */
 body {
-  --dt-annotation-error-fg: var(--q-error);
+  /* -fg paints the annotated CELL TEXT on -bg (.dt-cell--row-annotation-error
+     et al.), so it is a text-on-fill role and takes the ink token. -bdr stays
+     on the mid-tone: it is a border, and it is what makes the tint legible as
+     a severity at a glance. */
+  --dt-annotation-error-fg: var(--q-error-ink);
   --dt-annotation-error-bg: var(--q-error-fill);
   --dt-annotation-error-bdr: var(--q-error);
-  --dt-annotation-warning-fg: var(--q-warning);
+  --dt-annotation-warning-fg: var(--q-warning-ink);
   --dt-annotation-warning-bg: var(--q-warning-fill);
   --dt-annotation-warning-bdr: var(--q-warning);
-  --dt-annotation-info-fg: var(--q-info);
+  --dt-annotation-info-fg: var(--q-info-ink);
   --dt-annotation-info-bg: var(--q-info-fill);
   --dt-annotation-info-bdr: var(--q-info);
+
+  /* The grid should read as part of the app, not as an embedded widget.
+     --dt-primary/--dt-accent are deliberately NOT remapped: 96 usages, several
+     of them white-on-primary fills, so brand hues there would CREATE contrast
+     failures (white on --q-sky is 2.1:1). */
+  --dt-font-family: var(--q-font-sans);
 }

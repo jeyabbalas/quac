@@ -253,13 +253,9 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
   const scopeField = field('rule_scope', 'q-rf-scope', scopeSelect, 'q-rf-field--scope');
   const severityField = field('severity', 'q-rf-severity', severitySelect, 'q-rf-field--severity');
 
-  const enabledWrap = document.createElement('div');
-  enabledWrap.className = 'q-rf-field q-rf-field--enabled';
-  const enabledLabel = document.createElement('label');
-  enabledLabel.className = 'q-rf-check';
-  enabledLabel.htmlFor = 'q-rf-enabled';
-  enabledLabel.append(enabledCheck, document.createTextNode(' enabled'));
-  enabledWrap.append(enabledLabel);
+  // A normal label-over-control field like every sibling — which is what
+  // retires the `padding-top: 22px` baseline hack the inline label needed.
+  const enabledField = field('enabled', 'q-rf-enabled', enabledCheck, 'q-rf-field--enabled');
 
   const targetsField = field(
     'target_variables',
@@ -285,9 +281,17 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
   const commentField = field('comment', 'q-rf-comment', commentInput, 'q-rf-field--comment');
   commentField.wrap.append(preview);
 
+  // DOM order IS the visual order in the 3-track head (and therefore the tab
+  // order): rule_id | enabled  /  rule_type | rule_scope | severity.
   const head = document.createElement('div');
   head.className = 'q-rf-head';
-  head.append(idField.wrap, typeField.wrap, scopeField.wrap, severityField.wrap, enabledWrap);
+  head.append(
+    idField.wrap,
+    enabledField.wrap,
+    typeField.wrap,
+    scopeField.wrap,
+    severityField.wrap,
+  );
 
   const footer = document.createElement('div');
   footer.className = 'q-rf-footer';

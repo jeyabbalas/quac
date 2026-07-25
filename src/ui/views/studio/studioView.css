@@ -451,17 +451,19 @@
   gap: var(--q-space-3);
 }
 
+/* Three tracks, not five: the editor now lives in ONE column (~560px), and
+   the old 5-track head demanded ~700px. Placement is by DOM order —
+   row 1: rule_id (2 tracks) | enabled · row 2: rule_type | rule_scope |
+   severity. */
 .q-rf-head {
   display: grid;
-  grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--q-space-3);
   align-items: start;
 }
 
-@media (max-width: 1023px) {
-  .q-rf-head {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
+.q-rf-field--id {
+  grid-column: span 2;
 }
 
 .q-rf-field {
@@ -478,13 +480,13 @@
   color: var(--q-gray-700);
 }
 
-.q-rf-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--q-text-md);
-  /* baseline-align the checkbox row with the neighbouring labelled inputs */
-  padding-top: 22px;
+/* The label sits above like every sibling's, so the box only needs a hit
+   area — sized explicitly so the column flex parent can't stretch it. */
+.q-rf-field--enabled input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 4px 0 0;
+  accent-color: var(--q-ink);
 }
 
 .q-rf-correction {
@@ -517,6 +519,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap; /* four controls in one column: wrap rather than overflow */
   gap: var(--q-space-2);
   border-top: var(--q-border-hairline);
   padding-top: var(--q-space-3);

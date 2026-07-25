@@ -10,3 +10,5 @@ tests/fixtures/tiny/*.csv -text
 tests/fixtures/synthetic/**/*.csv -text
 *.xlsx binary
 *.parquet binary
+# Rasterised favicons (scripts/generate-favicons.mjs) — committed artifacts.
+*.png binary

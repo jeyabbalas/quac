@@ -239,9 +239,11 @@ interface RenderedRow {
 }
 
 interface RenderedCategory {
-  section: HTMLElement;
+  section: HTMLDetailsElement;
   count: HTMLElement;
   rows: RenderedRow[];
+  /** What the USER last left this open at — restored when a filter clears. */
+  userOpen: boolean;
 }
 
 export function mountDataDictionary(panel: HTMLElement): void {
@@ -347,11 +349,34 @@ export function mountDataDictionary(panel: HTMLElement): void {
     input.autocomplete = 'off';
     input.placeholder = 'Name, description, code, or constraint';
     field.append(label, input);
+
+    // Filled by the category loop below; the control beside the search box and
+    // the filter both drive the categories through it.
+    const rendered: RenderedCategory[] = [];
+    // Clicking twelve headers is not a bird's-eye view. The label is DERIVED
+    // from what is on screen rather than stored, so it cannot drift out of step
+    // with a category collapsed by hand.
+    const anyOpen = (): boolean => rendered.some((c) => !c.section.hidden && c.section.open);
+    const toggleAll = document.createElement('button');
+    toggleAll.type = 'button';
+    toggleAll.className = 'q-btn q-btn--ghost q-btn--small q-dd-toggleall';
+    const syncToggleAll = (): void => {
+      toggleAll.textContent = anyOpen() ? 'Collapse all' : 'Expand all';
+    };
+    toggleAll.addEventListener('click', () => {
+      const target = !anyOpen();
+      for (const category of rendered) {
+        category.section.open = target;
+        category.userOpen = target;
+      }
+      syncToggleAll();
+    });
+
     const count = document.createElement('p');
     count.className = 'q-dd-count';
     count.setAttribute('role', 'status');
     count.textContent = variables(model.rowCount);
-    searchWrap.append(field, count);
+    searchWrap.append(field, toggleAll, count);
 
     const scroll = document.createElement('div');
     scroll.className = 'q-dd-scroll';
@@ -360,12 +385,25 @@ export function mountDataDictionary(panel: HTMLElement): void {
     // Named distinctly from the tab panel itself.
     scroll.setAttribute('aria-label', 'Data dictionary variables');
 
-    const rendered: RenderedCategory[] = [];
     model.categories.forEach((category, index) => {
-      const section = document.createElement('section');
+      // A native <details>, for the same reasons overflowDetails() is one: the
+      // whole header row becomes the click target, Enter and Space work, and
+      // both Collapse all and the search override reduce to writing `.open`.
+      // Open by default — nothing moves until you click, and axe skips
+      // unrendered subtrees, so a collapsed default would take twelve tables
+      // out of the gate (a11y.spec.ts:114-117).
+      const section = document.createElement('details');
       section.className = 'q-dd-cat';
-      const catHead = document.createElement('div');
+      section.open = true;
+      section.addEventListener('toggle', syncToggleAll);
+      const catHead = document.createElement('summary');
       catHead.className = 'q-dd-cathead';
+      // <summary> takes "phrasing content, optionally intermixed with heading
+      // content" (WHATWG), so the <h4> stays a real heading inside it: the
+      // h3 → h4 order and the table's aria-labelledby are untouched.
+      const mark = document.createElement('span');
+      mark.className = 'q-dd-catmark';
+      mark.setAttribute('aria-hidden', 'true');
       const catTitle = document.createElement('h4');
       catTitle.className = 'q-dd-cattitle';
       // Index-based, not the package's slug: deterministic and always a valid
@@ -375,7 +413,7 @@ export function mountDataDictionary(panel: HTMLElement): void {
       const catCount = document.createElement('span');
       catCount.className = 'q-dd-catcount';
       catCount.textContent = variables(category.rows.length);
-      catHead.append(catTitle, catCount);
+      catHead.append(mark, catTitle, catCount);
       section.append(catHead);
       if (category.description !== undefined) {
         const desc = document.createElement('p');
@@ -414,8 +452,9 @@ export function mountDataDictionary(panel: HTMLElement): void {
       table.append(thead, tbody);
       section.append(table);
       scroll.append(section);
-      rendered.push({ section, count: catCount, rows });
+      rendered.push({ section, count: catCount, rows, userOpen: true });
     });
+    syncToggleAll();
 
     body.replaceChildren(searchWrap, scroll);
 
@@ -443,8 +482,16 @@ export function mountDataDictionary(panel: HTMLElement): void {
     // allocate ~8,500 nodes per keystroke, destroy every <details> the user
     // just opened, and reset the scroll position mid-typing.
     let announce: ReturnType<typeof setTimeout> | undefined;
+    // Search wins over a collapsed category — a match you cannot see is a
+    // filter that lies — but it must hand back what the user had open. The
+    // snapshot is taken on the TRANSITION into filtering rather than by
+    // listening for user toggles: `toggle` fires from a queued task and cannot
+    // tell a click from a programmatic write.
+    let filtering = false;
     const applyFilter = (): void => {
       const tokens = parseQuery(input.value);
+      const nowFiltering = tokens.length > 0;
+      if (nowFiltering && !filtering) for (const c of rendered) c.userOpen = c.section.open;
       let visible = 0;
       for (const category of rendered) {
         let shown = 0;
@@ -457,8 +504,11 @@ export function mountDataDictionary(panel: HTMLElement): void {
         // never a lie while filtered; empty categories hide entirely.
         category.count.textContent = variables(shown);
         category.section.hidden = shown === 0;
+        category.section.open = nowFiltering ? shown > 0 : category.userOpen;
         visible += shown;
       }
+      filtering = nowFiltering;
+      syncToggleAll();
 
       const empty = body.querySelector('.q-dd-empty');
       if (visible === 0) {

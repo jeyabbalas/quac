@@ -337,6 +337,13 @@ modal at a time, and once you've agreed to delete the rule the discard question 
     with identical `th:nth-child(n)` percentages.
   - **A visible `<label for>` beats `aria-label` for text inputs** (`label` is critical). The dictionary search field
     carries a real `.q-dd-search-label`, matching `createUrlField`.
+  - **Disclosure is `<details>` + `<summary>`, and the whole header is the control.** The dictionary's category
+    headers and its `+N more` overflows are both native: `aria-expanded` and Enter/Space come from the UA rather
+    than from us, and the `<h4>` stays a real heading inside the `<summary>` (whose content model is *phrasing
+    content, optionally intermixed with heading content*), so heading order and `aria-labelledby` are unaffected.
+    The chevron is CSS with **no transition** — nothing for `prefers-reduced-motion` to remove. Default is
+    **expanded**: axe skips unrendered subtrees, so a collapsed default would quietly take twelve tables out of the
+    gate. `a11y.spec.ts` scans the collapsed state too, since that is a second rendering, not the same one smaller.
   - **Getting past the grid.** data-table exposes ~1600 focusable controls on the 266-column example AND traps Tab
     (see §9). The Report view therefore carries a `.q-skiplink` before the grid — a `<button>`, never an
     `<a href="#…">`, because QuaC routes on the hash — and both grid hosts let **Escape** move focus out, announced

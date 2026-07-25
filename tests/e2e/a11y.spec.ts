@@ -123,6 +123,13 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
     await expectNoSeriousViolations(page, `Load → ${name}`);
   }
 
+  // Collapsed is a state of its own — twelve <summary> controls and nothing
+  // else — and by the same rule it needs its own scan.
+  await page.locator('.q-preview .q-paneltab', { hasText: 'JSON Schema' }).click();
+  await page.locator('.q-dd-toggleall').click();
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
+  await expectNoSeriousViolations(page, 'Load → JSON Schema (collapsed)');
+
   await page.getByRole('button', { name: 'Share' }).click();
   await expect(page.getByRole('dialog', { name: 'Share this configuration' })).toBeVisible();
   await expectNoSeriousViolations(page, 'Share modal');

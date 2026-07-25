@@ -103,8 +103,20 @@
   outline-offset: 1px;
 }
 
+/* Collapse all / Expand all — the established quiet-action recipe
+   (studioWorkspace.ts:115). It sits beside the search box, not adrift in the
+   middle of the row, which is what plain space-between would do now that
+   .q-dd-head has three children. */
+.q-dd-toggleall {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The auto margin absorbs the free space BEFORE justify-content gets it, so
+   the readout stays pinned right and does not shuffle when the button's label
+   flips between its two widths. */
 .q-dd-count {
-  margin: 0;
+  margin: 0 0 0 auto;
   font-size: var(--q-text-xs);
   color: var(--q-gray-600);
   white-space: nowrap;
@@ -119,19 +131,66 @@
   padding: 0 var(--q-space-3) var(--q-space-3);
 }
 
+/* Each category is a <details>, open by default. Collapse the ones you are not
+   reading and the panel becomes a twelve-line table of contents, each line
+   still carrying its count: measured on HESP at 1440×900, 51,354px of content
+   in the 628px box above collapses to 492px, which does not scroll at all. */
 .q-dd-cat {
   margin-top: var(--q-space-4);
 }
 
+/* Defensive, exactly as .q-dd-table tr[hidden] below: the UA sheet's
+   `details { display: block }` is as specific as [hidden]'s `display: none`
+   and later in the cascade would win. */
+.q-dd-cat[hidden] {
+  display: none;
+}
+
+/* The whole header row is the disclosure control. `list-style` drops the UA
+   triangle (Safari needs the -webkit pseudo-element too) in favour of the
+   chevron below, which sits on the side the count does not. */
 .q-dd-cathead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--q-space-3);
   flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
 }
 
+.q-dd-cathead::-webkit-details-marker {
+  display: none;
+}
+
+/* The same hover token as .q-dd-table tbody tr:hover — one surface, one
+   "this row is live" signal. */
+.q-dd-cathead:hover {
+  background: var(--q-gray-50);
+}
+
+/* CSS chevron, no asset and no transition — so there is no movement for
+   prefers-reduced-motion to remove. Rotating one glyph rather than swapping
+   two keeps the layout box identical in both states. */
+.q-dd-catmark {
+  flex: none;
+  font-size: var(--q-text-md);
+  color: var(--q-gray-600);
+}
+
+.q-dd-catmark::before {
+  content: '▸';
+  display: inline-block;
+}
+
+.q-dd-cat[open] > .q-dd-cathead .q-dd-catmark::before {
+  transform: rotate(90deg);
+}
+
+/* Takes the slack, so the count stays pinned right now that the header has
+   three children rather than two. */
 .q-dd-cattitle {
+  flex: 1 1 auto;
   margin: 0;
   font-size: var(--q-text-lg);
   font-weight: 600;
@@ -310,7 +369,10 @@
   outline-offset: 1px;
 }
 
-.q-dd-scroll summary {
+/* Aimed at the `+N more` overflows this was written for, NOT the category
+   headers: muting every category title to --q-gray-600 is the one thing this
+   blanket rule must not do. */
+.q-dd-scroll details:not(.q-dd-cat) > summary {
   cursor: pointer;
   color: var(--q-gray-600);
 }

@@ -144,6 +144,76 @@ test('search narrows the count, hides empty categories, and clears', async ({ pa
   await expect(page.locator('.q-dd-cat:visible')).toHaveCount(12);
 });
 
+async function dictionary(page: Page): Promise<void> {
+  await loadExample(page);
+  await tab(page, 'JSON Schema').click();
+  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+}
+
+test('a category header collapses its table and keeps its count', async ({ page }) => {
+  await dictionary(page);
+
+  const first = page.locator('.q-dd-cat').first();
+  const head = first.locator('.q-dd-cathead');
+  await expect(first.locator('.q-dd-table')).toBeVisible();
+
+  await head.click();
+  await expect(first.locator('.q-dd-table')).toBeHidden();
+  // What is left is the header — and it still says how much is behind it.
+  await expect(first.locator('.q-dd-catcount')).toHaveText('16 variables');
+  await expect(page.locator('.q-dd-cat')).toHaveCount(12);
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(11);
+
+  await head.click();
+  await expect(first.locator('.q-dd-table')).toBeVisible();
+});
+
+test('Collapse all folds every category and the label flips', async ({ page }) => {
+  await dictionary(page);
+
+  const toggle = page.locator('.q-dd-toggleall');
+  await expect(toggle).toHaveText('Collapse all');
+
+  await toggle.click();
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
+  await expect(page.locator('.q-dd-cathead:visible')).toHaveCount(12); // a table of contents
+  await expect(toggle).toHaveText('Expand all');
+
+  // The label is derived, so opening ONE by hand is enough to flip it back.
+  await page.locator('.q-dd-cathead').first().click();
+  await expect(toggle).toHaveText('Collapse all');
+
+  await toggle.click();
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
+  await toggle.click();
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(12);
+});
+
+test('search opens a collapsed category, and clearing it collapses back', async ({ page }) => {
+  await dictionary(page);
+
+  const owner = page
+    .locator('.q-dd-cat')
+    .filter({ has: page.locator('.q-dd-name', { hasText: 'household_size' }) })
+    .first();
+  await owner.locator('.q-dd-cathead').click();
+  await expect(owner.locator('.q-dd-table')).toBeHidden();
+
+  // A match you cannot see is a filter that lies.
+  const search = page.getByLabel('Search variables');
+  await search.fill('household_size');
+  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(1);
+  await expect(owner.locator('.q-dd-table')).toBeVisible();
+  await expect(page.locator('.q-dd-table tbody tr:visible')).toHaveCount(1);
+
+  // Clearing hands back exactly what the user had open: this one shut, the
+  // other eleven not.
+  await search.fill('');
+  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(12);
+  await expect(owner.locator('.q-dd-table')).toBeHidden();
+  await expect(page.locator('.q-dd-table:visible')).toHaveCount(11);
+});
+
 test('the QC rules panel shows its placeholder and rule counts', async ({ page }) => {
   await loadExample(page);
   await tab(page, 'QC rules').click();

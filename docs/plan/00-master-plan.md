@@ -73,6 +73,23 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · UIX-4c · **The data dictionary's categories collapse.** All twelve opened at once, so the panel could
+tell you about any one variable and nothing about what it contained: measured on HESP at 1440×900, `.q-dd-scroll`
+was **51,354px of content in a 628px box** (`min(70vh, 720px)`) — 82 screens, with `Identification` and
+`Derived measures` ~200 rows apart. Each category is now a native `<details class="q-dd-cat" open>` whose
+`<summary>` is the whole header row (chevron · `<h4>` title · count), plus one `Collapse all` / `Expand all` beside
+the search box. Collapsed, the same panel is **492px** — twelve lines, each still carrying its count, no scrolling
+at all, and no horizontal overflow at 1024/768 either (938/938, 698/698: the `min-width: 1070px` tables are out of
+flow while closed). Native `<details>` is why it is cheap: `aria-expanded`, Enter and Space are the UA's, and both
+the button and the filter reduce to writing `.open`. **Search wins over a collapsed category** — typing force-opens
+every category still holding a match, clearing restores exactly what you had open, snapshotted on the *transition*
+into filtering because `toggle` fires from a queued task and cannot tell a click from a programmatic write.
+Default stays expanded: axe skips unrendered subtrees, so collapsing by default would take twelve tables out of the
+gate. Deviation from plan: `.q-dd-cathead` needed no `color: inherit`; the blanket `.q-dd-scroll summary` rule was
+narrowed to `details:not(.q-dd-cat) > summary` instead, so titles stay `--q-ink` (17,17,17) and `+N more` stays
+`--q-gray-600` (82,82,82). 599 unit green unchanged (DOM only) + 3 new e2e and a fourth axe scan of the collapsed
+state; entry bundle 41.2 → **41.4 KB gz**, no new dependency.
+
 2026-07-25 · UIX-4b · Follow-up on the Preview panel, on review of the shipped one. **The schema tab is now named for
 the input, not the rendering**: `Dataset · JSON Schema · QC rules`, the three slot-card names verbatim, so the strip
 under the cards names the same three things the cards do — `Data dictionary` left the schema card the only slot with

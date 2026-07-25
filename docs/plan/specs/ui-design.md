@@ -275,7 +275,7 @@ modal at a time, and once you've agreed to delete the rule the discard question 
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 
-- Logo in header; `quac-logo.svg` used as a static asset (280 KB embedded-raster SVG — never inline it into the bundle).
+- Logo in header; `quac-logo.svg` used as a static asset (an embedded 280 KB raster until `a44d234` replaced both logo files with clean vector paths — 8.7 KB now, still a static asset, still not worth inlining).
 - **DuckProgress**: small duck bobbing left→right along a wavy line; `prefers-reduced-motion` ⇒ plain determinate bar. Used for ingest, QC run, export. Mechanics (v2):
   - The duck is clamped one half-duck (22px) inside each track end — it never hangs outside the card at 0% or overlaps neighbours at 100%; the indeterminate swim/wake keyframes share the same insets.
   - `setProgress(label, pct|null, {glideMs})`: `--q-dp-pct` drives fill + duck, `--q-dp-glide` is the transition length with `--q-ease-out`. A long glide (8 s) toward a stage ceiling IS the asymptotic crawl for unknown totals — no JS ticker; retargeting resumes from the computed value. `glideMs: 0` snaps (new-run reset). `null` = true indeterminate, reserved for ingest, export, grid-prep, and the demo modal — **the pipeline run never passes null**.
@@ -285,14 +285,22 @@ modal at a time, and once you've agreed to delete the rule the discard question 
   - **`PROGRESS_LABELS`** (entry-chunk `duckProgress.ts`, beside `DUCK_LOADING_LINES`) is the single home for stage labels: 'Preparing tables', 'Applying corrections', 'Validating against the schema' (e2e-pinned), 'Running QC rules', 'Painting the report', plus grid-prep and export labels.
 - Loading copy, exactly three lines, rotating: **"Getting your ducks in a row…"**, **"Dabbling through your data…"**, **"Quacking the checks…"**.
 - Empty states: at most one pun each (e.g. Report empty state: "No flags yet. Run QC and see what floats up."). Everywhere else: plain, serious microcopy — errors are NEVER jokes.
-- **Favicon (done in P19)**: the raster duck won't downscale to 16px, so `public/favicon.svg` is hand-drawn flat at
-  `viewBox="0 0 32 32"` — sky disk, ink ring, yellow head over a clipped chest, orange bill, ink eye — drawn
-  back-to-front so each shape's inner outline is covered and only the silhouette survives downscaling. Its colours are
-  brand hexes as **literals** (an icon-served SVG cannot read the page's custom properties); keep them in step with
-  `tokens.css`. `scripts/generate-favicons.mjs` rasterises `favicon-32.png` and `apple-touch-icon.png` (180×180 on
-  opaque `--q-paper` — iOS masks corners and ignores alpha) via **Playwright, not `sharp`**: already a devDep, already
-  browser-cached in CI, and it renders through the same engine that paints the tab. Outputs are committed; the script
-  stays out of the `pre*` hooks and CI, like `scripts/record-ajv-errors.mjs`. `npm run favicons` regenerates.
+- **Favicon (P19; re-cut from the artwork after it)**: all three files are **generated** from
+  `assets/logo/quac-duck.svg` by `scripts/generate-favicons.mjs`, so the tab icon is the header mark's duck rather
+  than a redrawing of it. P19 hand-drew a flat duck believing the artwork was a raster that would not downscale; it
+  had been vector since `a44d234`, so the hand-drawn one is gone. `public/favicon.svg` is `viewBox="0 0 32 32"`:
+  sky disk, the artwork's three paths, ink ring last. **Placement is measured** — the script samples the outline,
+  solves its minimal enclosing circle (r 481.2 at (573.4, 533.0) in artwork units) and drops that circle concentric
+  with the disk, scaled to leave 1.2 units of sky inside the ring; a bounding-box centre would sit left of true (the
+  bill juts right) and cost size. Coordinates are baked into icon space, not left riding a `transform`, because
+  favicons meet rasterisers far dumber than a browser. Colours are brand hexes as **literals** (an icon-served SVG
+  cannot read the page's custom properties): `--q-sky` / `--q-ink` / `--q-yellow`, plus one deliberate non-token —
+  the bill keeps the artwork's `#f95d1d`, since `--q-orange` on `--q-yellow` is **1.42:1** and the bill dissolves
+  into the head at 16px, where the artwork orange holds **2.19:1**. The same script rasterises `favicon-32.png` and
+  `apple-touch-icon.png` (180×180 on opaque `--q-paper`, disk inset 8% off the iOS mask curve — iOS masks corners
+  and ignores alpha) via **Playwright, not `sharp`**: already a devDep, already browser-cached in CI, and it renders
+  through the same engine that paints the tab. Outputs are committed and byte-stable across runs; the script stays
+  out of the `pre*` hooks and CI, like `scripts/record-ajv-errors.mjs`. `npm run favicons` regenerates all three.
 
 ## 7. Accessibility checklist (P19 gates on this)
 

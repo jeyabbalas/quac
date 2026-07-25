@@ -45,6 +45,12 @@ New features; dark mode (documented as out of scope).
 3. **One pinned e2e locator became more specific.** `runQc.spec`'s bare `getByText('Validating against the schema')`
    now reads `.q-run-progress .q-duckprogress-meta` — the new polite live region legitimately repeats that string, so
    the assertion was ambiguous, not wrong. The pinned **copy** is untouched.
+4. **The favicon is placed artwork, not hand-drawn** (task 1) — decided after the phase merged, on the author's
+   review of the shipped icon. "Hand-draw simplified flat" was written when `quac-duck.svg` was an embedded raster;
+   `a44d234` had already replaced it with three vector paths, so the redrawing solved a problem that no longer
+   existed and put a duck in the tab that was not the duck in the header. `generate-favicons.mjs` now generates
+   `favicon.svg` too, placing the artwork by measured minimal enclosing circle. Rationale and constants:
+   `ui-design.md §6`.
 
 **Upstream to-do (third-party, from `a11y.spec.ts`'s non-gating diagnostic pass)**
 

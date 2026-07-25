@@ -73,6 +73,18 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · P19 · **Favicon re-cut from the artwork** (post-merge, on review of the shipped icon). P19 hand-drew the
+duck because the phase file said the artwork was a raster that wouldn't downscale — but `a44d234` had already replaced
+`assets/logo/*.svg` with clean vector paths, so the tab carried a *different* duck than the header. `generate-favicons.mjs`
+now generates `public/favicon.svg` as well: it samples the artwork's outline, solves its minimal enclosing circle
+(r 481.2 at (573.4, 533.0) artwork units — a bbox centre sits left of true, the bill juts right), drops it concentric
+with the sky disk leaving 1.2 units of sky inside the ink ring, and bakes the coordinates into the 32-unit icon space
+so no `transform` survives for a dumb rasteriser to mangle. One deliberate non-token: the bill keeps the artwork's
+`#f95d1d` — `--q-orange` on `--q-yellow` measures **1.42:1** and dissolves at 16px, the artwork orange holds **2.19:1**.
+Touch icon gained an 8% inset off the iOS mask curve. Output is byte-identical across runs; checked by eye at
+16/20/24/32/48/64/128 on paper and on dark chrome. 548 unit · 49 e2e green; `typecheck`/`lint` clean (the script is
+JSDoc-typed — `tsconfig` includes `scripts`).
+
 2026-07-25 · P19 · Branding polish + a hard accessibility pass. Shipped: a hand-drawn flat duck favicon (checked by eye
 at 16/24/32/64/128) with `favicon-32.png`/`apple-touch-icon.png` from a committed **Playwright** script — not `sharp`
 as the phase file sketched, since Playwright is already a devDep and renders through the engine that paints the tab;

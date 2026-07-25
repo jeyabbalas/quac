@@ -18,9 +18,12 @@ const tab = (page: Page, name: string) =>
 async function loadExample(page: Page): Promise<void> {
   await page.goto('/quac/');
   await page.locator('.q-example-load').click();
-  await expect(page.locator('.q-pertinence-text')).toContainText('265/265', {
-    timeout: INGEST_TIMEOUT,
-  });
+  // The consistency line is the last thing the head resolves, so its
+  // three-input verdict is the readiness signal for the whole section.
+  await expect(page.locator('.q-preview-pertinence-text')).toContainText(
+    'the dataset, JSON Schema, and QC rules all describe the same variables',
+    { timeout: INGEST_TIMEOUT },
+  );
 }
 
 test('the section appears with all three tabs, Dataset selected', async ({ page }) => {

@@ -1,9 +1,10 @@
 /**
  * P12 golden journeys: the QC Rules slot through the real UI — multi-file
  * browse, lint counts on the badge/summary, the inapplicable-targets warning
- * against a mismatched dataset, a structurally broken file, and the rules
- * line on the pertinence strip. Dataset-dependent lint EXPLAINs through
- * DuckDB-WASM, so post-ingest expectations carry generous timeouts.
+ * against a mismatched dataset, a structurally broken file, and the
+ * dataset↔rules edge of the Preview head's consistency line. Dataset-dependent
+ * lint EXPLAINs through DuckDB-WASM, so post-ingest expectations carry
+ * generous timeouts.
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,13 +65,14 @@ test('the 3 HESP rule files load with pending data checks, then lint clean once 
   });
   await expect(rulesBadge(page)).toHaveText('Valid');
 
-  // Pertinence strip shows the rules line even without a schema loaded.
-  const strip = page.locator('.q-pertinence');
-  await expect(strip).toBeVisible();
-  await expect(strip.locator('.q-pertinence-rules')).toHaveText(
-    /^Rules pertinence: (\d+)\/\1 rule targets present · 0 missing$/,
+  // The Preview head checks the dataset↔rules edge with no schema loaded, and
+  // says what consistency MEANS for that pair rather than reciting its counts.
+  const consistency = page.locator('.q-preview-pertinence');
+  await expect(consistency).toBeVisible();
+  await expect(consistency.locator('.q-badge')).toHaveText('OK');
+  await expect(consistency.locator('.q-preview-pertinence-text')).toHaveText(
+    'Inputs look consistent — every rule target is a column in the dataset.',
   );
-  await expect(strip.locator('.q-pertinence-text')).toHaveCount(0); // no schema line
 });
 
 test('a rules file targeting missing columns shows the inapplicable warning', async ({ page }) => {
@@ -95,9 +97,13 @@ test('a rules file targeting missing columns shows the inapplicable warning', as
     /^Targets: 0\/5 present in the dataset · missing: /,
   );
 
-  const strip = page.locator('.q-pertinence');
-  await expect(strip.locator('.q-pertinence-rules')).toHaveText(
-    'Rules pertinence: 0/5 rule targets present · 5 missing',
+  // Two inputs disagreeing name no suspect — it takes a third to say which of
+  // them is the stranger. `.q-rulesfile-pertinence` above is the linter's
+  // per-file line, a different feature on a different surface.
+  await expect(page.locator('.q-preview-pertinence .q-badge')).toHaveText('Mismatch');
+  await expect(page.locator('.q-preview-pertinence-text')).toHaveText(
+    'Only 0 of 5 rule targets found in the dataset. ' +
+      'One of these inputs may be from a different project.',
   );
 });
 

@@ -107,8 +107,10 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
   await expectNoSeriousViolations(page, 'Load (first run)');
 
   await loadExample(page);
-  // The preview table and the pertinence strip are both on screen by now.
-  await expect(page.locator('.q-pertinence-text')).toBeVisible({ timeout: INGEST_TIMEOUT });
+  // The preview table and the input-consistency line are both on screen by now.
+  await expect(page.locator('.q-preview-pertinence-text')).toBeVisible({
+    timeout: INGEST_TIMEOUT,
+  });
   await expectNoSeriousViolations(page, 'Load (populated)');
 
   // axe skips [hidden] subtrees, so each Preview panel must be ACTIVATED
@@ -144,6 +146,42 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
   await page.getByRole('button', { name: 'Share' }).click();
   await expect(page.getByRole('dialog', { name: 'Share this configuration' })).toBeVisible();
   await expectNoSeriousViolations(page, 'Share modal');
+});
+
+/**
+ * The populated scan above only ever sees the input-consistency line in its OK
+ * tone, which carries no tint at all. Both tinted tones put text ON a severity
+ * fill, and the strip this line replaced got exactly that pairing wrong —
+ * --q-gray-800 on --q-error-fill, 4.7:1 — so the tints are the part that needs
+ * a scan. Driven from the tiny fixtures: two columns and no schema set to
+ * resolve, so it costs seconds rather than the example's minute.
+ */
+test('Load — the input-consistency line in its warning and mismatch tints', async ({ page }) => {
+  await page.goto('/quac/');
+  await page
+    .getByLabel('Browse schema files')
+    .setInputFiles(join(FIXTURES, 'tiny', 'people.schema.json'));
+  const dataset = page.locator('[data-slot="data"] input[type="file"]');
+
+  await dataset.setInputFiles({
+    name: 'people_shouty.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('person_id,name,AGE,city,score\nP001,Ada,36,LONDON,88\n'),
+  });
+  await expect(page.locator('.q-preview-pertinence--warn')).toBeVisible({
+    timeout: INGEST_TIMEOUT,
+  });
+  await expectNoSeriousViolations(page, 'Load → consistency warning');
+
+  await dataset.setInputFiles({
+    name: 'strangers.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('alpha,beta,gamma\n1,2,3\n'),
+  });
+  await expect(page.locator('.q-preview-pertinence--alert')).toBeVisible({
+    timeout: INGEST_TIMEOUT,
+  });
+  await expectNoSeriousViolations(page, 'Load → consistency mismatch');
 });
 
 test('QC Report — after a full run, grid mounted', async ({ page }) => {

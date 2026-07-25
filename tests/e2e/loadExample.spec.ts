@@ -31,8 +31,11 @@ test('one click fills all three slots and enables Run QC', async ({ page }) => {
   );
 
   await expect(page.locator('.q-runbar-button')).toBeEnabled();
-  // The pertinence strip confirms the example set matches itself.
-  await expect(page.locator('.q-pertinence-text')).toContainText('265/265', {
+  // The Preview head confirms the example set matches itself, on all three edges.
+  await expect(page.locator('.q-preview-pertinence .q-badge')).toHaveText('OK', {
     timeout: INGEST_TIMEOUT,
   });
+  await expect(page.locator('.q-preview-pertinence-text')).toHaveText(
+    'Inputs look consistent — the dataset, JSON Schema, and QC rules all describe the same variables.',
+  );
 });

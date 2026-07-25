@@ -181,6 +181,13 @@ Priority: `workerFactory > workerUrl > default`. ⚠️ Under the `/quac/` Pages
 ## 9. Theming & misc
 
 - 74 `--dt-*` CSS custom properties; `colorScheme: 'light'|'dark'|'auto'`; `classPrefix` (default `dt`). QuaC maps its severity tokens onto `--dt-annotation-*` (see `ui-design.md`).
+- **`colorScheme` defaults to `'auto'`, and `'auto'` is not "light"** (P19, V22). Under `prefers-color-scheme: dark`
+  the library's stylesheet turns the whole grid dark unless the instance carries `data-dt-color-scheme="light"`, and
+  only the option sets that attribute — so **every** `createDataTable` call must pass `colorScheme: 'light'`
+  explicitly, or a dark-OS user gets a dark grid inside QuaC's white work area.
+- **Accessibility debt** (P19, measured — V22 and `ui-design.md §9`): the grid is a WCAG 2.1.2 **keyboard trap**, and
+  axe reports `aria-required-children` (critical), `color-contrast` on `.dt-col-stats`/`.dt-hidden-chip-name`, and
+  `scrollable-region-focusable` on `.dt-body-scroll`. Re-check all of these on any version bump.
 - Export dialog (CSV/JSON/Parquet) is a lazy ~71–77 kB chunk; QuaC keeps it enabled on the report grid (harmless, useful).
 - Bundle: library JS ~8 kB brotli + styles ~17 kB; the weight is DuckDB WASM itself.
 - Stale bits in upstream docs: exported `VERSION` constant says 0.1.0 (trust package.json); `docs/performance.md` lists CJS sizes but the package is ESM-only since 0.4.0.

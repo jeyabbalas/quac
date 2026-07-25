@@ -19,7 +19,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V21) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V22) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -66,12 +66,78 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-24 · bbd3a25 | P16 | URL configuration & sharing | P05, P06, P12 (P14 for full journey) |
 | [x] 2026-07-24 · 47179c2 | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [x] 2026-07-24 · ce4e15b | P18 | Rule Studio: preview, gate, export | P17 |
-| [ ] | P19 | Branding polish & accessibility | P14, P16, P18 |
+| [x] 2026-07-25 · a89baa0 | P19 | Branding polish & accessibility | P14, P16, P18 |
 | [ ] | P20 | Hardening, perf, docs, release | all |
 
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-25 · P19 · Branding polish + a hard accessibility pass. Shipped: a hand-drawn flat duck favicon (checked by eye
+at 16/24/32/64/128) with `favicon-32.png`/`apple-touch-icon.png` from a committed **Playwright** script — not `sharp`
+as the phase file sketched, since Playwright is already a devDep and renders through the engine that paints the tab;
+`tests/e2e/a11y.spec.ts` (axe over 3 views + 4 report panels + 3 modals, gated on serious/critical — CI already runs
+`test:e2e`, so that IS axe in CI); `reducedMotion.spec.ts`; and `copyDeck.test.ts` (pun containment by scanning string
+literals, allowlist + staleness check; verified by injecting a pun into `toast.ts`). **Four real defects, all
+measured**: (1) `--q-error` on `--q-error-fill` = **3.38** and `--q-success` on `--q-success-fill` = **3.97**, i.e. the
+Error/Valid badges, the stat-card hero, and — via `--dt-annotation-*-fg` — the text in every annotated grid cell, all
+sub-AA; new `--q-*-ink` tokens take the Excel workbook's font colours (`qc-report-spec.md §5`) so workbook/grid/chrome
+share one palette, measuring 5.92 / 5.33 / 7.14 / 4.56 on fill, fills untouched so the P05 `#ffc7ce` e2e stays green.
+(2) `createDataTable` never pinned `colorScheme`, so the library default `'auto'` turned the whole grid dark under a
+dark OS — pinned `'light'` in both calls, proved with `emulateMedia({colorScheme:'dark'})`: `data-dt-color-scheme=light`,
+grid `rgb(255,255,255)`. (3) `--q-orange` measures **1.08:1 on `--q-sky`**, so the focus ring was invisible exactly
+where the header puts Share/GitHub/the nav tabs — `--q-focus-edge` adds an ink companion (18.9/13.0/10.0). (4) the
+placeholder favicon. Axe then found seven more, all fixed: the offenders `<tr role="button">` inside a `<tbody>`
+(`aria-required-children`, the only **critical**), three unfocusable scroll containers, an unnamed `progressbar`,
+`role="tablist"` without the APG keys, a bare pertinence strip, and four more contrast failures on *tinted*
+backgrounds (`--q-gray-500` passes on white at 4.74 but fails at 4.49 on `--q-yellow-tint`). **The keyboard walk found
+what axe could not**: data-table is a WCAG 2.1.2 keyboard trap — focus `.dt-root` and neither Tab nor Shift+Tab moves
+again, with ~1600 focusables inside — so the report's Download/Re-run were unreachable. Mitigated with a `.q-skiplink`
+(a `<button>`, never an `<a href="#…">` — QuaC routes on the hash) and Escape-to-leave on both grid hosts; logged as
+upstream in `ui-design.md §9` along with the rest of data-table's debt (`.cm-editor` is clean). Deviations: Playwright
+over `sharp`; `--dt-primary`/`--dt-accent` deliberately NOT remapped (96 usages, several white-on-primary — brand hues
+would *create* failures); one `runQc.spec` locator scoped to `.q-duckprogress-meta` because the new stage live region
+repeats that string (copy unchanged). Responsive re-measured at 1023/768/640 — page overflow 0 everywhere; the Studio
+rule table's 32px scroller overflow at 640 fixed below a 720px ceiling so no UIX-3 band can see it. 548 unit (+3) · 44
+browser · 49 e2e (+4) green; entry 37.5 KB gz (was 37.1, budget 300) and axe stayed devDep-only. **For P20**: the
+data-table keyboard trap is the one thing a release audit will flag that QuaC cannot fix in-repo — it wants an upstream
+issue, and `ui-design.md §9` should be re-checked on any data-table bump.
+
+<details><summary>P19 contrast table — every §7 pairing recomputed after the token edits (AA 4.5; focus indicator 3.0)</summary>
+
+| Surface | Pairing | Ratio | AA | Was |
+|---|---|---|---|---|
+| Slot / rule badges | `--q-error-ink` on `--q-error-fill` | **5.92** | ✓ | 3.38 ✗ |
+| Slot / rule badges | `--q-success-ink` on `--q-success-fill` | **5.33** | ✓ | 3.97 ✗ |
+| Slot / rule badges | `--q-info-ink` on `--q-info-fill` | **7.14** | ✓ | 4.89 |
+| Slot / rule badges | `--q-warning-ink` on `--q-warning-fill` | **4.56** | ✓ | unchanged |
+| Grid annotated cell | `--dt-annotation-error-fg` on `-bg`, **as rendered** | **9.12** | ✓ | 3.38 ✗ |
+| Report stat cards | `--q-error-ink` / `--q-success-ink` on their fills | **5.92 / 5.33** | ✓ | 3.38 / 3.97 ✗ |
+| Cap + partial banners | `--q-warning-ink` on `--q-warning-fill` | **4.56** | ✓ | unchanged |
+| Preconfig hint · studio banner · share callout | `--q-info-ink` on `--q-info-fill` | **7.14** | ✓ | 4.89 |
+| Nav count pill | `--q-paper` on `--q-error` / `--q-warning` / `--q-info` | **4.96 / 5.02 / 5.93** | ✓ | unchanged |
+| Severity text on paper | `--q-error` on `--q-paper` | **4.96** | ✓ | unchanged |
+| Editor diagnostics | `--q-error` on `--q-gray-50` | **4.75** | ✓ | unchanged |
+| Header | `--q-ink` on `--q-sky` | **9.96** | ✓ | unchanged |
+| Primary button | `--q-ink` on `--q-yellow` | **13.03** | ✓ | unchanged |
+| Body | `--q-ink` on `--q-paper` | **18.88** | ✓ | unchanged |
+| Studio rail sub-line | `--q-gray-600` on `--q-yellow-tint` | **7.40** | ✓ | 4.49 ✗ |
+| Combobox type hint | `--q-gray-600` on `--q-gray-100` (hover row) | **7.17** | ✓ | 4.35 ✗ |
+| Preview NULL dash | `--q-gray-500` on `--q-paper` | **4.74** | ✓ | 2.52 ✗ |
+| Share excluded ✗ | `--q-gray-600` on `--q-paper` | **7.81** | ✓ | 2.52 ✗ |
+| Focus ring edge | `--q-ink` on paper / sky / yellow | **18.88 / 9.96 / 13.03** | ✓ | orange alone 2.05 / 1.08 / 1.42 ✗ |
+
+The grid row is the *rendered* pair (`rgb(122,11,20)` on `rgb(253,226,229)`) — data-table alpha-blends the tint, so the
+delivered contrast beats the raw `#9c0006`/`#ffc7ce` token pair's 5.92.
+
+**Keyboard-only journey** (no mouse, focus visible at every stop): Load 15 stops, all named — dropzones, URL fields,
+Fetch, details, preview scroller, Apply corrections, Run QC. Report: skip control → panel column in two keys → Summary
+(one tab stop, roving) → 3 severity toggles → Download QC Report → Re-run QC; ←/→ wrap the panel tabs, Home/End jump.
+Studio: New file → rail toggle → 3 file buttons → Download/Add → rule rows + per-row actions → form (id, enabled,
+type, scope, severity, target chips, CodeMirror, comment) → Test rule → Cancel → Save rule. Escape leaves either grid.
+**Dark-OS check**: `data-dt-color-scheme="light"`, `.dt-root` `rgb(255,255,255)`, body `rgb(255,255,255)` — matched.
+**Favicon at 16px**: bill and eye both survive; also checked on a dark tab strip.
+</details>
 
 2026-07-24 · UIX-3 · Interstitial Rule Studio pass on main (post-P18, before P19): the rail collapses and deleting a
 rule asks first. Rail — every band's template now reads `--q-studio-rail` (240→44px on `.q-studio-layout--railclosed`),

@@ -89,6 +89,20 @@
   transform: translateY(-2px);
 }
 
+/* The only unguarded motion left in the app (P19 sweep): duckProgress.css has
+   its own block, the reveal/collapse WAAPI helpers early-return, and the
+   Studio rail fade skips. The hover lift itself goes too — a 2px jump with no
+   easing is exactly the kind of movement the setting is asking us to drop. */
+@media (prefers-reduced-motion: reduce) {
+  .q-gh {
+    transition: none;
+  }
+
+  .q-gh:hover {
+    transform: none;
+  }
+}
+
 .q-gh img {
   width: 46px;
   height: 46px;

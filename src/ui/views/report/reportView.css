@@ -77,7 +77,7 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-sm);
   background: var(--q-warning-fill);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
   font-size: var(--q-text-md);
 }
 
@@ -86,7 +86,7 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-sm);
   background: var(--q-warning-fill);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
   font-size: var(--q-text-md);
 }
 
@@ -208,7 +208,7 @@
 
 .q-statcard--error .q-statcard-value,
 .q-statcard--error .q-statcard-label {
-  color: var(--q-error);
+  color: var(--q-error-ink);
 }
 
 .q-statcard--warning {
@@ -218,7 +218,7 @@
 
 .q-statcard--warning .q-statcard-value,
 .q-statcard--warning .q-statcard-label {
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
 }
 
 .q-statcard--info {
@@ -228,7 +228,7 @@
 
 .q-statcard--info .q-statcard-value,
 .q-statcard--info .q-statcard-label {
-  color: var(--q-info);
+  color: var(--q-info-ink);
 }
 
 .q-statcard--success {
@@ -238,7 +238,7 @@
 
 .q-statcard--success .q-statcard-value,
 .q-statcard--success .q-statcard-label {
-  color: var(--q-success);
+  color: var(--q-success-ink);
 }
 
 .q-sevfilter {
@@ -427,15 +427,19 @@
   font-variant-numeric: tabular-nums;
 }
 
-.q-offender--clickable {
+/* The grid-focus action is a real button in the rule cell (P19 — the row used
+   to carry role="button", which broke aria-required-children). It dresses as
+   the mono rule id, so only the affordances change: pointer + hover tint. */
+.q-offender-focus {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.q-offender--clickable:hover {
-  background: var(--q-gray-50);
-}
-
-.q-offender--clickable:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: -2px;
+.q-offender-focus:hover .q-offenders-ruleid {
+  text-decoration: underline;
 }

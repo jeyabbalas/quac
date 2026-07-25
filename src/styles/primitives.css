@@ -53,6 +53,54 @@
   font-size: var(--q-text-sm);
 }
 
+/* The focus ring's ink edge is a box-shadow (base.css :focus-visible, 0,1,0);
+   every .q-btn hover rule above is 0,3,0 and would otherwise drop it when the
+   pointer happens to rest on a keyboard-focused button. Same specificity, later
+   in the file, so this wins: the ring stays, the 1px hover lift yields. */
+.q-btn:hover:focus-visible {
+  box-shadow: var(--q-focus-edge);
+}
+
+/* Screen-reader-only: in the a11y tree, out of the visual one. Used for live
+   regions whose visible counterpart is a graphic (the run progress bar). */
+.q-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip control — off-screen until focused, then a normal button in flow.
+   Not `display: none`: a hidden element is not focusable, and the whole point
+   is that Tab finds it. */
+.q-skiplink {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 6px 16px;
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-md);
+  background: var(--q-yellow);
+  color: var(--q-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.q-skiplink:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  margin-bottom: var(--q-space-2);
+}
+
 /* Toast */
 .q-toast-region {
   position: fixed;
@@ -176,27 +224,28 @@
   color: var(--q-gray-700);
 }
 
+/* Text on a fill takes the -ink token; the border keeps the mid-tone. */
 .q-badge--valid {
   background: var(--q-success-fill);
-  color: var(--q-success);
+  color: var(--q-success-ink);
   border-color: var(--q-success);
 }
 
 .q-badge--warning {
   background: var(--q-warning-fill);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
   border-color: var(--q-warning);
 }
 
 .q-badge--error {
   background: var(--q-error-fill);
-  color: var(--q-error);
+  color: var(--q-error-ink);
   border-color: var(--q-error);
 }
 
 .q-badge--info {
   background: var(--q-info-fill);
-  color: var(--q-info);
+  color: var(--q-info-ink);
   border-color: var(--q-info);
 }
 

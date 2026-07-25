@@ -13,7 +13,7 @@
   padding: var(--q-space-2) var(--q-space-3);
   border-radius: var(--q-radius-sm);
   background: var(--q-info-fill);
-  color: var(--q-info);
+  color: var(--q-info-ink);
   font-size: var(--q-text-md);
 }
 
@@ -304,7 +304,10 @@
 
 .q-filebtn-pertinence {
   font-size: var(--q-text-xs);
-  color: var(--q-gray-500);
+  /* gray-500 measures 4.74 on paper but 4.49 on --q-yellow-tint, which is
+     exactly the background the aria-current file button paints — axe caught it
+     there. gray-600 is 7.40 and still reads as the quiet sub-line. */
+  color: var(--q-gray-600);
 }
 
 /* ≤1023 the rail is a horizontal file strip — a full-width stack of file
@@ -418,6 +421,16 @@
 @media (min-width: 1280px) {
   .q-rulegrid-targets {
     max-width: 130px;
+  }
+}
+
+/* Phone widths (P19 sweep). Measured .q-studio-gridbody inner overflow: 0px at
+   1600/1440/1366/1280/1024/768, but 32px at 640 — the targets column is the
+   elastic one and 200px is ~32px too generous once the card is 608 wide. The
+   ceiling is 720px so no band UIX-3 measured can see this rule. */
+@media (max-width: 720px) {
+  .q-rulegrid-targets {
+    max-width: 150px;
   }
 }
 
@@ -853,7 +866,7 @@
 .q-chip--unknown {
   background: var(--q-warning-fill);
   border-color: var(--q-warning);
-  color: var(--q-warning);
+  color: var(--q-warning-ink);
 }
 
 .q-chip-remove {
@@ -911,7 +924,8 @@
 }
 
 .q-combolist-type {
-  color: var(--q-gray-500);
+  /* The hovered/active row paints gray-100, where gray-500 is 4.35. */
+  color: var(--q-gray-600);
   font-size: var(--q-text-xs);
 }
 

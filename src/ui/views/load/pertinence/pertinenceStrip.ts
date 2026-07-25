@@ -63,6 +63,11 @@ function blockCopy(result: PertinenceResult, declaredCount: number): string {
 export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void {
   const strip = document.createElement('div');
   strip.className = 'q-pertinence';
+  // Named region: the strip is a standalone verdict between the slot cards and
+  // the preview, and had no ARIA at all. `render()` reassigns className and
+  // replaces children but never touches attributes, so this is set once.
+  strip.setAttribute('role', 'region');
+  strip.setAttribute('aria-label', 'Pertinence');
   strip.hidden = true;
   host.append(strip);
 
@@ -80,7 +85,7 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
     strip.replaceChildren();
     strip.className = `q-pertinence q-pertinence--${verdict}`;
     const badge = BADGES[verdict];
-    strip.append(createBadge(badge.text, badge.tone));
+    strip.append(verdictLabel(), createBadge(badge.text, badge.tone));
     const text = document.createElement('p');
     text.className = 'q-pertinence-text';
     text.textContent = summaryText(result, declaredCount);
@@ -205,6 +210,7 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
       strip.replaceChildren();
       strip.className = `q-pertinence q-pertinence--${ok ? 'ok' : 'warn'}`;
       strip.append(
+        verdictLabel(),
         createBadge(ok ? 'OK' : 'Warning', ok ? 'valid' : 'warning'),
         renderRulesLine(rulesLine),
       );
@@ -214,6 +220,18 @@ export function mountPertinenceStrip(host: HTMLElement, ctx: ShellContext): void
 
     strip.hidden = true;
   });
+}
+
+/**
+ * The badge reads "OK" / "Warning" / "Blocked" — plain text, never colour
+ * alone, but out of context those words say nothing about WHAT is OK. This
+ * prefixes them for screen readers without changing the visual strip.
+ */
+function verdictLabel(): HTMLSpanElement {
+  const label = document.createElement('span');
+  label.className = 'q-sr-only';
+  label.textContent = 'Data fit verdict:';
+  return label;
 }
 
 function renderRulesLine(text: string): HTMLParagraphElement {

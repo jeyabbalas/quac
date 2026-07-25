@@ -55,6 +55,7 @@ export function createPreviewPane(): PreviewPane {
   const el = document.createElement('section');
   el.className = 'q-studio-preview';
   el.setAttribute('aria-label', 'Live preview');
+  el.tabIndex = -1; // escape target for the sample grid's keyboard trap
 
   const head = document.createElement('div');
   head.className = 'q-studio-previewhead';
@@ -114,7 +115,17 @@ export function createPreviewPane(): PreviewPane {
     progress.setProgress(PROGRESS_LABELS.gridPrep, null);
     const gridHost = document.createElement('div');
     gridHost.className = 'q-studio-samplegrid';
-    sampleWrap.replaceChildren(progress.el, gridHost);
+    // Same keyboard trap as the report grid — see reportView.ts for the
+    // measurement. Escape lands on the pane, from which Shift+Tab reaches the
+    // work column normally.
+    gridHost.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      el.focus();
+    });
+    const escapeNote = document.createElement('p');
+    escapeNote.className = 'q-sr-only';
+    escapeNote.textContent = 'The sample grid captures Tab. Press Escape to leave it.';
+    sampleWrap.replaceChildren(progress.el, escapeNote, gridHost);
     try {
       await destroyTable();
       const source = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);
@@ -125,6 +136,9 @@ export function createPreviewPane(): PreviewPane {
         tableName: QUAC_STUDIO_DISPLAY,
         bridge,
         persistence: false,
+        // See reportGrid.ts: the default 'auto' would turn this grid dark on a
+        // dark-OS machine while the rest of the Studio stays on paper.
+        colorScheme: 'light',
       });
       tableGeneration = generation;
     } catch (err) {

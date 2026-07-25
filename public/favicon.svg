@@ -1,3 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <circle cx="16" cy="16" r="14" fill="#FFD21E" stroke="#111111" stroke-width="2" />
+<!-- QuaC favicon — hand-drawn flat duck, legible at 16px (ui-design.md §6).
+     Colours are the brand tokens as literals; an SVG served as an icon cannot
+     read the page's custom properties, so keep these in step with tokens.css:
+     #00CCFF --q-sky · #FFD21E --q-yellow · #FF9F1C --q-orange · #111111 --q-ink.
+     Draw order is deliberate — neck, then bill, then head, then eye — so each
+     shape's inner outline is covered by the one on top and only the silhouette
+     survives downscaling. The raster duck in quac-logo.svg cannot do this. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="QuaC">
+  <defs>
+    <clipPath id="q-disk">
+      <circle cx="16" cy="16" r="14.5" />
+    </clipPath>
+  </defs>
+  <circle cx="16" cy="16" r="14.5" fill="#00CCFF" />
+  <g clip-path="url(#q-disk)" stroke="#111111" stroke-width="2" stroke-linejoin="round">
+    <path d="M8.5 16 L6.5 32 L22 32 L17.5 17 Z" fill="#FFD21E" />
+    <path d="M15 11.2 h9 a2.3 2.3 0 0 1 0 4.6 h-9 z" fill="#FF9F1C" />
+    <circle cx="13" cy="12.5" r="5.9" fill="#FFD21E" />
+  </g>
+  <circle cx="14.8" cy="10.3" r="1.8" fill="#111111" />
+  <circle cx="16" cy="16" r="14.5" fill="none" stroke="#111111" stroke-width="2" />
 </svg>

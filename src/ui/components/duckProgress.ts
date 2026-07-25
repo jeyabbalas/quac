@@ -128,6 +128,11 @@ export function createDuckProgress(): DuckProgress {
   const el = document.createElement('div');
   el.className = 'q-duckprogress q-duckprogress--indeterminate';
   el.setAttribute('role', 'progressbar');
+  // A progressbar needs an accessible NAME as well as a value; aria-valuetext
+  // carries the stage ("Validating against the schema — 43%"), so the name only
+  // has to say what the widget is. Generic is honest here: ui-design.md §6 pins
+  // "one progress surface at a time", so there is never a second to tell apart.
+  el.setAttribute('aria-label', 'Progress');
   el.setAttribute('aria-valuemin', '0');
   el.setAttribute('aria-valuemax', '100');
 

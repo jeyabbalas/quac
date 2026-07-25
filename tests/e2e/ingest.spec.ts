@@ -39,7 +39,7 @@ async function dropFile(page: Page, path: string, name: string): Promise<void> {
   await page.dispatchEvent('.q-dropzone', 'drop', { dataTransfer });
 }
 
-test('drag-drop CSV shows Valid badge, dims, and the 50-row preview', async ({ page }) => {
+test('drag-drop CSV shows Valid badge, dims, and the tabbed preview', async ({ page }) => {
   await page.goto('/quac/');
 
   await dropFile(page, HESP('csv'), 'hesp_dirty_100.csv');
@@ -47,13 +47,21 @@ test('drag-drop CSV shows Valid badge, dims, and the 50-row preview', async ({ p
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await expect(datasetSummary(page)).toHaveText(`hesp_dirty_100.csv · ${HESP_DIMS}`);
 
-  await expect(page.getByText('Preview (first 50 rows)')).toBeVisible();
+  // Dataset is the first available tab, so it opens selected.
+  await expect(page.locator('.q-preview .q-paneltab', { hasText: 'Dataset' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByText('first 50 of 101 rows · 266 columns')).toBeVisible();
   const preview = page.locator('.q-preview-table');
   await expect(preview).toBeVisible();
   await expect(preview.locator('tbody tr')).toHaveCount(50);
   await expect(preview.locator('thead th').first()).toHaveText('record_id');
   // __row__ is engine-internal — never shown to users.
   await expect(preview.locator('thead')).not.toContainText('__row__');
+  // The type row. Deterministic: a CSV ingests all-VARCHAR and this test loads
+  // no schema, so nothing casts. loadPreview.spec covers the post-cast flip.
+  await expect(preview.locator('thead tr').nth(1).locator('td').first()).toHaveText('VARCHAR');
 });
 
 for (const ext of ['tsv', 'json', 'parquet'] as const) {
@@ -86,6 +94,8 @@ test('multi-sheet xlsx opens the SheetPicker (Sheet 1 preselected); picking shee
   await expect(datasetSummary(page)).toHaveText('two_sheets.xlsx · 4 rows × 3 cols');
   await expect(page.locator('.q-preview-table thead th').first()).toHaveText('pet_id');
   await expect(page.locator('.q-preview-table')).toContainText('Quackers');
+  // The whole dataset fits in the preview, so the meta line drops "first N of".
+  await expect(page.getByText('4 rows · 3 columns')).toBeVisible();
 });
 
 test('cancelling the SheetPicker leaves the slot untouched', async ({ page }) => {

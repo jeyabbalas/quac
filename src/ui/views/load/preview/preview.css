@@ -1,0 +1,326 @@
+/* Load-view Preview section (UIX-4): the Tier 1 sticker, the shared panel
+   head, the data dictionary, and the QC rules placeholder. The tab strip
+   itself is styles/primitives.css; the dataset TABLE is
+   components/plainPreviewTable.css. */
+
+/* Tier 1 sticker — the same recipe as .q-report-panels (reportView.css:100). */
+.q-preview {
+  margin-top: var(--q-space-5);
+  padding: var(--q-space-4);
+  border: var(--q-stroke);
+  border-radius: var(--q-radius-lg);
+  background: var(--q-paper);
+  box-shadow: var(--q-shadow-2);
+  min-width: 0;
+}
+
+.q-preview-head {
+  margin-bottom: var(--q-space-3);
+}
+
+.q-preview-title {
+  margin: 0;
+  font-size: var(--q-text-xl);
+  font-weight: 700;
+}
+
+/* Every panel opens with this head — title left, muted meta right. It is what
+   makes three different payloads read as one component. (The Report and Studio
+   already have their own head classes, so there is no fourth shared primitive
+   to invent here.) */
+.q-preview-panelhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--q-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--q-space-2);
+}
+
+.q-preview-paneltitle {
+  margin: 0;
+  font-size: var(--q-text-lg);
+  font-weight: 600;
+}
+
+.q-preview-meta {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+}
+
+/* ---- Data dictionary ---------------------------------------------------- */
+
+.q-dd-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--q-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--q-space-3);
+}
+
+.q-dd-search {
+  display: flex;
+  align-items: baseline;
+  gap: var(--q-space-2);
+  flex: 1 1 280px;
+  max-width: 360px;
+}
+
+.q-dd-search-label {
+  font-size: var(--q-text-sm);
+  font-weight: 600;
+  color: var(--q-gray-700);
+  white-space: nowrap;
+}
+
+/* There is no shared input class yet, so this is the established recipe
+   declared locally (studioView.css:644, slotCard.css:113). */
+.q-dd-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--q-text-md);
+  padding: 6px 10px;
+  border: var(--q-border-input);
+  border-radius: var(--q-radius-sm);
+  background: var(--q-paper);
+  color: var(--q-ink);
+}
+
+.q-dd-search-input:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+.q-dd-count {
+  margin: 0;
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+  white-space: nowrap;
+}
+
+/* min() form matches .q-studio-testpanel. */
+.q-dd-scroll {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: 0 var(--q-space-3) var(--q-space-3);
+}
+
+.q-dd-cat {
+  margin-top: var(--q-space-4);
+}
+
+.q-dd-cathead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--q-space-3);
+  flex-wrap: wrap;
+}
+
+.q-dd-cattitle {
+  margin: 0;
+  font-size: var(--q-text-lg);
+  font-weight: 600;
+}
+
+.q-dd-catcount {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+  white-space: nowrap;
+}
+
+.q-dd-catdesc {
+  margin: 2px 0 var(--q-space-2);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+  max-width: 84ch;
+}
+
+/* Twelve tables, one per category — not one table with full-width heading rows
+   inside <tbody>. axe's th-has-data-cells is SERIOUS (the gate severity) and a
+   <th scope="colgroup" colspan="7"> in a tbody is exactly the construct whose
+   header/data-cell association it computes unpredictably; ui-design.md §7
+   records that the app's only historical CRITICAL came from getting table
+   semantics slightly wrong. Here every th is a scope="col" in a <thead> with
+   data cells directly beneath, so the rule is satisfied by construction.
+
+   Columns stay aligned across all twelve because table-layout: fixed takes
+   widths from identical th:nth-child(n) percentages, ignoring content.
+
+   Measured .q-dd-scroll scrollWidth / clientWidth (Chromium, HESP, default
+   zoom):
+     1600 → 1514 / 1514   1440 → 1354 / 1354   1366 → 1280 / 1280
+     1280 → 1194 / 1194   1024 → 1192 /  938   768 → 1192 / 698
+   So it fills the panel without scrolling from 1280 up, and scrolls
+   horizontally below — which is exactly what the min-width is for. Page-level
+   horizontal overflow is 0 at every one of those widths. */
+.q-dd-table {
+  width: 100%;
+  min-width: 1180px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--q-text-xs);
+}
+
+.q-dd-table th,
+.q-dd-table td {
+  text-align: left;
+  padding: 6px;
+  border-bottom: var(--q-border-hairline);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.q-dd-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--q-paper);
+  border-bottom: var(--q-border-input);
+  font-weight: 600;
+}
+
+/* Variable · Description · Type · Format · Valid values · Constraints ·
+   Additional information — measured, not guessed (ui-design.md §5). Natural
+   content widths over the 28-row Household composition category at 1440:
+   Variable p90 159px · Description p90 338 · Type p90 130 · Format MEDIAN 12
+   (an em-dash: only 5 of HESP's 265 variables carry a `format`, so the
+   package falls back to describing `pattern`) · Additional info header alone
+   124. Hence Format is the narrowest column and Type takes what it gives up —
+   at 8% "integer + coded values" wrapped to two lines on every coded row. */
+.q-dd-table th:nth-child(1) {
+  width: 13%;
+}
+
+.q-dd-table th:nth-child(2) {
+  width: 19%;
+}
+
+.q-dd-table th:nth-child(3) {
+  width: 10%;
+}
+
+.q-dd-table th:nth-child(4) {
+  width: 7%;
+}
+
+.q-dd-table th:nth-child(5) {
+  width: 20%;
+}
+
+.q-dd-table th:nth-child(6) {
+  width: 17%;
+}
+
+.q-dd-table th:nth-child(7) {
+  width: 14%;
+}
+
+.q-dd-table tbody tr:hover {
+  background: var(--q-gray-50);
+}
+
+/* Defensive: the UA sheet's `tr { display: table-row }` is as specific as
+   [hidden]'s `display: none` and later in the cascade would win. */
+.q-dd-table tr[hidden] {
+  display: none;
+}
+
+.q-dd-name {
+  font-family: var(--q-font-mono);
+  font-weight: 600;
+}
+
+/* title\ndescription\n$comment arrive as one string. */
+.q-dd-desc {
+  white-space: pre-line;
+}
+
+.q-dd-values,
+.q-dd-constraints,
+.q-dd-extras {
+  display: grid;
+  gap: 3px;
+}
+
+/* Sentinel vs substantive is carried by chip SHAPE, never by a severity token:
+   a missing-value code is not a warning. */
+.q-dd-chip {
+  display: inline-block;
+  font-family: var(--q-font-mono);
+  padding: 0 6px;
+  border-radius: var(--q-radius-sm);
+  background: var(--q-gray-100);
+  white-space: nowrap;
+}
+
+.q-dd-value--sentinel .q-dd-chip {
+  background: var(--q-paper);
+  border: var(--q-border-input);
+}
+
+.q-dd-valuesep {
+  margin-top: var(--q-space-1);
+  font-weight: 600;
+  color: var(--q-gray-700);
+}
+
+.q-dd-when {
+  display: block;
+  font-family: var(--q-font-mono);
+  color: var(--q-gray-600);
+}
+
+.q-dd-extra-label {
+  color: var(--q-gray-600);
+}
+
+.q-dd-json {
+  margin: 2px 0 0;
+  font-family: var(--q-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The default marker outline is easy to lose against these hairlines. */
+.q-dd-scroll summary:focus-visible,
+.q-dd-notes summary:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+.q-dd-scroll summary {
+  cursor: pointer;
+  color: var(--q-gray-600);
+}
+
+.q-dd-notes {
+  margin-top: var(--q-space-3);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+}
+
+.q-dd-notes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.q-dd-notes ul {
+  margin: var(--q-space-2) 0 0;
+  padding-left: var(--q-space-5);
+}
+
+/* ---- QC rules ----------------------------------------------------------- */
+
+/* Tier 3 surface. Solid hairline, never dashed — a dashed box is the framed
+   .q-empty, which ui-design.md:201 reserves for view-level emptiness. */
+.q-rulespreview {
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: var(--q-space-5);
+  min-height: 160px;
+}

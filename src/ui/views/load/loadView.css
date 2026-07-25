@@ -54,19 +54,8 @@
   }
 }
 
-/* Preview section. The TABLE itself lives in
-   components/plainPreviewTable.css — it is shared with the Studio's rule-test
-   sample, and was reaching that view only because shell.ts eagerly imports
-   loadView.ts. */
-.q-preview {
-  margin-top: var(--q-space-5);
-}
-
-.q-preview-title {
-  margin: 0 0 var(--q-space-2);
-  font-size: var(--q-text-lg);
-  font-weight: 700;
-}
+/* The Preview section owns its chrome in views/load/preview/preview.css; the
+   table it shares with the Studio is in components/plainPreviewTable.css. */
 
 /* Rules slot detail (P12): per-file blocks with the lint list file → rule. */
 .q-rulesfile {

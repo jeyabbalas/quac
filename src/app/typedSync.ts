@@ -17,11 +17,26 @@
 import { reportError } from './errors';
 import { columnDigest } from '../core/schema/column-meta';
 import { schemaState } from '../core/schema/schema-store';
-import { effect } from './signals';
+import { effect, signal } from './signals';
+import type { Signal } from './signals';
 import type { ColumnDigest } from '../core/schema/column-meta';
 import type { ShellContext } from './shell';
 
 const RUNNING = new Set(['prepare', 'corrections', 'schema', 'rules', 'annotate']);
+
+/**
+ * Bumped once per completed rebuild of `quac_typed` + the `data` view.
+ *
+ * The doc comment above promises the 50-row preview sees what the run will
+ * see, but nothing delivered it: a rebuild re-points `data` WITHOUT touching
+ * `dataset.generation`, and the Load preview keys on generation alone. That
+ * was invisible while the preview showed only values — raw "43" and typed 43
+ * both render as the text `43`. With a storage-type row it becomes a visible
+ * lie: every column would read VARCHAR forever, in exactly the journey the
+ * type row exists for. Anything reading post-cast SHAPE must key on
+ * `${generation}|${typedRevision}`.
+ */
+export const typedRevision: Signal<number> = signal(0);
 
 export function installTypedSync(ctx: ShellContext): void {
   let lastKey = '';
@@ -75,6 +90,10 @@ export function installTypedSync(ctx: ShellContext): void {
       await tables.swapWorkTable(bridge, `SELECT * FROM ${tables.QUAC_TYPED}`);
       await tables.refreshDataView(bridge);
       if (stale()) return;
+      // The `data` view now points at different column TYPES. The effect above
+      // already bails when nothing needs rebuilding, so this only fires on a
+      // real rebuild.
+      typedRevision.set(typedRevision.get() + 1);
       await rulesStore.setLintContext({ runner: bridge, datasetColumns: dataset.columns });
     })().catch((err: unknown) => {
       lastKey = ''; // allow a retry on the next signal change

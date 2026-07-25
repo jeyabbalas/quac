@@ -1,19 +1,19 @@
 /**
  * Load view (ingestion.md §1): persistent hint line, the three input slot
- * cards (Dataset P05 · JSON Schema P06 · QC Rules P12), the plain 50-row
- * preview, and the P14 run bar (Apply-corrections toggle + Run QC button —
- * enabled when Dataset + at least one of Schema/Rules are valid; never
- * auto-runs).
+ * cards (Dataset P05 · JSON Schema P06 · QC Rules P12), the tabbed Preview
+ * section (UIX-4 — dataset rows, data dictionary, QC rules), and the P14 run
+ * bar (Apply-corrections toggle + Run QC button — enabled when Dataset + at
+ * least one of Schema/Rules are valid; never auto-runs).
  */
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
 import { assetUrl } from '../../../app/urlBase';
 import { registerDatasetUrlLoader } from '../../../app/bootConfig';
-import { renderPreviewTable } from '../../components/plainPreviewTable';
 import { addRuleUrls } from '../../../core/rules/rules-store';
 import { loadSchemaUrls } from '../../../core/schema/schema-store';
 import { mountDatasetCard } from './datasetCard';
 import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
+import { mountPreviewSection } from './preview/previewSection';
 import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
 import { isRunningStage } from '../../../app/store';
@@ -108,13 +108,10 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const pertinenceHost = document.createElement('div');
   mountPertinenceStrip(pertinenceHost, ctx);
 
-  const preview = document.createElement('section');
-  preview.className = 'q-preview';
-  preview.hidden = true;
-  const previewTitle = document.createElement('h2');
-  previewTitle.className = 'q-preview-title';
+  // Preview (UIX-4): all three inputs in one tabbed panel. Owns its own
+  // visibility and data effects.
   const previewHost = document.createElement('div');
-  preview.append(previewTitle, previewHost);
+  mountPreviewSection(previewHost, ctx);
 
   // ---- Run bar (P14): toggle + Run QC + disabled-state reason ----
   const runBar = document.createElement('section');
@@ -145,7 +142,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   });
   runBar.append(reason, toggleLabel, runButton);
 
-  container.append(hint, example, grid, pertinenceHost, preview, runBar);
+  container.append(hint, example, grid, pertinenceHost, previewHost, runBar);
 
   const usable = (slot: SlotState): boolean =>
     slot.status === 'valid' || slot.status === 'warning';
@@ -190,37 +187,5 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
       const subject = rulesReady && schemaReady ? 'Rules and a schema are' : rulesReady ? 'Rules are' : 'A schema is';
       preconfigHint.textContent = `${subject} pre-loaded. Add your dataset to run QC.`;
     }
-  });
-
-  // Preview refresh: engine access stays behind a dynamic import so the
-  // entry chunk never pulls bridge/data-table code (bundle gate).
-  let renderedGeneration = 0;
-  effect(() => {
-    const dataset = ctx.store.dataset.get();
-    if (!dataset) {
-      preview.hidden = true;
-      renderedGeneration = 0;
-      return;
-    }
-    if (dataset.generation === renderedGeneration) return;
-    renderedGeneration = dataset.generation;
-    const generation = dataset.generation;
-    void (async () => {
-      const [{ getBridge }, { DATA_VIEW }] = await Promise.all([
-        import('../../../core/bridge/bridge'),
-        import('../../../core/bridge/tables'),
-      ]);
-      const bridge = await getBridge();
-      const rows = await bridge.query(
-        `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} ORDER BY __row__ LIMIT 50`,
-      );
-      if (ctx.store.dataset.get()?.generation !== generation) return; // stale
-      const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
-      previewTitle.textContent = `Preview (first ${String(rows.length)} rows)`;
-      renderPreviewTable(previewHost, columns, rows);
-      preview.hidden = false;
-    })().catch(() => {
-      preview.hidden = true; // preview is best-effort; errors surface via the slot
-    });
   });
 }

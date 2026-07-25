@@ -73,6 +73,41 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · UIX-4 · Interstitial Load-view pass on main (post-P19, before P20): **the Load tab now previews all three
+inputs, not one.** It took a dataset, a schema set and rules files and showed you a bare 50-row table — you could load
+the bundled 14-file, 265-variable HESP schema and never see a single variable it defines. One Tier 1 sticker now holds
+a `createPanelTabs` tablist over **Dataset · Data dictionary · QC rules**. Extraction is
+`json-schema-data-dictionary@0.1.0` (MIT, zero runtime deps, pinned exact) behind `core/schema/data-dictionary.ts`;
+QuaC renders its own table. **Measured on HESP: 265 rows / 12 categories / 0 warnings in 17.6 ms** on the main thread
+(so no worker, no chunking, no idle callback), per-category counts `[16,28,24,32,26,24,24,26,17,23,10,15]` pinned.
+Search filters in **0.1 ms median (p90 0.3)** per keystroke over 265 precomputed haystacks — but it is a per-row
+`hidden` toggle rather than a rebuild because a rebuild would allocate ~8,500 nodes per keystroke, destroy every
+`<details>` the user just opened and reset the scroll position mid-typing. Entry JS **37.5 → 41.2 KB gz**, all of it
+QuaC's own new UI: the package sits in a lazy chunk (16.4 KB gz) with a `check-bundle-size.mjs` marker guard beside
+`EXCELJS_MARKER`/`CODEMIRROR_MARKER`; a static import would have grown eagerly-loaded JS ~45% to serve a tab most
+users never open. Dictionary column widths measured, not guessed (Format's median content is **12px — an em-dash**,
+since only 5 of 265 HESP variables carry a `format` and the package falls back to describing `pattern`; Type's p90 is
+130px and wrapped at 8%), so Format 8→7%, Additional info 15→14%, Type 8→10%; `.q-dd-scroll` scrollWidth/clientWidth
+1514/1514 · 1354/1354 · 1280/1280 · 1194/1194 · 1192/938 · 1192/698 at 1600/1440/1366/1280/1024/768 with page-level
+overflow 0 throughout. **Four deviations, all deliberate.** (1) `typedRevision` — `typedSync.ts`'s own doc comment
+promised the 50-row preview sees what the run will see, but a rebuild re-points the `data` view WITHOUT bumping
+`dataset.generation`, which was invisible while the preview showed only values and becomes a visible lie with a type
+row: measured **250 BIGINT · 9 DOUBLE · 7 VARCHAR** after the cast against 266 VARCHAR before. (2) The panel-tab
+primitives moved to `primitives.css` and `components/panelTabs.ts`, discharging `phase-17-studio-editor.md:41`'s
+standing instruction; `ruleForm.ts` needed no change, which was the point. (3) All three tabs are permanently present
+(the option preview said disabled/absent-until-filled) — the rules tab has no content yet and would have hidden
+forever, and both roving-tabindex hazards vanish. (4) The dictionary renders where `columnDigest` refuses to: §A.5
+says fatal set-level errors block validation, not schema browsing. The **agreement test** is the highest-value artifact
+— row count and variable-name set asserted equal across HESP, tiny and every synthetic set — and it caught a real
+divergence on the first run: `synthetic/no-ids` gives 0 from the digest and 2 from the package, because §E.1 walks
+`items.allOf` and that fixture hides the row object behind a `$ref` ON `items`. Widening §E.1 would newly subject
+those columns to casting/translation/Ajv attribution, so it is **pinned with its exact numbers** as a known
+divergence, not skipped. One bug found by driving it: the visibility effect read the signal it wrote, so
+`active.set()` re-entered it while `pinned` was still false and bounced the user's *first* click on any other tab.
+Also stripped a literal NUL byte from `json-schema-subsystem.md` (offset 17636) that made grep/rg treat the whole spec
+as binary. 51 new unit tests (548 → 599) + 9 new e2e (`loadPreview.spec.ts`, incl. the `typedRevision` regression);
+`a11y.spec.ts` now ACTIVATES each Preview tab before scanning, since axe skips `[hidden]`; 58 e2e green.
+
 2026-07-25 · P19 · **Favicon re-cut from the artwork** (post-merge, on review of the shipped icon). P19 hand-drew the
 duck because the phase file said the artwork was a raster that wouldn't downscale — but `a44d234` had already replaced
 `assets/logo/*.svg` with clean vector paths, so the tab carried a *different* duck than the header. `generate-favicons.mjs`

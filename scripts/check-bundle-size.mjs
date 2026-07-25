@@ -17,6 +17,12 @@ const EXCELJS_MARKER = 'ExcelJS';
 // a live-announcer class name string in @codemirror/view's dist (survives
 // minification), absent from app sources.
 const CODEMIRROR_MARKER = 'cm-announced';
+// json-schema-data-dictionary (UIX-4) serves one Load-view tab most users never
+// open; a static import would grow eagerly-loaded JS by ~45%. The marker is a
+// thrown-error string from its extractor: it survives minification and appears
+// nowhere in app code (data-dictionary.ts guards the empty case rather than
+// letting it throw).
+const DICTIONARY_MARKER = 'requires a non-empty array';
 const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const html = readFileSync(join(distDir, 'index.html'), 'utf8');
 
@@ -56,6 +62,14 @@ for (const ref of refs) {
     console.error(`check-bundle-size: FAIL — CodeMirror leaked into the entry chunk ${rel}`);
     process.exit(1);
   }
+  // And for the data-dictionary extractor: only the lazy chunk behind the Load
+  // view's Data dictionary tab may carry it.
+  if (bytes.includes(DICTIONARY_MARKER)) {
+    console.error(
+      `check-bundle-size: FAIL — json-schema-data-dictionary leaked into the entry chunk ${rel}`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log(`entry JS total: ${(total / 1024).toFixed(1)} KB gz (budget ${LIMIT_BYTES / 1024} KB)`);
@@ -64,8 +78,8 @@ if (total > LIMIT_BYTES) {
   process.exit(1);
 }
 
-// Report the lazy exceljs/CodeMirror chunk weights so their cost stays visible
-// in CI logs.
+// Report the lazy third-party chunk weights so their cost stays visible in CI
+// logs.
 const assetsDir = join(distDir, 'assets');
 const lazyChunks = readdirSync(assetsDir).filter(
   (f) => f.endsWith('.js') && !entryRels.has(`assets/${f}`),
@@ -73,6 +87,7 @@ const lazyChunks = readdirSync(assetsDir).filter(
 for (const { label, marker, missing } of [
   { label: 'exceljs', marker: EXCELJS_MARKER, missing: 'report-export path absent?' },
   { label: 'codemirror', marker: CODEMIRROR_MARKER, missing: 'studio workspace path absent?' },
+  { label: 'data-dictionary', marker: DICTIONARY_MARKER, missing: 'dictionary path absent?' },
 ]) {
   const chunk = lazyChunks.find((f) => readFileSync(join(assetsDir, f)).includes(marker));
   if (chunk === undefined) {

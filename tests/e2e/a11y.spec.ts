@@ -111,6 +111,18 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
   await expect(page.locator('.q-pertinence-text')).toBeVisible({ timeout: INGEST_TIMEOUT });
   await expectNoSeriousViolations(page, 'Load (populated)');
 
+  // axe skips [hidden] subtrees, so each Preview panel must be ACTIVATED
+  // before it is scanned — otherwise two thirds of the component (the
+  // dictionary's twelve tables, its search field, the rules surface) escape
+  // the gate entirely.
+  for (const name of ['Data dictionary', 'QC rules']) {
+    await page.locator('.q-preview .q-paneltab', { hasText: name }).click();
+    if (name === 'Data dictionary') {
+      await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+    }
+    await expectNoSeriousViolations(page, `Load → ${name}`);
+  }
+
   await page.getByRole('button', { name: 'Share' }).click();
   await expect(page.getByRole('dialog', { name: 'Share this configuration' })).toBeVisible();
   await expectNoSeriousViolations(page, 'Share modal');

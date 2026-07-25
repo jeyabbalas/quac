@@ -107,7 +107,15 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |  +-------------------------+  | [details v]             |  +---------------+ |
 |                               +-------------------------+                    |
 |  [OK] Pertinence: 265/265 schema variables present · Rules: 28/28 present    |
-|  Preview (first 50 rows)  [plain table...................................]  |
+|  +== Preview =============================================================+ |
+|  |  Dataset | Data dictionary | QC rules        <- PanelTabs (APG tablist) | |
+|  |------------------------------------------------------------------------| |
+|  |  Dataset preview             first 50 of 101 rows · 266 columns         | |
+|  |  | record_id | wave   | household_id |  ...     <- sticky <thead>       | |
+|  |  | VARCHAR   | BIGINT | VARCHAR      |          <- type row (<td>, mono)| |
+|  |  |-----------------------------------|                                 | |
+|  |  | HH0000001 |      1 | HH00000001   |  ...                             | |
+|  +========================================================================+ |
 +------------------------------------------------------------------------------+
 |  Load a dataset to run QC.       [x] Apply corrections          [ Run QC ]  |  <- sticky bottom bar
 +------------------------------------------------------------------------------+
@@ -191,7 +199,7 @@ collapse goes inert (remembered, not honoured) until the window is wide again.
 
 ## 5. Component inventory
 
-AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PertinenceStrip, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
+AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, DataDictionaryTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PertinenceStrip, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
 Conventions:
 - **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body).
@@ -200,7 +208,10 @@ Conventions:
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
 - **Empty states**: framed `createEmptyState` is for view-level empties only (a whole route with nothing to show). In-panel empties are a quiet `.q-panel-note` paragraph — a dashed box inside a sticker card reads as a broken drop zone.
 - **Progress**: DuckProgress v2 mechanics + the run-level monotonic mapper (`runProgressModel.ts`) and the `PROGRESS_LABELS` copy home are specified in §6.
-- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state — imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`. Bare e2e-hook classes (`.q-run-cancel`, `.q-example-load`) are noted in comments where they'd otherwise look like dead selectors.
+- **Tabbed panels go through `createPanelTabs`** (`components/panelTabs.ts`): the Report panel column (`idPrefix: 'q-report'`) and the Load view's Preview section (`'q-preview'`). `idPrefix` is mandatory because the shell keeps all views mounted and toggles `hidden`, so the tablists coexist in the document and a shared prefix would break `aria-controls` and trip `duplicate-id-aria`. The Studio's SQL/JS language switch borrows the `.q-paneltabs`/`.q-paneltab` *look* but is deliberately a pair of `aria-pressed` toggles, **not** a tablist — it switches an editor mode, it does not reveal a panel. Do not "fix" it into `createPanelTabs`.
+- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state, and — since UIX-4 — the panel-tab strip `.q-paneltabs`/`.q-paneltab*` plus `.q-panel`/`.q-panel-note`; imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp,plainPreviewTable}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`, `preview/preview.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`.
+  - The panel-tab move is the one sanctioned exception to "no additions", and it *relocated* shared primitives rather than adding a component's styles: `.q-paneltab` had been dual-consumer since P17 (a debt `phase-17-studio-editor.md:41` explicitly scheduled for P19/P20) and reached the Studio only because `reportView.css` happens to be eagerly bundled; `.q-panel-note` had nine consumers across three views. A third inline copy would have compounded it.
+- Bare e2e-hook classes (`.q-run-cancel`, `.q-example-load`) are noted in comments where they'd otherwise look like dead selectors.
 
 **For P17 (Rule Studio)**: compose, don't invent. The studio's two panels are Tier 1 stickers; inner structure (rule rows, form fields) is Tier 2 hairlines; the preview grid is a Tier 3 surface sized like `.q-report-grid`. Buttons come from the `.q-btn` system (one `--primary` per region — "Test rule" and the download live as secondary until a row is ready to commit); modals use `q-modal-actions` footers; tab-like switches reuse the `.q-paneltab` underline pattern; long-running preview queries show DuckProgress with a `PROGRESS_LABELS` entry. Styles go in a co-located `views/studio/studioView.css`. The pinned copy inventory (badges, dialog titles, button names) is the contract — extend it, never reword it.
 
@@ -310,10 +321,21 @@ modal at a time, and once you've agreed to delete the rule the discard question 
     fails `aria-required-children` (critical). The offenders table's grid-focus action is a real `<button>` in the
     rule-id cell; new tables follow suit.
   - **Capped scroll containers take a tab stop and a name.** `.q-preview-scroll`, `.q-findings-list`,
-    `.q-offenders-scroll` — a scroll container with no focusable descendant hides everything below its fold from the
-    keyboard (`scrollable-region-focusable`).
-  - **`role="tablist"` means the APG pattern.** Report panel tabs carry `aria-controls`, a roving `tabindex` (the
-    tablist is ONE tab stop), and ←/→/Home/End. Claiming the role without the keys is worse than not claiming it.
+    `.q-offenders-scroll`, `.q-dd-scroll` — a scroll container with no focusable descendant hides everything below its
+    fold from the keyboard (`scrollable-region-focusable`). Name them distinctly from the panel they sit in.
+  - **`role="tablist"` means the APG pattern.** Both tablists come from `createPanelTabs`, which carries
+    `aria-controls`, a roving `tabindex` (the tablist is ONE tab stop), and ←/→/Home/End. Claiming the role without
+    the keys is worse than not claiming it.
+  - **axe skips `[hidden]`, so tabbed content must be ACTIVATED before it is scanned.** `a11y.spec.ts` clicks every
+    Report and Preview tab in turn; without that, most of a tabbed component never reaches the gate.
+  - **A grouping header inside a `<tbody>` is not worth the risk.** The data dictionary renders one `<table>` per
+    category rather than a single table with `<th scope="colgroup" colspan="7">` rows: `th-has-data-cells` is
+    *serious* (the gate severity) and full-width `th`s in a body are exactly what axe associates unpredictably. One
+    table per category also makes each heading reachable by heading navigation, hands the sticky header off between
+    categories, and reduces hiding an empty group to one `hidden`. Columns stay aligned via `table-layout: fixed`
+    with identical `th:nth-child(n)` percentages.
+  - **A visible `<label for>` beats `aria-label` for text inputs** (`label` is critical). The dictionary search field
+    carries a real `.q-dd-search-label`, matching `createUrlField`.
   - **Getting past the grid.** data-table exposes ~1600 focusable controls on the 266-column example AND traps Tab
     (see §9). The Report view therefore carries a `.q-skiplink` before the grid — a `<button>`, never an
     `<a href="#…">`, because QuaC routes on the hash — and both grid hosts let **Escape** move focus out, announced

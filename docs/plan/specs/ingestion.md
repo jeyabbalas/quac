@@ -43,7 +43,13 @@ Notes:
 - Keep the original source bytes (Blob) in memory for the session: reruns re-CTAS from `quac_typed`; a schema change re-runs typing from `quac_raw` (or re-ingests from bytes if raw was dropped).
 - After every table creation: `bridge.clearQueryCache()`.
 
-**Display feed** (Report view): always engine-exported bytes → `table.loadData()` (single source of truth = engine tables; ordering contract in `architecture.md §3`). The Load view's small preview (first 50 rows) is a plain HTML table from `bridge.query('SELECT * FROM data LIMIT 50')` — not a data-table instance.
+**Display feed** (Report view): always engine-exported bytes → `table.loadData()` (single source of truth = engine tables; ordering contract in `architecture.md §3`).
+
+**Load-view Preview** (UIX-4): one Tier 1 sticker with a `createPanelTabs` tablist over all three inputs — **Dataset** · **Data dictionary** (`core/schema/data-dictionary.ts`) · **QC rules**. The section hides until at least one slot fills; all three tabs are always present once it shows, each empty panel carrying a `.q-panel-note`.
+
+The dataset panel is a plain HTML table (`components/plainPreviewTable.ts`), **not** a data-table instance, fed by `PREVIEW_SQL` / `PREVIEW_ROW_CAP` in `core/bridge/tables.ts` (`SELECT * EXCLUDE (__row__) FROM data ORDER BY __row__ LIMIT 50` — one constant, so the cap cannot drift between the query, the `first 50 of 101 rows · 266 columns` meta line, and the accessible name). A second header row gives each column's storage type from `describeColumns(bridge, DATA_VIEW)` — `DESCRIBE "data"`, deliberately not the `quac_raw` default, which is all-VARCHAR by construction for CSV/TSV/XLSX. Those cells are `<td>` inside `<thead>`, so a type never joins a body cell's header chain. Numeric columns right-align whole, decided per column from the DuckDB type.
+
+⚠️ The preview keys on `` `${dataset.generation}|${typedRevision}` ``. `installTypedSync` re-points the `data` view at cast columns *without* bumping `generation`, so a generation-only key leaves the type row reading VARCHAR for ever after a schema loads (`app/typedSync.ts`).
 
 ## 3. Schema slot intake
 

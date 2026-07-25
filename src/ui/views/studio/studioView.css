@@ -424,6 +424,16 @@
   }
 }
 
+/* Phone widths (P19 sweep). Measured .q-studio-gridbody inner overflow: 0px at
+   1600/1440/1366/1280/1024/768, but 32px at 640 — the targets column is the
+   elastic one and 200px is ~32px too generous once the card is 608 wide. The
+   ceiling is 720px so no band UIX-3 measured can see this rule. */
+@media (max-width: 720px) {
+  .q-rulegrid-targets {
+    max-width: 150px;
+  }
+}
+
 .q-rulegrid-actions {
   white-space: nowrap;
   text-align: right;

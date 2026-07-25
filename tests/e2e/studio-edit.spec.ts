@@ -5,6 +5,10 @@
  * tooltips are not assertable), assertion-snippet completion (typed `in_`
  * prefix, never bare Ctrl-Space), the (type,scope) matrix with auto-snap, and
  * save-to-grid with the dirty rail marker + the pinned reorder tooltip.
+ *
+ * Also pins the UIX-2 browse⇄edit swap: opening a rule hides the table, the
+ * "← Rules" affordance brings it back, and it goes through the same
+ * discard guard as Cancel once the draft is dirty.
  */
 import { expect, test } from '@playwright/test';
 
@@ -48,9 +52,31 @@ test('create a rule in the studio: draft lint, completions, matrix, save', async
   // ---- new rule ----
   await page.locator('.q-studio-addrule').click();
   const drawer = page.locator('.q-studio-drawer');
+  const gridCard = page.locator('.q-studio-gridcard');
   await expect(drawer).toBeVisible();
+  // UIX-2: the editor REPLACES the rule table in the work column, so the form
+  // and the live test result end up side by side instead of a page apart.
+  await expect(gridCard).toBeHidden();
   await expect(page.locator('#q-rf-id')).toBeFocused();
+
+  // "← Rules" is the way back out of the swap; nothing typed yet, so it
+  // returns straight to the table.
+  await page.locator('.q-studio-back').click();
+  await expect(drawer).toBeHidden();
+  await expect(gridCard).toBeVisible();
+  await page.locator('.q-studio-addrule').click();
+  await expect(drawer).toBeVisible();
+
   await page.locator('#q-rf-id').fill('E2E1');
+
+  // Dirty now — "← Rules" goes through the discard guard, same as Cancel.
+  await page.locator('.q-studio-back').click();
+  const discardDialog = page.getByRole('dialog', { name: 'Discard changes?' });
+  await expect(discardDialog).toBeVisible();
+  await discardDialog.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(discardDialog).toBeHidden();
+  await expect(drawer).toBeVisible();
+  await expect(page.locator('#q-rf-id')).toHaveValue('E2E1');
 
   // Target FIRST: with no (or unknown) targets, missing-field/pertinence
   // exempt the rule from the stage-4 dry-run — the binder assertion below
@@ -110,6 +136,7 @@ test('create a rule in the studio: draft lint, completions, matrix, save', async
 
   // ---- saved: grid row, dirty rail marker, pinned reorder tooltip ----
   await expect(drawer).toBeHidden();
+  await expect(gridCard).toBeVisible(); // the table takes the column back
   const row = page.locator('.q-rulegrid tbody tr', { hasText: 'E2E1' });
   await expect(row).toBeVisible();
   await expect(row).toContainText('validate');

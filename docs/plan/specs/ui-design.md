@@ -112,24 +112,42 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 +-------------------------------------------+----------------------------------+
 ```
 
-**Rule Studio (`#/studio`)**
+**Rule Studio (`#/studio`)** — **ONE** Tier 1 sticker for the whole workspace (UIX-2); the three zones are
+divided by Tier 2 hairlines, not by four competing outlines. The middle **work column has two faces** and shows
+exactly one: browsing shows the rule table, opening a rule swaps in the editor. The preview column never moves, so
+the form you type in and the result you read sit side by side and the page stops growing when you edit.
+
+Browsing (≥1280):
 ```
 +------------------------------------------------------------------------------+
 | header + nav                                                                 |
-+--------------------------------+---------------------------------------------+
-| RULES (my_rules.quac.csv)[+New]|  LIVE PREVIEW (sample: 10,000 rows)         |
-|  Q001 unique record_id     ok  |  [data-table: rows matching condition]     |
-|  Q008 age progression      ok  |                                             |
-|  Q061 (draft) *                |  Test result: 7 rows match · 0 SQL errors  |
-|--------------------------------|                                             |
-| id [Q061] type [validate] scope [row]  severity [warning v]  enabled [x]    |
-| targets [income_total, ...]    |                                             |
-| condition (SQL)  [CodeMirror: schema-aware completion, lint]                 |
-| correction (opt) [SQL|JS] [CodeMirror]                                       |
-| comment [___________________________]                                        |
-| [ Test rule ]  [ Add to file ]           [ Download rules CSV ]              |
-+--------------------------------+---------------------------------------------+
++==============================================================================+
+| RULE FILES  [New file] | my_rules.quac.csv  [Download CSV] [Add rule]        |
+|  hesp_keys… 10 rules OK|  ID   Type·Scope    Targets  Sev Lint On Actions    |
+| >hesp_cons…  5 rules OK|  Q001 validate·col  record_id err  OK  [x] ⧉ ✕  ↑ ↓ |
+|  hesp_corr…  7 rules OK|  Q002 validate·row  hh_id,…  err  OK  [x] ⧉ ✕  ↑ ↓ |
+|  19/19 targets         |                                                     |
+|                        |------------- (hairlines, one card) -----------------|
+|                        |                    | LIVE PREVIEW  10,000-row sample|
+|                        |                    | Test result: 7 rows match      |
+|                        |                    | [ Filter preview to matches ]  |
+|                        |                    | [data-table: sampled rows]     |
++==============================================================================+
 ```
+Editing — the editor takes the same column, the preview stays put:
+```
+| RULE FILES  [New file] | [← Rules]  Edit rule — my_rules.quac.csv            |
+|  …                     | rule_id [Q061_____________]   enabled [x]           |
+|                        | rule_type [validate v] rule_scope [row v] severity[]|
+|                        | target_variables [income_total x] [add column…]     |
+|                        | condition   [CodeMirror: completion + lint]         |
+|                        | Correction  [SQL|JS] [CodeMirror]        (if correct)|
+|                        | comment     [_____________________________]         |
+|                        | [Test rule] Tested ✓        [Cancel] [Save rule]    |
+```
+Breakpoints: **≥1280** three zones side by side (`240px · minmax(600px, 1.1fr) · minmax(360px, 1fr)` — the work
+floor is measured against the rule table's min-content, see §5); **1024–1279** two columns, rail spanning both
+rows, preview under the work column; **≤1023** everything stacks and the rail becomes a horizontal file strip.
 
 **Modals** (all: focus-trapped, `Esc` closes, `role="dialog"`, labelled):
 - **IndexPickerModal** — radio list of candidate root schemas (relativePath, `$id`, title, array-shape badge) + "why this is ambiguous" note; selection recorded → `index=` param.
@@ -152,7 +170,35 @@ Conventions:
 
 **For P17 (Rule Studio)**: compose, don't invent. The studio's two panels are Tier 1 stickers; inner structure (rule rows, form fields) is Tier 2 hairlines; the preview grid is a Tier 3 surface sized like `.q-report-grid`. Buttons come from the `.q-btn` system (one `--primary` per region — "Test rule" and the download live as secondary until a row is ready to commit); modals use `q-modal-actions` footers; tab-like switches reuse the `.q-paneltab` underline pattern; long-running preview queries show DuckProgress with a `PROGRESS_LABELS` entry. Styles go in a co-located `views/studio/studioView.css`. The pinned copy inventory (badges, dialog titles, button names) is the contract — extend it, never reword it.
 
+**Studio layout contract (UIX-2 — binding for later studio work):**
+- **One card.** The sticker recipe lives on `.q-studio-layout`; `.q-studio-rail` / `.q-studio-work` /
+  `.q-studio-preview` are padded zones inside it, separated by `--q-border-hairline` dividers.
+  `align-items: stretch` is what makes those dividers run full height. **Never** put `overflow: hidden` on the
+  card — the targets combobox popup (`.q-combolist`, absolute) has to escape it.
+- **The work column has two faces.** `syncWorkView()` in `studioWorkspace.ts` owns the invariant: exactly one of
+  `.q-studio-gridcard` / `.q-studio-drawer` is visible. It must run **before** any `focusGrid(...)` /
+  `addRuleButton.focus()`, which query `gridBody` and focus the grid header button — neither is focusable while
+  the card is `hidden` — and before `form.load()`, for the same reason CodeMirror is route-gated.
+- **Preview column reads top-down: result, then the grid it describes.** `.q-studio-testpanel` is capped
+  (`max-height: min(44vh, 460px)` + scroll) so a 20-row assert result can't push the sample grid off screen, and
+  `.q-studio-samplegrid` keeps a **definite** height — an auto-height host makes data-table render every row.
+- **Sizing is measured, not guessed.** The rule table's min-content is what sets the work track's floor; re-measure
+  (`.q-studio-gridbody` `scrollWidth` vs `clientWidth` at 1600/1440/1366/1280/1024/768) before adding a column.
+  `.q-rulegrid-targets` is the elastic one that yields first (200px, capped to 130px in the three-column band).
+- **Quiet is scoped.** The softened severity pill and the muted `OK` lint badge are `.q-rulegrid`-only overrides;
+  `createSeverityLabel` / `createBadge` are untouched everywhere else. Severity keeps its text label — never
+  color-only.
+- Two override blocks sit **after** the rules they override (`.q-filebtn` strip, in-band targets cap) because
+  specificity ties and source order decides; the comments there say so.
+
 **P18 copy additions (pinned):** footer test status (aria-live) `Untested` / `Testing…` / `Tested ✓` / `Test failed — see the preview panel.`; submit labels `Add to file` / `Save rule` / `Save untested` (the last only for data-shaped lint-only — no dataset or inapplicable targets; external keeps the normal label); buttons `Test rule` · `Download rules CSV` · `Filter preview to matches` ⇄ `Clear preview filter`; preview head `Live preview` with meta `previewing on a 10,000-row sample` past the cap else `N row(s)`, and the no-dataset note `Load a dataset to preview rules against it.`; result lines `Test result: N row(s) match` (validate) · `Test result: N cell(s) would change` (sql correction) · `Test result: N row(s) match · corrections sampled on K row(s) [· E sample error(s)]` (js correction) · `Test result: N result row(s)` (dataset) · `Test result: V of N target(s) violating` with per-target heads + `Expanded SQL` disclosures (column asserts) · `Not testable: <reason>` · `Test failed: <message>` (engine text verbatim); truncation note `showing first 20`; `PROGRESS_LABELS.ruleTest` = `Testing the rule`.
+
+**UIX-2 copy addition (pinned):** the editor's back affordance is `← Rules` (`.q-studio-back`, ghost, left of the
+drawer title) — it routes through the same discard guard as the footer `Cancel`. Rule-grid headers are
+`ID · Type · Scope · Targets · Severity · Lint · On · Actions` (`Type · Scope` is one column rendering
+`validate · row`). Everything else is unchanged — the Studio empty state keeps `No rules yet.` /
+`Load a dataset to compose rules against it — completions and previews need your columns.` verbatim (nav.spec pins
+it, and `studioWorkspace.ts`'s banner shares the first clause).
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 

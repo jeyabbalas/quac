@@ -73,6 +73,21 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-24 · UIX-2 · Interstitial Rule Studio UI/UX pass on main (9 commits, post-P18, before P19) — the studio worked but
+put four Tier-1 stickers on one screen and split the form from its test result. Now ONE card, three hairline zones (rail ·
+work · preview): the editor REPLACES the rule table in the work column (`syncWorkView()`; ordering contract — it runs before
+every focusGrid/addRuleButton.focus and before form.load, since both the grid header button and CodeMirror are inert inside
+`hidden`), a `← Rules` ghost button routes back through the existing discard guard, and the preview column reads result-first
+(capped scrollable test panel over a shorter but still DEFINITE-height sample grid). Grid trimmed to 7 columns (Type·Scope
+merged) with `.q-rulegrid`-scoped quiet (fill-tinted severity keeping its text label, gray OK badge, gray-700 row glyphs,
+disabled = absent); rule form head is 3 tracks and `enabled` became a normal field, retiring the padding-top:22px hack.
+Sizing is MEASURED: table min-content 628px vs 475px of work column at 1280 → 6px gutters, 130px in-band targets cap and a
+600px work-track floor (240/600-1.1fr/360-1fr) → 0px overflow at 1600/1440/1366/1280/1024/768; ≤1023 the rail becomes a
+horizontal file strip. Two override blocks had to move BELOW the rules they override (specificity ties, source order decides).
+**P19 task 3's Studio empty state is already done** (duck mark + copy, mirroring reportView) — do not redo it. Deviations
+from the approved sketch, all to satisfy its own "no horizontal scroll down to 1280": rail 240px not 260, preview floor 360px
+not 380, work track gained a floor. 545 unit + 44 browser + 41 e2e green; entry 37.1 KB gz unchanged.
+
 2026-07-24 · P18 · Rule Studio preview/gate/export shipped on main (6 commits): rules become live-testable, saving is gated,
 files round-trip. ruleTest.ts = pure dispatch mirroring engine interpret+applicableTargets over the EXACT sql.ts wrappers with
 PREVIEW_ROW_CAP 20 (counts exact on full `data`; sql corrections pure SELECT count/capture — no CTAS; js sandboxed on the ≤20

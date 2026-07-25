@@ -131,8 +131,11 @@ test('QC Report — after a full run, grid mounted', async ({ page }) => {
   await diagnoseThirdParty(page, 'QC Report');
 
   // Each panel is its own DOM; a scan of Summary alone would miss three.
+  // Scoped to .q-report-panels: .q-paneltab now belongs to three tablists
+  // (Report, Load Preview, the Studio language switch) and hasText is a
+  // SUBSTRING match, so an unscoped locator is one label away from ambiguous.
   for (const tab of ['Missing vars', 'Findings', 'Offenders']) {
-    await page.locator('.q-paneltab', { hasText: tab }).click();
+    await page.locator('.q-report-panels .q-paneltab', { hasText: tab }).click();
     await expectNoSeriousViolations(page, `QC Report → ${tab}`);
   }
 });

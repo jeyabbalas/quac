@@ -279,6 +279,62 @@
   color: var(--q-paper);
 }
 
+/* Panel tabs + panels — the shared tab strip behind createPanelTabs
+   (components/panelTabs.ts), used by the Report panel column and the Load
+   view's Preview section. Lives here, not with either view, because it has
+   always had a second consumer: the Studio's SQL/JS language switch
+   (ruleForm.ts:156) dresses itself in .q-paneltabs/.q-paneltab as
+   aria-pressed toggles — deliberately NOT a tablist — and worked only
+   because reportView.css happens to be eagerly bundled. Promoting it was the
+   standing instruction in phase-17-studio-editor.md:41.
+
+   One line at the pinned 1280×720 viewport (short labels; full names in
+   title/aria-label). Active = ink text over a yellow underline that fuses
+   with the hairline rule — the sticker language, not a sky pill. */
+.q-paneltabs {
+  display: flex;
+  gap: var(--q-space-1);
+  border-bottom: var(--q-border-hairline);
+  margin-bottom: var(--q-space-3);
+}
+
+.q-paneltab {
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px; /* the underline sits ON the hairline rule */
+  background: none;
+  padding: 6px 10px 8px;
+  border-radius: var(--q-radius-sm) var(--q-radius-sm) 0 0;
+  font: inherit;
+  font-size: var(--q-text-md);
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--q-gray-600);
+  white-space: nowrap;
+}
+
+.q-paneltab:hover {
+  background: var(--q-gray-100);
+  color: var(--q-ink);
+}
+
+.q-paneltab--active {
+  color: var(--q-ink);
+  border-bottom-color: var(--q-yellow);
+}
+
+.q-panel {
+  min-width: 0;
+}
+
+/* De-facto global: the in-panel empty (ui-design.md:201 pairs it with
+   createEmptyState, whose .q-empty is right below). Five uses in the Report
+   panels, four in the Studio, now the Load preview. */
+.q-panel-note {
+  color: var(--q-gray-700);
+  font-size: var(--q-text-md);
+}
+
 /* Empty state */
 .q-empty {
   max-width: 480px;

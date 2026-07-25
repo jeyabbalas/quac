@@ -12,6 +12,8 @@ import { reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
 import { isRunningStage } from '../../../app/store';
 import { createBadge } from '../../components/badge';
+import { createPanelTabs } from '../../components/panelTabs';
+import type { PanelTabSpec } from '../../components/panelTabs';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { createSeverityLabel } from '../../components/severityPill';
 import { renderFlag } from '../../../core/flags/messages';
@@ -38,16 +40,15 @@ export interface PanelHooks {
 }
 
 /* Short one-line tab labels (they must fit a single row at 1280×720 — the
-   pinned e2e viewport); full names travel via title/aria-label. */
-const TABS = ['Summary', 'Missing vars', 'Findings', 'Offenders'] as const;
-type TabName = (typeof TABS)[number];
-
-const TAB_FULL_NAMES: Record<TabName, string> = {
-  Summary: 'Summary',
-  'Missing vars': 'Missing variables',
-  Findings: 'Dataset findings',
-  Offenders: 'Repeat offenders',
-};
+   pinned e2e viewport); full names travel via title/aria-label. The label
+   strings are pinned by runQc.spec/a11y.spec locators. */
+const TABS = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'missing', label: 'Missing vars', fullLabel: 'Missing variables' },
+  { id: 'findings', label: 'Findings', fullLabel: 'Dataset findings' },
+  { id: 'offenders', label: 'Offenders', fullLabel: 'Repeat offenders' },
+] as const satisfies readonly PanelTabSpec<string>[];
+type TabId = (typeof TABS)[number]['id'];
 
 const RUNNING_NOTE = 'QC run in progress — results land here when it finishes.';
 
@@ -118,92 +119,18 @@ export function mountReportPanels(
   hooks: PanelHooks,
 ): void {
   host.className = 'q-report-panels';
-  const activeTab = signal<TabName>('Summary');
   const severity = signal<SeverityToggles>({ error: true, warning: true, info: true });
 
   // Deduped run predicate: pipeline progress ticks set the signal every few
   // ms — panels only care about the boolean edge.
   const running = computed(() => isRunningStage(ctx.store.pipeline.get().stage));
 
-  const tablist = document.createElement('div');
-  tablist.className = 'q-paneltabs';
-  tablist.setAttribute('role', 'tablist');
-  tablist.setAttribute('aria-label', 'Report panels');
-  const panels = new Map<TabName, HTMLElement>();
-  const tabButtons = new Map<TabName, HTMLButtonElement>();
-  for (const name of TABS) {
-    const slug = name.replaceAll(' ', '-');
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'q-paneltab';
-    button.setAttribute('role', 'tab');
-    button.id = `q-tab-${slug}`;
-    button.setAttribute('aria-controls', `q-panel-${slug}`);
-    button.textContent = name;
-    if (TAB_FULL_NAMES[name] !== name) {
-      button.title = TAB_FULL_NAMES[name];
-      button.setAttribute('aria-label', TAB_FULL_NAMES[name]);
-    }
-    button.addEventListener('click', () => {
-      activeTab.set(name);
-    });
-    tabButtons.set(name, button);
-    tablist.append(button);
-
-    const panel = document.createElement('div');
-    panel.className = 'q-panel';
-    panel.id = `q-panel-${slug}`;
-    panel.setAttribute('role', 'tabpanel');
-    panel.setAttribute('aria-labelledby', button.id);
-    panels.set(name, panel);
-  }
-  host.append(tablist, ...panels.values());
-
-  // ARIA APG tabs pattern: the tablist is ONE tab stop (roving tabindex — only
-  // the selected tab is reachable with Tab) and ←/→/Home/End move between tabs,
-  // selecting as they go. Without this, Tab walked all four and the arrows did
-  // nothing, which is not what a screen-reader user is told to expect from
-  // role="tablist".
-  const moveTo = (index: number): void => {
-    const name = TABS[((index % TABS.length) + TABS.length) % TABS.length];
-    if (name === undefined) return;
-    activeTab.set(name);
-    tabButtons.get(name)?.focus();
-  };
-  tablist.addEventListener('keydown', (event) => {
-    const index = TABS.indexOf(activeTab.get());
-    if (index < 0) return;
-    switch (event.key) {
-      case 'ArrowRight':
-        moveTo(index + 1);
-        break;
-      case 'ArrowLeft':
-        moveTo(index - 1);
-        break;
-      case 'Home':
-        moveTo(0);
-        break;
-      case 'End':
-        moveTo(TABS.length - 1);
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
+  const tabs = createPanelTabs<TabId>({
+    idPrefix: 'q-report',
+    label: 'Report panels',
+    tabs: TABS,
   });
-
-  effect(() => {
-    const current = activeTab.get();
-    for (const name of TABS) {
-      const selected = name === current;
-      const button = tabButtons.get(name);
-      button?.setAttribute('aria-selected', String(selected));
-      button?.classList.toggle('q-paneltab--active', selected);
-      if (button) button.tabIndex = selected ? 0 : -1;
-      const panel = panels.get(name);
-      if (panel) panel.hidden = !selected;
-    }
-  });
+  tabs.mount(host);
 
   // ---- Summary ----
   const renderSummary = (target: HTMLElement, artifacts: RunArtifacts | null): void => {
@@ -582,13 +509,9 @@ export function mountReportPanels(
     ctx.store.dataset.get();
     schemaState.get();
     rulesState.get();
-    const summaryPanel = panels.get('Summary');
-    const missingPanel = panels.get('Missing vars');
-    const findingsPanel = panels.get('Findings');
-    const offendersPanel = panels.get('Offenders');
-    if (summaryPanel) renderSummary(summaryPanel, artifacts);
-    if (missingPanel) renderMissing(missingPanel);
-    if (findingsPanel) renderFindings(findingsPanel, artifacts);
-    if (offendersPanel) renderOffenders(offendersPanel, artifacts);
+    renderSummary(tabs.panel('summary'), artifacts);
+    renderMissing(tabs.panel('missing'));
+    renderFindings(tabs.panel('findings'), artifacts);
+    renderOffenders(tabs.panel('offenders'), artifacts);
   });
 }

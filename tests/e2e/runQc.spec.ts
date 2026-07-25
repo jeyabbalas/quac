@@ -66,8 +66,11 @@ const statValue = async (page: Page, label: string): Promise<number> => {
   return Number((text ?? '').replaceAll(',', ''));
 };
 
+/* Scoped to the Report's own tablist: .q-paneltab has three consumers now
+   (Report, Load Preview, the Studio language switch) and hasText matches
+   substrings. */
 const panelTab = (page: Page, name: string): Locator =>
-  page.locator('.q-paneltab', { hasText: name });
+  page.locator('.q-report-panels .q-paneltab', { hasText: name });
 
 async function loadAllThreeSlots(page: Page): Promise<void> {
   await datasetInput(page).setInputFiles(DATA);

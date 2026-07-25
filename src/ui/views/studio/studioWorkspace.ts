@@ -117,9 +117,19 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   drawer.setAttribute('aria-label', 'Rule editor');
   const drawerHead = document.createElement('div');
   drawerHead.className = 'q-studio-drawerhead';
+  // The editor REPLACES the table in this column, so the way back has to live
+  // here. Routed through requestDrawerClose so the dirty-discard modal still
+  // guards it — same contract as the footer Cancel.
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'q-btn q-btn--ghost q-btn--small q-studio-back';
+  backButton.textContent = '← Rules';
+  backButton.addEventListener('click', () => {
+    requestDrawerClose();
+  });
   const drawerTitle = document.createElement('h2');
   drawerTitle.className = 'q-studio-drawertitle';
-  drawerHead.append(drawerTitle);
+  drawerHead.append(backButton, drawerTitle);
   drawer.append(drawerHead);
 
   // The work column holds BOTH faces of the middle zone — the rule table and
@@ -332,6 +342,20 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   }
 
   // ---------- drawer ----------
+
+  /**
+   * The work column's two faces — rule table while browsing, editor while
+   * editing. ORDERING CONTRACT: every caller must run this BEFORE
+   * focusGrid()/addRuleButton.focus(), because those query gridBody and focus
+   * the grid header button, neither of which is focusable while the card is
+   * `hidden`.
+   */
+  function syncWorkView(): void {
+    const editing = drawerTarget !== null;
+    gridCard.hidden = editing;
+    drawer.hidden = !editing;
+  }
+
   function openDrawer(target: DrawerTarget): void {
     const state = rulesState.get();
     const parsed = state.files.find((f) => f.file.name === target.fileName);
@@ -344,7 +368,8 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     drawerTarget = target;
     drawerTitle.textContent =
       target.kind === 'edit' ? `Edit rule — ${target.fileName}` : `New rule — ${target.fileName}`;
-    drawer.hidden = false;
+    // Before form.load: CodeMirror measures unreliably inside `hidden`.
+    syncWorkView();
     form.load(rule, { mode: target.kind === 'edit' ? 'edit' : 'new' });
     if (target.kind === 'edit' && rule !== null) {
       // Import-back path (P18 task 4): seed the stored file-lint issues for
@@ -366,7 +391,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     drawerTarget = null;
     cancelScheduledLint();
     resetTest();
-    drawer.hidden = true;
+    syncWorkView(); // brings the table back BEFORE anything focuses into it
     if (restoreFocus) {
       if (target.kind === 'edit') focusGrid(target.fileName, target.index);
       else addRuleButton.focus();
@@ -896,6 +921,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
 
     renderRail(state, selected);
     renderGrid(state, selected);
+    syncWorkView(); // self-healing: a re-render never strands both faces
   });
 
   // Notice banner: rules loaded but no dataset yet.

@@ -339,17 +339,21 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- drawer ---- */
+/* ---- editor (the work column's second face; no card chrome of its own) ---- */
 .q-studio-drawerhead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--q-space-2);
+  gap: var(--q-space-3);
   margin-bottom: var(--q-space-3);
+}
+
+.q-studio-back {
+  flex-shrink: 0;
 }
 
 .q-studio-drawertitle {
   font-size: var(--q-text-xl);
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 

@@ -31,4 +31,43 @@ New features; dark mode (documented as out of scope).
 - **UI/UX:** Playwright `a11y.spec.ts` — axe: zero serious/critical on Load/Report/Studio + open IndexPicker/SheetPicker/Share modals; `reducedMotion.spec.ts` — DuckProgress renders as plain bar under emulation. Manual checklist from `ui-design.md §7` completed and pasted into the progress log (contrast table + keyboard-only journey).
 
 ## Deferred notes
-*(agent fills in)*
+
+**Deviations from this phase file**
+
+1. **Playwright, not `sharp`, rasterises the favicons** (task 1). `sharp` is a native dependency that would have to be
+   installed and cached in CI for two 32/180px PNGs that are committed anyway. Playwright is already a devDep, already
+   browser-cached in CI, and renders the SVG through the same engine that paints the browser tab — so what gets
+   committed is what Chrome shows. `scripts/generate-favicons.mjs`, `npm run favicons`, outputs committed, script not
+   wired into `pre*` hooks or CI (same discipline as `scripts/record-ajv-errors.mjs`).
+2. **`--dt-primary` / `--dt-accent` deliberately NOT remapped** (task 8 says "accent vars"). 96 usages in the library,
+   several of them white-on-primary fills; brand hues there would *create* contrast failures (white on `--q-sky` is
+   2.1:1). `--dt-annotation-*` and `--dt-font-family` are mapped, which is the part that changes what a user sees.
+3. **One pinned e2e locator became more specific.** `runQc.spec`'s bare `getByText('Validating against the schema')`
+   now reads `.q-run-progress .q-duckprogress-meta` — the new polite live region legitimately repeats that string, so
+   the assertion was ambiguous, not wrong. The pinned **copy** is untouched.
+
+**Upstream to-do (third-party, from `a11y.spec.ts`'s non-gating diagnostic pass)**
+
+Recorded in `ui-design.md §9`, which is the durable home — successors should read it there. In brief:
+`@jeyabbalas/data-table` 0.5.1 is a **keyboard trap** (WCAG 2.1.2 Level A — Tab and Shift+Tab both stop moving once
+focus reaches `.dt-root`; axe does not detect this, only a keyboard walk does), plus `aria-required-children`
+(critical), `color-contrast` on `.dt-col-stats`/`.dt-hidden-chip-name`, and `scrollable-region-focusable` on
+`.dt-body-scroll`. CodeMirror's `.cm-editor` is clean. QuaC mitigates the trap with a skip control and an Escape
+hatch; it cannot cure it.
+
+**Genuinely deferred (found, judged out of scope, not done)**
+
+- **Studio rule-grid rows are focusable `<tr>`s with a bare Enter handler and no role.** Unlike the offenders row it
+  breaks no axe rule (it never claimed `role="button"`), but a screen-reader user is told "row" and gets no hint that
+  Enter opens the rule. Moving the action into a cell button as the offenders table now does would have to be
+  reconciled with `focusGrid()`'s row-focus restore and the pinned `.q-rulegrid tbody tr` locators — a P17/P18
+  contract area, not a P19 edit.
+- **`.q-studio-gridbody` still overflows its own scroller by 62px at 560px wide.** 0px at 1600/1440/1366/1280/1024/
+  768/720/640 after the targets-column cap. 560 is below both this phase's measurement set and the spec's
+  desktop-first floor, the scroller handles it, and the page never scrolls horizontally; narrowing further starts
+  truncating rule IDs.
+- **`--q-gray-500` is at the AA floor on white (4.74).** Fine today, but any future surface tint under muted text
+  drops it below 4.5 — that is exactly how `.q-filebtn-pertinence` (4.49 on `--q-yellow-tint`) got there. A ramp
+  re-tint is a design decision, not a polish edit.
+- **Dark mode** remains out of scope, as this phase's "Out of scope" says. P19 only ensured a dark-OS user is not
+  served a half-dark app: `colorScheme: 'light'` is now pinned on both grids.

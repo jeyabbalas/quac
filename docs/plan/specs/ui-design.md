@@ -20,13 +20,19 @@ Brand:
 --q-gray-{50..900}     /* neutral ramp */
 ```
 
-Semantic (distinct from brand so duck-yellow never means "warning"):
+Semantic (distinct from brand so duck-yellow never means "warning"). Each severity has **three** roles and they are
+not interchangeable — `--q-*` is a border / pill background / text on white or `--q-gray-50`; `--q-*-fill` is the
+tinted background; **`--q-*-ink` is the text colour to use ON the matching fill** (P19):
 ```
---q-error:   #D7263D;  fill #FFC7CE-family
---q-warning: #B45309 (text) / #FFF4CC (fill)
---q-info:    #0369A1;  fill #DDEBF7-family
---q-success: #15803D;  /* corrected cells */ fill #C6EFCE-family
+--q-error:   #D7263D;  fill #FFC7CE;  ink #9C0006
+--q-warning: #B45309;  fill #FFF4CC;  ink = --q-warning (already 4.56 on its own fill)
+--q-info:    #0369A1;  fill #DDEBF7;  ink #1F4E79
+--q-success: #15803D;  fill #C6EFCE;  ink #276749   /* corrected cells */
 ```
+The ink values are the font colours `qc-report-spec.md §5`'s workbook already pairs with these fills, so workbook,
+grid, and chrome agree on one palette. They exist because the mid-tone on its own fill **fails AA**: measured
+`--q-error` on `--q-error-fill` = 3.38, `--q-success` on `--q-success-fill` = 3.97. With ink: 5.92 / 5.33 / 7.14 /
+4.56. The **fills are frozen** — a P05 e2e asserts `--dt-annotation-error-bg` computes to `#ffc7ce`.
 
 Brand tints (washes only, never semantic):
 ```
@@ -34,7 +40,17 @@ Brand tints (washes only, never semantic):
 --q-sky-deep:    #0099CC;  /* wave stroke in the duck-progress water SVG; the data-URI keeps the literal hex */
 ```
 
-Map onto data-table: set `--dt-annotation-error-*`, `--dt-annotation-warning-*`, `--dt-annotation-info-*` from the semantic tokens so grid tints match the app. `colorScheme` stays `'light'` for v1 (white work area is a brief requirement); dark mode is out of scope.
+Map onto data-table (all on `body`, not `:root` — the library ships its own `:root` defaults and inheritance from a
+nearer ancestor beats cascade order): `-bg` ← `--q-*-fill`, `-bdr` ← `--q-*` (it is a border, and it is what makes a
+tint legible as a severity), and **`-fg` ← `--q-*-ink`** — `-fg` paints the annotated *cell text* on `-bg`, so it is a
+text-on-fill role. `--dt-font-family` ← `--q-font-sans` so the grid reads as part of the app. `--dt-primary` /
+`--dt-accent` are deliberately **not** remapped: 96 usages, several of them white-on-primary fills, so brand hues
+there would *create* failures (white on `--q-sky` is 2.1:1).
+
+`colorScheme: 'light'` must be **passed explicitly to every `createDataTable` call** (P19). The library default is
+`'auto'`, and its stylesheet flips the whole grid dark under `prefers-color-scheme: dark` unless the instance carries
+`data-dt-color-scheme="light"` — which only that option sets. The white work area is a brief requirement and dark mode
+is out of scope for v1, so a dark-OS user seeing a dark grid inside QuaC's white page is a bug, not a preference.
 
 Type: **Inter** (UI) + **JetBrains Mono** (code, rule IDs, SQL) — self-hosted via `@fontsource` (privacy: no Google Fonts CDN); system-stack fallbacks.
 
@@ -56,7 +72,12 @@ Surface tiers (the "sticker" language — decided in the UIX overhaul):
 - **Tier 3 — data surfaces** (borderless or hairline, white): preview table, report grid container, finding lists. The data is the interface.
 - **Chrome** (header, tabs, buttons, toasts, modals) keeps its existing ink-stroke language.
 
-Focus ring: 2px `--q-orange`, visible on every interactive element.
+Focus ring: 2px `--q-orange` **plus `--q-focus-edge`**, an ink companion laid either side of the orange band as a
+`box-shadow` behind the outline. The orange alone is not an indicator — measured 2.05:1 on paper, 1.42:1 on
+`--q-yellow`, **1.08:1 on `--q-sky`**, so keyboard focus on the header's Share / GitHub / nav tabs was effectively
+unmarked. Ink is 18.9 / 13.0 / 10.0 on those same surfaces, clearing SC 1.4.11's 3:1 everywhere QuaC paints.
+`.q-btn:hover:focus-visible` re-declares the edge: the hover rules out-specify the global `:focus-visible` and would
+otherwise drop it when the pointer rests on a keyboard-focused button.
 
 ## 3. Layout & navigation
 
@@ -264,16 +285,74 @@ modal at a time, and once you've agreed to delete the rule the discard question 
   - **`PROGRESS_LABELS`** (entry-chunk `duckProgress.ts`, beside `DUCK_LOADING_LINES`) is the single home for stage labels: 'Preparing tables', 'Applying corrections', 'Validating against the schema' (e2e-pinned), 'Running QC rules', 'Painting the report', plus grid-prep and export labels.
 - Loading copy, exactly three lines, rotating: **"Getting your ducks in a row…"**, **"Dabbling through your data…"**, **"Quacking the checks…"**.
 - Empty states: at most one pun each (e.g. Report empty state: "No flags yet. Run QC and see what floats up."). Everywhere else: plain, serious microcopy — errors are NEVER jokes.
-- **Favicon task (P19)**: the raster duck won't downscale to 16px. Hand-draw a simplified flat `public/favicon.svg` (sky circle, yellow duck head, orange beak, black stroke) + `favicon-32.png` + `apple-touch-icon.png` generated by a committed script (`sharp` devDep), outputs committed.
+- **Favicon (done in P19)**: the raster duck won't downscale to 16px, so `public/favicon.svg` is hand-drawn flat at
+  `viewBox="0 0 32 32"` — sky disk, ink ring, yellow head over a clipped chest, orange bill, ink eye — drawn
+  back-to-front so each shape's inner outline is covered and only the silhouette survives downscaling. Its colours are
+  brand hexes as **literals** (an icon-served SVG cannot read the page's custom properties); keep them in step with
+  `tokens.css`. `scripts/generate-favicons.mjs` rasterises `favicon-32.png` and `apple-touch-icon.png` (180×180 on
+  opaque `--q-paper` — iOS masks corners and ignores alpha) via **Playwright, not `sharp`**: already a devDep, already
+  browser-cached in CI, and it renders through the same engine that paints the tab. Outputs are committed; the script
+  stays out of the `pre*` hooks and CI, like `scripts/record-ajv-errors.mjs`. `npm run favicons` regenerates.
 
 ## 7. Accessibility checklist (P19 gates on this)
 
-- Keyboard: dropzones are real buttons; full tab order; visible 2px `--q-orange` focus ring; modals trap focus and restore it on close.
-- ARIA: live region (`aria-live="polite"`) for pipeline progress + toasts; labeled slots and URL fields; `role="dialog"` + `aria-modal` on modals; the annotation popover is data-table's (already `role="tooltip"`).
-- Contrast: every pairing AA-checked — black-on-yellow (~12:1) ✓, black-on-sky ✓, severity fills carry their dark text colors (`qc-report-spec.md §5` pairs). Never put white text on sky or yellow.
-- `prefers-reduced-motion` respected (DuckProgress, tab transitions).
-- Automated: axe smoke in Playwright (`a11y.spec.ts`) on all 3 views + open modals — no serious/critical violations.
+- **Keyboard**: dropzones are real buttons; full tab order; the two-tone focus ring of §2 on every interactive
+  element; modals trap focus and restore it on close.
+  - **Actions live in cells, not in rows.** A `<tr role="button" tabindex="0">` puts a button inside a `rowgroup` and
+    fails `aria-required-children` (critical). The offenders table's grid-focus action is a real `<button>` in the
+    rule-id cell; new tables follow suit.
+  - **Capped scroll containers take a tab stop and a name.** `.q-preview-scroll`, `.q-findings-list`,
+    `.q-offenders-scroll` — a scroll container with no focusable descendant hides everything below its fold from the
+    keyboard (`scrollable-region-focusable`).
+  - **`role="tablist"` means the APG pattern.** Report panel tabs carry `aria-controls`, a roving `tabindex` (the
+    tablist is ONE tab stop), and ←/→/Home/End. Claiming the role without the keys is worse than not claiming it.
+  - **Getting past the grid.** data-table exposes ~1600 focusable controls on the 266-column example AND traps Tab
+    (see §9). The Report view therefore carries a `.q-skiplink` before the grid — a `<button>`, never an
+    `<a href="#…">`, because QuaC routes on the hash — and both grid hosts let **Escape** move focus out, announced
+    by a `.q-sr-only` line since nothing else would say so.
+- **ARIA**: `role="dialog"` + `aria-modal` on modals; labelled slots and URL fields; the annotation popover is
+  data-table's (already `role="tooltip"`).
+  - Toasts share one polite region (`app/toast.ts`).
+  - Pipeline progress announces **stage changes only**, from a `.q-sr-only` `role="status"` element that lives
+    *outside* the progress card (the card ends every run in `[hidden]`, and a live region in a hidden subtree
+    announces nothing). DuckProgress itself is **not** a live region — it retargets every few ms and would narrate
+    every percent — but it does carry an accessible name as well as a value (`aria-progressbar-name`).
+  - Severity is never colour-only: pills and labels keep their text, and the pertinence badge gets a `.q-sr-only`
+    prefix so "OK" says what is OK.
+- **Contrast**: every pairing AA-checked (3:1 for the focus indicator, SC 1.4.11). Never white text on sky or yellow.
+  Text on a severity fill takes the `-ink` token of §2. Watch the *tinted* backgrounds specifically —
+  `--q-gray-500` passes on white (4.74) but fails on `--q-yellow-tint` (4.49) and `--q-gray-100` (4.35), and
+  `--q-gray-400` is not readable text anywhere (2.52 on white).
+- **`prefers-reduced-motion`** respected: DuckProgress (CSS block), the reveal/collapse WAAPI helpers (early return,
+  still ending in `[hidden]`), the Studio rail fade, and the header GitHub lift. Reduced motion removes MOVEMENT,
+  never information or state.
+- **Automated**: `tests/e2e/a11y.spec.ts` runs axe over Load (empty + populated), QC Report (post-run, all four
+  panels), Rule Studio (browsing + editing), and the Share / SheetPicker / IndexPicker modals; CI already runs
+  `test:e2e`, so that IS axe in CI. Gate: **serious + critical**. `.dt-root` and `.cm-editor` are excluded from the
+  gate — QuaC does not author that markup — but a second, non-gating pass scans exactly those subtrees and logs what
+  it finds, so exclusions never become silence. `tests/e2e/reducedMotion.spec.ts` and
+  `tests/unit/ui/copyDeck.test.ts` (pun containment, §6) are the other two standing gates.
 
 ## 8. Assets
 
-`public/logo/quac-logo.svg`, `public/logo/github-logo.svg` (copied from `assets/` at build or committed to `public/`), favicon set (§6). Fonts under `node_modules/@fontsource/*` imported in `base.css`.
+`public/logo/quac-logo.svg`, `public/logo/github-logo.svg` (copied from `assets/` at build or committed to `public/`),
+favicon set — `public/favicon.svg` + `favicon-32.png` + `apple-touch-icon.png`, all three `<link>`ed from
+`index.html` and all three committed (§6; `smoke.spec.ts` asserts zero 404s, so each must land in `dist/`). Fonts
+under `node_modules/@fontsource/*` imported in `base.css`.
+
+## 9. Third-party accessibility debt (upstream, P19 measured)
+
+QuaC does not author this markup and cannot fix it from here. It is excluded from the axe gate and reported by
+`a11y.spec.ts`'s diagnostic pass on every run, so the list stays current rather than forgotten. Re-check on any
+`@jeyabbalas/data-table` upgrade.
+
+**`@jeyabbalas/data-table` 0.5.1 (`.dt-root`)**
+- **Keyboard trap** — WCAG 2.1.2, Level A, and the most serious of these. Focus `.dt-root` and neither Tab nor
+  Shift+Tab moves it again; `document.querySelector('.dt-root :focus')` stays null through any number of presses,
+  while ~1600 focusable controls sit inside (266 columns × header buttons). QuaC mitigates with the skip control and
+  the Escape hatch of §7; it cannot cure it. *Not* reported by axe — only a keyboard walk finds it.
+- `aria-required-children` (critical) on `.dt-root`.
+- `color-contrast` (serious) on `.dt-col-stats > .dt-stats-line1/2` and `.dt-hidden-chip-name`.
+- `scrollable-region-focusable` (serious) on `.dt-body-scroll`.
+
+**CodeMirror 6 (`.cm-editor`)** — clean; no violations at any severity.

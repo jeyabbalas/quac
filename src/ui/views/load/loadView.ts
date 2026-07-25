@@ -12,7 +12,6 @@ import { registerDatasetUrlLoader } from '../../../app/bootConfig';
 import { addRuleUrls } from '../../../core/rules/rules-store';
 import { loadSchemaUrls } from '../../../core/schema/schema-store';
 import { mountDatasetCard } from './datasetCard';
-import { mountPertinenceStrip } from './pertinence/pertinenceStrip';
 import { mountPreviewSection } from './preview/previewSection';
 import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
@@ -104,12 +103,9 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   preconfigHint.hidden = true;
   dataHost.prepend(preconfigHint);
 
-  // Pertinence verdict sits between the slot cards and the preview (§E.5).
-  const pertinenceHost = document.createElement('div');
-  mountPertinenceStrip(pertinenceHost, ctx);
-
   // Preview (UIX-4): all three inputs in one tabbed panel. Owns its own
-  // visibility and data effects.
+  // visibility and data effects — including the §E.5 input-consistency line,
+  // which is a caution about these inputs and now sits in the Preview head.
   const previewHost = document.createElement('div');
   mountPreviewSection(previewHost, ctx);
 
@@ -142,7 +138,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   });
   runBar.append(reason, toggleLabel, runButton);
 
-  container.append(hint, example, grid, pertinenceHost, previewHost, runBar);
+  container.append(hint, example, grid, previewHost, runBar);
 
   const usable = (slot: SlotState): boolean =>
     slot.status === 'valid' || slot.status === 'warning';

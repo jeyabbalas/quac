@@ -25,6 +25,47 @@
   font-weight: 700;
 }
 
+/* Input consistency (§E.5) — a Tier 2 INNER line inside the Preview sticker,
+   not a second Tier 1 container: hairline border, medium radius, small text,
+   no shadow. It is a caution about the inputs this section previews, and it is
+   one sentence; a bordered, shadowed sticker of its own is what it used to be
+   and what it did not earn. */
+.q-preview-pertinence {
+  display: flex;
+  align-items: baseline;
+  gap: var(--q-space-2);
+  flex-wrap: wrap;
+  margin: var(--q-space-2) 0 0;
+  padding: 6px 10px;
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+}
+
+/* The tints need their INK partners, not a gray: tokens.css:20 records that
+   the mid-tone --q-* on its own fill fails AA (error 3.38), and the strip this
+   replaces painted --q-gray-800 on both fills — 4.7:1 on the error tint, the
+   exact pairing a11y.spec's axe gate is there to catch. */
+.q-preview-pertinence--warn {
+  border-color: var(--q-warning);
+  background: var(--q-warning-fill);
+  color: var(--q-warning-ink);
+}
+
+.q-preview-pertinence--alert {
+  border-color: var(--q-error);
+  background: var(--q-error-fill);
+  color: var(--q-error-ink);
+}
+
+/* Takes the slack so the sentence wraps under itself rather than under the
+   badge, which is what a bare flex item would do at narrow widths. */
+.q-preview-pertinence-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Every panel opens with this head — title left, muted meta right. It is what
    makes three different payloads read as one component. (The Report and Studio
    already have their own head classes, so there is no fourth shared primitive

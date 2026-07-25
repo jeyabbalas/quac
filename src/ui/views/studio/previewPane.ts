@@ -1,8 +1,8 @@
 /**
- * Studio live-preview pane (P18): a second data-table instance browsing a
- * ≤10,000-row sample of the canonical `data` view, with the rule-test panel
- * docked below. Lives in the lazy studio chunk, so the static data-table
- * import costs the entry bundle nothing.
+ * Studio live-preview pane (P18): the rule-test panel over a second data-table
+ * instance browsing a ≤10,000-row sample of the canonical `data` view. Lives
+ * in the lazy studio chunk, so the static data-table import costs the entry
+ * bundle nothing.
  *
  * Grid discipline copied from reportGrid verbatim, as closure state: ONE
  * serialization queue (data-table calls must not overlap), a dataset
@@ -76,7 +76,10 @@ export function createPreviewPane(): PreviewPane {
   testPanel.className = 'q-studio-testpanel';
   testPanel.hidden = true;
 
-  el.append(head, sampleWrap, testPanel);
+  // Result FIRST (UIX-2): "Test result: 1 row matches", its sample rows and
+  // the filter toggle sit at the top of the column, directly above the grid
+  // the filter acts on — a 20-row assert result used to push it off screen.
+  el.append(head, testPanel, sampleWrap);
 
   // ---- sample grid (reportGrid's discipline, closure-scoped) ----
   let table: DataTable | undefined;

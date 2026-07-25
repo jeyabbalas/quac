@@ -270,21 +270,26 @@
 }
 
 /* Definite height is load-bearing (like .q-report-grid): an auto-height host
-   makes data-table render every row. Chrome allowance covers the app header,
-   the pane head, the test panel and page padding. */
+   makes data-table render every row. Shorter than P18's 320–820px now that
+   the test panel sits ABOVE it — the chrome allowance covers the app header,
+   the pane head, a capped test panel and page padding. */
 .q-studio-samplegrid {
-  height: clamp(320px, calc(100dvh - 380px), 820px);
+  height: clamp(260px, calc(100dvh - 460px), 560px);
 }
 
-/* ---- rule-test panel (P18) ---- */
+/* ---- rule-test panel (P18; above the sample grid since UIX-2) ---- */
 .q-studio-testpanel {
-  margin-top: var(--q-space-3);
-  border-top: var(--q-border-hairline);
-  padding-top: var(--q-space-3);
+  margin-bottom: var(--q-space-3);
+  border-bottom: var(--q-border-hairline);
+  padding-bottom: var(--q-space-3);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--q-space-2);
+  /* Capped + scrollable: a 20-row assert result must not push the grid it
+     describes off the bottom of the screen. */
+  max-height: min(44vh, 460px);
+  overflow-y: auto;
 }
 
 .q-test-result {

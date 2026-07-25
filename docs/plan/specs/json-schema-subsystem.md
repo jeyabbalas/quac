@@ -234,7 +234,7 @@ One pass per non-passthrough column (raw+typed join or UNPIVOT — implementer's
 - Non-numeric text → `ruleId: schema:prop:<col>:cast`, error, message `'twelve hundred' is not a valid integer.`
 - Numeric-but-non-integral in integer column → same ruleId, message `42.5 is not a whole number — this variable takes integer values.`
 
-Hits land in `castFailures: Set<string>` (`` `${row} ${col}` ``) consulted by the translator: Ajv errors on those cells are **suppressed** so each bad cell yields exactly one flag.
+Hits land in `castFailures: Set<string>` (`` `${row} ${col}` ``) consulted by the translator: Ajv errors on those cells are **suppressed** so each bad cell yields exactly one flag.
 
 ### C.3 Null / empty / missing mapping (row shaping, in the worker)
 

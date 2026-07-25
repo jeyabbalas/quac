@@ -207,11 +207,14 @@ Conventions:
 - **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker, IndexPicker, and the pertinence block modal share it. One primary per modal at most.
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
 - **Empty states**: framed `createEmptyState` is for view-level empties only (a whole route with nothing to show). In-panel empties are a quiet `.q-panel-note` paragraph — a dashed box inside a sticker card reads as a broken drop zone.
-- **Preview tabs are named for the INPUT, the panel says what it renders.** The three Load Preview tabs carry the three slot-card names verbatim — `Dataset` · `JSON Schema` · `QC rules` — so the strip under the cards names the same three things the cards do. Where a panel shows something other than the raw input, a `.q-preview-panelcaption` line under its head says so: the JSON Schema panel's is `JSON Schema formatted as a data dictionary`, present in every state including empty. The tab IDs (`dataset`/`dictionary`/`rules`) are internal and do not follow the labels.
+- **Preview tabs are named for the INPUT, the panel says what it renders.** The three Load Preview tabs carry the three slot-card names verbatim — `Dataset` · `JSON Schema` · `QC rules` — so the strip under the cards names the same three things the cards do. Where a panel shows something other than the raw input, a `.q-preview-panelcaption` line under its head says so: the JSON Schema panel's is `JSON Schema formatted as a data dictionary`, the QC rules panel's is `QC rules files, one table per file`, both present in every state including empty. The tab IDs (`dataset`/`dictionary`/`rules`) are internal and do not follow the labels.
+- **The JSON Schema and QC rules panels are one component over two payloads.** Both are a real `<label for>` search box + a derived `Collapse all`/`Expand all` + a debounced `role="status"` count, over a named tab-stop scroll region holding one `<details open>` per section, each with its own `<table>`. Namespaces are `q-dd-*` and `q-rp-*`; everything identical between them (head, search, toggle, count, scroll, disclosure, table base, chip, muted mono sub-line) is declared ONCE in `preview/preview.css` under a grouped selector, and only the payload cells and the measured column percentages are per-panel. Pinned copy: `Search variables` / `Search rules`, `Collapse all` ⇄ `Expand all`, `N variables` / `N rules` and `M of N …` while filtering, `No variables match 'q'.` / `No rules match 'q'.`, and the panel notes `Load a JSON Schema to see it here.` / `Load a QC rules file to see it here.`, `Reading the rules files…`, `These rule files contain no rules.`
+- **Neither preview panel restates its slot card's findings.** The dictionary points at the schema card, the QC rules panel at the rules card. What the rules panel *does* show is properties of the rule rather than findings about it: `enabled: false` as an `off` badge plus a muted row, and `external` as an `external` badge. Its six columns are curated, not the ten CSV ones — `condition` and `update_expression` get the width, because the Studio's rule grid is ~510–710px wide and omits both.
 - **Progress**: DuckProgress v2 mechanics + the run-level monotonic mapper (`runProgressModel.ts`) and the `PROGRESS_LABELS` copy home are specified in §6.
 - **Tabbed panels go through `createPanelTabs`** (`components/panelTabs.ts`): the Report panel column (`idPrefix: 'q-report'`) and the Load view's Preview section (`'q-preview'`). `idPrefix` is mandatory because the shell keeps all views mounted and toggles `hidden`, so the tablists coexist in the document and a shared prefix would break `aria-controls` and trip `duplicate-id-aria`. The Studio's SQL/JS language switch borrows the `.q-paneltabs`/`.q-paneltab` *look* but is deliberately a pair of `aria-pressed` toggles, **not** a tablist — it switches an editor mode, it does not reveal a panel. Do not "fix" it into `createPanelTabs`.
-- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state, and — since UIX-4 — the panel-tab strip `.q-paneltabs`/`.q-paneltab*` plus `.q-panel`/`.q-panel-note`; imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp,plainPreviewTable}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`, `preview/preview.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`.
+- **CSS lives with its owner**: `src/styles/` holds only `tokens.css`, `base.css`, and `primitives.css` (buttons, toast, modal, badge, pill, empty state, and — since UIX-4 — the panel-tab strip `.q-paneltabs`/`.q-paneltab*` plus `.q-panel`/`.q-panel-note`, and the syntax-token colours `.q-syntax .tok-*`; imported in `main.ts`). Everything else is co-located and imported by its owning module: `app/shell.css`, `components/{slotCard,duckProgress,sheetPickerModal,shareModal,corsHelp,plainPreviewTable}.css`, `views/load/loadView.css` (+ `schema/schemaSlot.css`, `schema/indexPickerModal.css`, `pertinence/pertinence.css`, `preview/preview.css`), `views/report/reportView.css`. New components follow suit — no additions to `src/styles/`.
   - The panel-tab move is the one sanctioned exception to "no additions", and it *relocated* shared primitives rather than adding a component's styles: `.q-paneltab` had been dual-consumer since P17 (a debt `phase-17-studio-editor.md:41` explicitly scheduled for P19/P20) and reached the Studio only because `reportView.css` happens to be eagerly bundled; `.q-panel-note` had nine consumers across three views. A third inline copy would have compounded it.
+  - `.q-syntax .tok-*` moved on the same terms. `@lezer/highlight`'s `classHighlighter` emits those class names in both the Studio's CodeMirror editors and the Load view's QC rules preview, so the palette became cross-view and one definition is the only thing that keeps the two surfaces identical. It is **scoped to a `.q-syntax` marker**, never left bare: `@jeyabbalas/data-table` bundles its own CodeMirror, and an unscoped `.tok-*` rule would restyle the `.dt-root` markup QuaC does not author (the same subtree `a11y.spec.ts` excludes from the axe gate). The marker sits on `.q-editor` (`codeEditor.ts`) and is added by `renderExpr` to every expression cell it paints.
 - Bare e2e-hook classes (`.q-run-cancel`, `.q-example-load`) are noted in comments where they'd otherwise look like dead selectors.
 
 **For P17 (Rule Studio)**: compose, don't invent. The studio's two panels are Tier 1 stickers; inner structure (rule rows, form fields) is Tier 2 hairlines; the preview grid is a Tier 3 surface sized like `.q-report-grid`. Buttons come from the `.q-btn` system (one `--primary` per region — "Test rule" and the download live as secondary until a row is ready to commit); modals use `q-modal-actions` footers; tab-like switches reuse the `.q-paneltab` underline pattern; long-running preview queries show DuckProgress with a `PROGRESS_LABELS` entry. Styles go in a co-located `views/studio/studioView.css`. The pinned copy inventory (badges, dialog titles, button names) is the contract — extend it, never reword it.
@@ -322,28 +325,35 @@ modal at a time, and once you've agreed to delete the rule the discard question 
     fails `aria-required-children` (critical). The offenders table's grid-focus action is a real `<button>` in the
     rule-id cell; new tables follow suit.
   - **Capped scroll containers take a tab stop and a name.** `.q-preview-scroll`, `.q-findings-list`,
-    `.q-offenders-scroll`, `.q-dd-scroll` — a scroll container with no focusable descendant hides everything below its
-    fold from the keyboard (`scrollable-region-focusable`). Name them distinctly from the panel they sit in.
+    `.q-offenders-scroll`, `.q-dd-scroll` (`Data dictionary variables`), `.q-rp-scroll` (`QC rules by file`) — a scroll
+    container with no focusable descendant hides everything below its fold from the keyboard
+    (`scrollable-region-focusable`). Name them distinctly from the panel they sit in.
   - **`role="tablist"` means the APG pattern.** Both tablists come from `createPanelTabs`, which carries
     `aria-controls`, a roving `tabindex` (the tablist is ONE tab stop), and ←/→/Home/End. Claiming the role without
     the keys is worse than not claiming it.
   - **axe skips `[hidden]`, so tabbed content must be ACTIVATED before it is scanned.** `a11y.spec.ts` clicks every
     Report and Preview tab in turn; without that, most of a tabbed component never reaches the gate.
   - **A grouping header inside a `<tbody>` is not worth the risk.** The data dictionary renders one `<table>` per
-    category rather than a single table with `<th scope="colgroup" colspan="7">` rows: `th-has-data-cells` is
-    *serious* (the gate severity) and full-width `th`s in a body are exactly what axe associates unpredictably. One
-    table per category also makes each heading reachable by heading navigation, hands the sticky header off between
-    categories, and reduces hiding an empty group to one `hidden`. Columns stay aligned via `table-layout: fixed`
-    with identical `th:nth-child(n)` percentages.
-  - **A visible `<label for>` beats `aria-label` for text inputs** (`label` is critical). The dictionary search field
-    carries a real `.q-dd-search-label`, matching `createUrlField`.
+    category, and the QC rules panel one per file, rather than a single table with `<th scope="colgroup" colspan="7">`
+    rows: `th-has-data-cells` is *serious* (the gate severity) and full-width `th`s in a body are exactly what axe
+    associates unpredictably. One table per section also makes each heading reachable by heading navigation, hands the
+    sticky header off between sections, and reduces hiding an empty group to one `hidden`. Columns stay aligned via
+    `table-layout: fixed` with identical `th:nth-child(n)` percentages.
+  - **A visible `<label for>` beats `aria-label` for text inputs** (`label` is critical). Both preview search fields
+    carry a real label (`.q-dd-search-label`, `.q-rp-search-label`), matching `createUrlField`.
   - **Disclosure is `<details>` + `<summary>`, and the whole header is the control.** The dictionary's category
-    headers and its `+N more` overflows are both native: `aria-expanded` and Enter/Space come from the UA rather
-    than from us, and the `<h4>` stays a real heading inside the `<summary>` (whose content model is *phrasing
-    content, optionally intermixed with heading content*), so heading order and `aria-labelledby` are unaffected.
-    The chevron is CSS with **no transition** — nothing for `prefers-reduced-motion` to remove. Default is
-    **expanded**: axe skips unrendered subtrees, so a collapsed default would quietly take twelve tables out of the
-    gate. `a11y.spec.ts` scans the collapsed state too, since that is a second rendering, not the same one smaller.
+    headers, the QC rules panel's file headers, and both panels' `+N more` overflows are all native: `aria-expanded`
+    and Enter/Space come from the UA rather than from us, and the `<h4>` stays a real heading inside the `<summary>`
+    (whose content model is *phrasing content, optionally intermixed with heading content*), so heading order and
+    `aria-labelledby` are unaffected. The chevron is CSS with **no transition** — nothing for
+    `prefers-reduced-motion` to remove. Default is **expanded**: axe skips unrendered subtrees, so a collapsed default
+    would quietly take every table out of the gate. `a11y.spec.ts` scans the collapsed state of each panel too, since
+    that is a second rendering, not the same one smaller.
+  - **Highlighted code is OUR markup, so it is inside the gate.** `a11y.spec.ts` excludes `.cm-editor` and `.dt-root`
+    as third-party, but the QC rules preview's `tok-*` spans are QuaC's own and must clear colour contrast at
+    `--q-text-xs`. This bit once: a disabled rule's muted row painted its target chips `--q-gray-500` on
+    `--q-gray-100`, which is 4.35:1 — `tokens.css:23` already said gray-500 is text on WHITE or gray-50. Scan the
+    panel only once the lazy highlighter has landed, or the spans are not on screen to be checked.
   - **Getting past the grid.** data-table exposes ~1600 focusable controls on the 266-column example AND traps Tab
     (see §9). The Report view therefore carries a `.q-skiplink` before the grid — a `<button>`, never an
     `<a href="#…">`, because QuaC routes on the hash — and both grid hosts let **Escape** move focus out, announced

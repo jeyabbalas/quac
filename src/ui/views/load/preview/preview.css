@@ -1,7 +1,8 @@
 /* Load-view Preview section (UIX-4): the Tier 1 sticker, the shared panel
-   head, the data dictionary, and the QC rules placeholder. The tab strip
-   itself is styles/primitives.css; the dataset TABLE is
-   components/plainPreviewTable.css. */
+   head, the chrome the JSON Schema and QC rules panels have in common, and
+   then each of those two panels. The tab strip itself is styles/primitives.css;
+   the dataset TABLE is components/plainPreviewTable.css; the tok-* syntax
+   colours are the `.q-syntax` primitive, also in styles/primitives.css. */
 
 /* Tier 1 sticker — the same recipe as .q-report-panels (reportView.css:100). */
 .q-preview {
@@ -50,17 +51,24 @@
 
 /* One quiet line under a panel head naming what the panel RENDERS, where that
    differs from what the tab names (the JSON Schema tab shows a data
-   dictionary). Sits between head and body so a state note replacing the body
-   never takes it with it. */
+   dictionary; the QC rules tab shows one table per file). Sits between head
+   and body so a state note replacing the body never takes it with it. */
 .q-preview-panelcaption {
   margin: calc(-1 * var(--q-space-1)) 0 var(--q-space-3);
   font-size: var(--q-text-sm);
   color: var(--q-gray-600);
 }
 
-/* ---- JSON Schema → data dictionary -------------------------------------- */
+/* ---- Chrome shared by the two collapsible panels ------------------------- */
+/* The JSON Schema and QC rules panels are the same component over different
+   payloads: a search box, a Collapse all, a live count, a capped scroll region
+   and a stack of <details> sections each holding one table. Everything below
+   is identical between them BY DESIGN, so it is declared once — the two
+   namespaces (q-dd-* / q-rp-*) exist to let the payload-specific cells differ,
+   not the chrome. */
 
-.q-dd-head {
+.q-dd-head,
+.q-rp-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -69,7 +77,8 @@
   margin-bottom: var(--q-space-3);
 }
 
-.q-dd-search {
+.q-dd-search,
+.q-rp-search {
   display: flex;
   align-items: baseline;
   gap: var(--q-space-2);
@@ -77,7 +86,8 @@
   max-width: 360px;
 }
 
-.q-dd-search-label {
+.q-dd-search-label,
+.q-rp-search-label {
   font-size: var(--q-text-sm);
   font-weight: 600;
   color: var(--q-gray-700);
@@ -86,7 +96,8 @@
 
 /* There is no shared input class yet, so this is the established recipe
    declared locally (studioView.css:644, slotCard.css:113). */
-.q-dd-search-input {
+.q-dd-search-input,
+.q-rp-search-input {
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
@@ -98,16 +109,18 @@
   color: var(--q-ink);
 }
 
-.q-dd-search-input:focus-visible {
+.q-dd-search-input:focus-visible,
+.q-rp-search-input:focus-visible {
   outline: 2px solid var(--q-orange);
   outline-offset: 1px;
 }
 
 /* Collapse all / Expand all — the established quiet-action recipe
    (studioWorkspace.ts:115). It sits beside the search box, not adrift in the
-   middle of the row, which is what plain space-between would do now that
-   .q-dd-head has three children. */
-.q-dd-toggleall {
+   middle of the row, which is what plain space-between would do now that the
+   head has three children. */
+.q-dd-toggleall,
+.q-rp-toggleall {
   flex: none;
   white-space: nowrap;
 }
@@ -115,7 +128,8 @@
 /* The auto margin absorbs the free space BEFORE justify-content gets it, so
    the readout stays pinned right and does not shuffle when the button's label
    flips between its two widths. */
-.q-dd-count {
+.q-dd-count,
+.q-rp-count {
   margin: 0 0 0 auto;
   font-size: var(--q-text-xs);
   color: var(--q-gray-600);
@@ -123,7 +137,8 @@
 }
 
 /* min() form matches .q-studio-testpanel. */
-.q-dd-scroll {
+.q-dd-scroll,
+.q-rp-scroll {
   max-height: min(70vh, 720px);
   overflow: auto;
   border: var(--q-border-hairline);
@@ -131,25 +146,28 @@
   padding: 0 var(--q-space-3) var(--q-space-3);
 }
 
-/* Each category is a <details>, open by default. Collapse the ones you are not
-   reading and the panel becomes a twelve-line table of contents, each line
-   still carrying its count: measured on HESP at 1440×900, 51,354px of content
-   in the 628px box above collapses to 492px, which does not scroll at all. */
-.q-dd-cat {
+/* Each section is a <details>, open by default. Collapse the ones you are not
+   reading and the panel becomes a table of contents, each line still carrying
+   its count: measured on HESP at 1440x900, 51,354px of dictionary content in a
+   628px box collapses to 492px, which does not scroll at all. */
+.q-dd-cat,
+.q-rp-file {
   margin-top: var(--q-space-4);
 }
 
-/* Defensive, exactly as .q-dd-table tr[hidden] below: the UA sheet's
+/* Defensive, exactly as the tr[hidden] rules below: the UA sheet's
    `details { display: block }` is as specific as [hidden]'s `display: none`
    and later in the cascade would win. */
-.q-dd-cat[hidden] {
+.q-dd-cat[hidden],
+.q-rp-file[hidden] {
   display: none;
 }
 
 /* The whole header row is the disclosure control. `list-style` drops the UA
    triangle (Safari needs the -webkit pseudo-element too) in favour of the
    chevron below, which sits on the side the count does not. */
-.q-dd-cathead {
+.q-dd-cathead,
+.q-rp-filehead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -159,48 +177,151 @@
   list-style: none;
 }
 
-.q-dd-cathead::-webkit-details-marker {
+.q-dd-cathead::-webkit-details-marker,
+.q-rp-filehead::-webkit-details-marker {
   display: none;
 }
 
-/* The same hover token as .q-dd-table tbody tr:hover — one surface, one
-   "this row is live" signal. */
-.q-dd-cathead:hover {
+/* The same hover token as the table rows — one surface, one "this row is
+   live" signal. */
+.q-dd-cathead:hover,
+.q-rp-filehead:hover {
   background: var(--q-gray-50);
 }
 
 /* CSS chevron, no asset and no transition — so there is no movement for
    prefers-reduced-motion to remove. Rotating one glyph rather than swapping
    two keeps the layout box identical in both states. */
-.q-dd-catmark {
+.q-dd-catmark,
+.q-rp-filemark {
   flex: none;
   font-size: var(--q-text-md);
   color: var(--q-gray-600);
 }
 
-.q-dd-catmark::before {
+.q-dd-catmark::before,
+.q-rp-filemark::before {
   content: '▸';
   display: inline-block;
 }
 
-.q-dd-cat[open] > .q-dd-cathead .q-dd-catmark::before {
+.q-dd-cat[open] > .q-dd-cathead .q-dd-catmark::before,
+.q-rp-file[open] > .q-rp-filehead .q-rp-filemark::before {
   transform: rotate(90deg);
 }
 
 /* Takes the slack, so the count stays pinned right now that the header has
    three children rather than two. */
-.q-dd-cattitle {
+.q-dd-cattitle,
+.q-rp-filetitle {
   flex: 1 1 auto;
   margin: 0;
   font-size: var(--q-text-lg);
   font-weight: 600;
 }
 
-.q-dd-catcount {
+.q-dd-catcount,
+.q-rp-filecount {
   font-size: var(--q-text-xs);
   color: var(--q-gray-600);
   white-space: nowrap;
 }
+
+/* One <table> per section — not one table with full-width heading rows inside
+   <tbody>. axe's th-has-data-cells is SERIOUS (the gate severity) and a
+   <th scope="colgroup" colspan="7"> in a tbody is exactly the construct whose
+   header/data-cell association it computes unpredictably; ui-design.md §7
+   records that the app's only historical CRITICAL came from getting table
+   semantics slightly wrong. Here every th is a scope="col" in a <thead> with
+   data cells directly beneath, so the rule is satisfied by construction.
+
+   Columns stay aligned across all the sections of a panel because
+   table-layout: fixed takes widths from identical th:nth-child(n)
+   percentages, ignoring content. The percentages themselves are per-panel and
+   measured; see each panel's block below. */
+.q-dd-table,
+.q-rp-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--q-text-xs);
+}
+
+.q-dd-table th,
+.q-dd-table td,
+.q-rp-table th,
+.q-rp-table td {
+  text-align: left;
+  padding: 6px;
+  border-bottom: var(--q-border-hairline);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.q-dd-table thead th,
+.q-rp-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--q-paper);
+  border-bottom: var(--q-border-input);
+  font-weight: 600;
+}
+
+.q-dd-table tbody tr:hover,
+.q-rp-table tbody tr:hover {
+  background: var(--q-gray-50);
+}
+
+/* Defensive: the UA sheet's `tr { display: table-row }` is as specific as
+   [hidden]'s `display: none` and later in the cascade would win. */
+.q-dd-table tr[hidden],
+.q-rp-table tr[hidden] {
+  display: none;
+}
+
+/* A muted mono line under a cell's primary content: the dictionary's `when …`
+   condition and folded-in Format, the rules panel's `type · scope` and update
+   language. The payload is a regex or an enum pair, not prose. */
+.q-dd-when,
+.q-dd-format,
+.q-rp-typescope,
+.q-rp-lang {
+  display: block;
+  font-family: var(--q-font-mono);
+  color: var(--q-gray-600);
+}
+
+/* One recipe, one chip. The dictionary's carry value codes and the rules
+   panel's carry target variable names — same shape, so the same declaration. */
+.q-dd-chip,
+.q-rp-chip {
+  display: inline-block;
+  font-family: var(--q-font-mono);
+  padding: 0 6px;
+  border-radius: var(--q-radius-sm);
+  background: var(--q-gray-100);
+  white-space: nowrap;
+}
+
+/* The default marker outline is easy to lose against these hairlines. */
+.q-dd-scroll summary:focus-visible,
+.q-dd-notes summary:focus-visible,
+.q-rp-scroll summary:focus-visible {
+  outline: 2px solid var(--q-orange);
+  outline-offset: 1px;
+}
+
+/* Aimed at the `+N more` overflows this was written for, NOT the section
+   headers: muting every section title to --q-gray-600 is the one thing this
+   blanket rule must not do. */
+.q-dd-scroll details:not(.q-dd-cat) > summary,
+.q-rp-scroll details:not(.q-rp-file) > summary {
+  cursor: pointer;
+  color: var(--q-gray-600);
+}
+
+/* ---- JSON Schema → data dictionary -------------------------------------- */
 
 .q-dd-catdesc {
   margin: 2px 0 var(--q-space-2);
@@ -209,18 +330,7 @@
   max-width: 84ch;
 }
 
-/* Twelve tables, one per category — not one table with full-width heading rows
-   inside <tbody>. axe's th-has-data-cells is SERIOUS (the gate severity) and a
-   <th scope="colgroup" colspan="7"> in a tbody is exactly the construct whose
-   header/data-cell association it computes unpredictably; ui-design.md §7
-   records that the app's only historical CRITICAL came from getting table
-   semantics slightly wrong. Here every th is a scope="col" in a <thead> with
-   data cells directly beneath, so the rule is satisfied by construction.
-
-   Columns stay aligned across all twelve because table-layout: fixed takes
-   widths from identical th:nth-child(n) percentages, ignoring content.
-
-   Measured .q-dd-scroll scrollWidth / clientWidth (Chromium, HESP, default
+/* Measured .q-dd-scroll scrollWidth / clientWidth (Chromium, HESP, default
    zoom), MIN-WIDTH RE-MEASURED after Format folded into Type:
      1600 → 1514 / 1514   1440 → 1354 / 1354   1366 → 1280 / 1280
      1280 → 1194 / 1194   1024 → 1082 /  938   768 → 1082 / 698
@@ -229,29 +339,7 @@
    110px less of it. Page-level horizontal overflow is 0 at every one of those
    widths. */
 .q-dd-table {
-  width: 100%;
   min-width: 1070px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: var(--q-text-xs);
-}
-
-.q-dd-table th,
-.q-dd-table td {
-  text-align: left;
-  padding: 6px;
-  border-bottom: var(--q-border-hairline);
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-
-.q-dd-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--q-paper);
-  border-bottom: var(--q-border-input);
-  font-weight: 600;
 }
 
 /* Variable · Description · Type · Valid values · Constraints · Additional
@@ -292,16 +380,6 @@
   width: 15%;
 }
 
-.q-dd-table tbody tr:hover {
-  background: var(--q-gray-50);
-}
-
-/* Defensive: the UA sheet's `tr { display: table-row }` is as specific as
-   [hidden]'s `display: none` and later in the cascade would win. */
-.q-dd-table tr[hidden] {
-  display: none;
-}
-
 .q-dd-name {
   font-family: var(--q-font-mono);
   font-weight: 600;
@@ -321,15 +399,6 @@
 
 /* Sentinel vs substantive is carried by chip SHAPE, never by a severity token:
    a missing-value code is not a warning. */
-.q-dd-chip {
-  display: inline-block;
-  font-family: var(--q-font-mono);
-  padding: 0 6px;
-  border-radius: var(--q-radius-sm);
-  background: var(--q-gray-100);
-  white-space: nowrap;
-}
-
 .q-dd-value--sentinel .q-dd-chip {
   background: var(--q-paper);
   border: var(--q-border-input);
@@ -341,16 +410,6 @@
   color: var(--q-gray-700);
 }
 
-.q-dd-when,
-/* The folded-in Format: a qualifier under its Type, same treatment as a
-   condition — the payload is `Matches pattern ^…$` far more often than a
-   `format` keyword. */
-.q-dd-format {
-  display: block;
-  font-family: var(--q-font-mono);
-  color: var(--q-gray-600);
-}
-
 .q-dd-extra-label {
   color: var(--q-gray-600);
 }
@@ -360,21 +419,6 @@
   font-family: var(--q-font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-/* The default marker outline is easy to lose against these hairlines. */
-.q-dd-scroll summary:focus-visible,
-.q-dd-notes summary:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
-}
-
-/* Aimed at the `+N more` overflows this was written for, NOT the category
-   headers: muting every category title to --q-gray-600 is the one thing this
-   blanket rule must not do. */
-.q-dd-scroll details:not(.q-dd-cat) > summary {
-  cursor: pointer;
-  color: var(--q-gray-600);
 }
 
 .q-dd-notes {
@@ -395,11 +439,114 @@
 
 /* ---- QC rules ----------------------------------------------------------- */
 
-/* Tier 3 surface. Solid hairline, never dashed — a dashed box is the framed
-   .q-empty, which ui-design.md:201 reserves for view-level emptiness. */
-.q-rulespreview {
-  border: var(--q-border-hairline);
-  border-radius: var(--q-radius-md);
-  padding: var(--q-space-5);
-  min-height: 160px;
+/* Measured .q-rp-scroll scrollWidth / clientWidth (Chromium, the bundled HESP
+   example, default zoom):
+     1600 → 1514 / 1514   1440 → 1354 / 1354   1366 → 1280 / 1280
+     1280 → 1194 / 1194   1024 → 1112 /  938   768 → 1112 / 698
+   So it fills the panel without scrolling from 1280 up and scrolls
+   horizontally below, which is what the min-width is for. Page-level
+   horizontal overflow is 0 at every one of those widths. */
+.q-rp-table {
+  min-width: 1100px;
+}
+
+/* Rule · Targets · Condition · Update expression · Severity · Comment —
+   measured, not guessed (ui-design.md §5). Unwrapped content need per column
+   over all 22 HESP rules, in px including padding (p50 / p90 / max), against
+   what each actually gets at 1440 under these percentages:
+
+     Rule                125 / 154 /  190   →  160
+     Targets             125 / 176 /  233   →  186
+     Condition           348 / 658 /  917   →  372
+     Update expression    24 / 176 /  363   →  213
+     Severity             53 /  72 /   72   →   93
+     Comment             722 / 870 / 1024   →  306
+
+   Condition drove the split: its MEDIAN need is 348px, so at the 25% this
+   started from it could not fit half the rules on one line — and it is the
+   column the panel exists to show, the one the Studio grid has no room for at
+   all. It takes the largest share.
+
+   Update expression is the opposite pathology, the one Format had in the
+   dictionary: 15 of the 22 rules are validate or external and carry none, so
+   its MEDIAN content is an em-dash. It went 21 → 13% on that alone, then back
+   to 16% on the eye rather than the numbers — 13% is above its p90 but breaks
+   `LAG(reference_education)` and `CAST(ROUND(...) AS INTEGER)` mid-identifier,
+   and a correction expression you have to reassemble is not a preview.
+
+   Severity is deliberately given more than it needs (93 against a 72px worst
+   case): `createSeverityLabel` is an inline-flex pill that overflows rather
+   than wraps, so it must never be squeezed — at the 1100px min-width, 7% is
+   77px, still clear of it.
+
+   Comment always wraps and is meant to: p50 722px is 2–3 lines at 306, which
+   is what makes it the row-height driver rather than the expressions. */
+.q-rp-table th:nth-child(1) {
+  width: 12%;
+}
+
+.q-rp-table th:nth-child(2) {
+  width: 14%;
+}
+
+.q-rp-table th:nth-child(3) {
+  width: 28%;
+}
+
+.q-rp-table th:nth-child(4) {
+  width: 16%;
+}
+
+.q-rp-table th:nth-child(5) {
+  width: 7%;
+}
+
+.q-rp-table th:nth-child(6) {
+  width: 23%;
+}
+
+.q-rp-id {
+  font-family: var(--q-font-mono);
+  font-weight: 600;
+}
+
+/* `off` / `external` sit inline after the id, before the type · scope line. */
+.q-rp-id .q-badge {
+  margin-left: var(--q-space-1);
+}
+
+/* A disabled rule is loaded, listed and NOT run. Muting says so at a glance;
+   the `off` badge is what says it accessibly, since colour never carries a
+   fact on its own.
+
+   --q-gray-600, not --q-gray-500: the row's target chips sit on --q-gray-100,
+   where gray-500 is 4.35:1 and axe caught it as a serious colour-contrast
+   violation. tokens.css:23 says as much — gray-500 is text on WHITE or
+   gray-50. gray-600 is 7.2:1 on the chip and 7.8:1 on paper. */
+.q-rp-row--off {
+  color: var(--q-gray-600);
+}
+
+/* Target names are long identifiers (`total_household_income_annual` is 29
+   characters), unlike the dictionary's value codes — so this one chip is
+   allowed to break rather than push the table wider. The margin is what
+   separates the chips: they are appended with no whitespace between them, and
+   the cell cannot become a flex/grid container without dropping out of the
+   fixed table layout. */
+.q-rp-chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 0 3px 3px 0;
+}
+
+/* pre-wrap is what renders the '\n' runs exprHighlight paints and preserves
+   the deliberate multi-line SQL of qc-rules-format.md §7. */
+.q-rp-code {
+  font-family: var(--q-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.q-rp-lang {
+  margin-top: 2px;
 }

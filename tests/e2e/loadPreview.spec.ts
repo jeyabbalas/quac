@@ -214,13 +214,190 @@ test('search opens a collapsed category, and clearing it collapses back', async 
   await expect(page.locator('.q-dd-table:visible')).toHaveCount(11);
 });
 
-test('the QC rules panel shows its placeholder and rule counts', async ({ page }) => {
+async function rules(page: Page): Promise<void> {
   await loadExample(page);
   await tab(page, 'QC rules').click();
+  await expect(page.locator('.q-rp-file')).toHaveCount(3, { timeout: 30_000 });
+}
+
+/** The row for a known rule, by its id in the row header. */
+const ruleRow = (page: Page, id: string) =>
+  page
+    .locator('.q-rp-table tbody tr')
+    .filter({ has: page.locator('.q-rp-id', { hasText: id }) })
+    .first();
+
+test('the QC rules panel lists 22 rules, one table per file', async ({ page }) => {
+  await rules(page);
 
   const panel = page.locator('#q-preview-panel-rules');
   await expect(panel.locator('.q-preview-meta')).toHaveText('3 files · 22 rules');
-  await expect(panel.getByText('A preview of your QC rules will appear here.')).toBeVisible();
+  await expect(panel.getByText('QC rules files, one table per file')).toBeVisible();
+  await expect(page.locator('.q-rp-count')).toHaveText('22 rules');
+
+  // Load order, which is the cross-file correction-order contract.
+  await expect(page.locator('.q-rp-filetitle')).toHaveText([
+    'hesp_consistency.quac.csv',
+    'hesp_corrections.quac.csv',
+    'hesp_keys_and_structure.quac.csv',
+  ]);
+  await expect(page.locator('.q-rp-filecount')).toHaveText(['5 rules', '7 rules', '10 rules']);
+
+  await expect(page.locator('.q-rp-table').first().locator('thead th')).toHaveText([
+    'Rule',
+    'Targets',
+    'Condition',
+    'Update expression',
+    'Severity',
+    'Comment',
+  ]);
+
+  // The scroller is its own tab stop with its own name (axe:
+  // scrollable-region-focusable), named distinctly from the tab panel.
+  const scroll = page.locator('.q-rp-scroll');
+  await expect(scroll).toHaveAttribute('aria-label', 'QC rules by file');
+  await expect(scroll).toHaveAttribute('tabindex', '0');
+});
+
+test('a correction rule shows its scope, targets, language and severity', async ({ page }) => {
+  await rules(page);
+
+  const row = ruleRow(page, 'Q047');
+  await expect(row.locator('.q-rp-typescope')).toHaveText('correct · row');
+  await expect(row.locator('.q-rp-chip').first()).toHaveText('wage_income_annual');
+  await expect(row.locator('.q-rp-lang')).toHaveText('sql');
+  await expect(row.locator('.q-pill--info')).toHaveText('info');
+  // The whole point of the panel: the Studio's rule grid has no room for
+  // either expression, so this is the only place they are tabulated.
+  await expect(row.locator('.q-rp-expr').first()).toContainText('__value__ IN (777');
+  await expect(row.locator('.q-rp-expr').nth(1)).toContainText('CASE __value__ WHEN 777');
+});
+
+test('the expressions are syntax-highlighted, in the Studio editors’ colours', async ({ page }) => {
+  await rules(page);
+
+  // The tokenizer is a lazy chunk: the first paint is plain mono and upgrades
+  // in place, so this is where it must have landed.
+  const keywords = page.locator('.q-rp-expr .tok-keyword');
+  await expect(keywords.first()).toBeVisible({ timeout: 30_000 });
+  expect(await keywords.count()).toBeGreaterThan(20);
+
+  const row = ruleRow(page, 'Q047');
+  await expect(row.locator('.q-rp-expr').first().locator('.tok-keyword').first()).toHaveText('IN');
+  await expect(row.locator('.q-rp-expr').first().locator('.tok-number').first()).toHaveText('777');
+  // #0369a1 is --q-info, the .q-syntax primitive shared with the Studio.
+  await expect(row.locator('.q-rp-expr .tok-keyword').first()).toHaveCSS(
+    'color',
+    'rgb(3, 105, 161)',
+  );
+
+  // js is highlighted by the other parser; external prose by neither.
+  await expect(ruleRow(page, 'H006').locator('.q-rp-lang')).toHaveText('js');
+  await expect(ruleRow(page, 'H006').locator('.tok-comment').first()).toBeVisible();
+  await expect(ruleRow(page, 'Q044').locator('.tok-keyword')).toHaveCount(0);
+});
+
+test('off and external are row treatment, not two more columns', async ({ page }) => {
+  await rules(page);
+
+  const disabled = ruleRow(page, 'Q057');
+  await expect(disabled).toHaveClass(/q-rp-row--off/);
+  await expect(disabled.locator('.q-badge')).toHaveText('off');
+
+  await expect(ruleRow(page, 'Q044').locator('.q-badge')).toHaveText('external');
+  // Every OTHER rule carries neither.
+  await expect(page.locator('.q-rp-id .q-badge')).toHaveCount(2);
+});
+
+test('a long condition folds its tail behind +N more', async ({ page }) => {
+  await rules(page);
+
+  // Q021's condition is 11 lines in the source file; six are shown. The tail
+  // stays in the DOM (so `toContainText` would still find it — assert on the
+  // disclosure state, which is what the reader actually sees).
+  const cell = ruleRow(page, 'Q021').locator('.q-rp-expr').first();
+  const overflow = cell.locator('details');
+  await expect(overflow.locator('summary')).toBeVisible();
+  await expect(overflow.locator('summary')).toHaveText('+5 more');
+  await expect(overflow).not.toHaveAttribute('open', /.*/);
+
+  await overflow.locator('summary').click();
+  await expect(overflow).toHaveAttribute('open', /.*/);
+  await expect(overflow).toContainText('GREATEST(50, 0.01 * total_household_income_annual)');
+});
+
+test('a file header collapses its table and keeps its count', async ({ page }) => {
+  await rules(page);
+
+  const first = page.locator('.q-rp-file').first();
+  const fileHead = first.locator('.q-rp-filehead');
+  await expect(first.locator('.q-rp-table')).toBeVisible();
+
+  await fileHead.click();
+  await expect(first.locator('.q-rp-table')).toBeHidden();
+  await expect(first.locator('.q-rp-filecount')).toHaveText('5 rules');
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(2);
+
+  await fileHead.click();
+  await expect(first.locator('.q-rp-table')).toBeVisible();
+});
+
+test('Collapse all folds every rules file and the label flips', async ({ page }) => {
+  await rules(page);
+
+  const toggle = page.locator('.q-rp-toggleall');
+  await expect(toggle).toHaveText('Collapse all');
+
+  await toggle.click();
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(0);
+  await expect(page.locator('.q-rp-filehead:visible')).toHaveCount(3); // a table of contents
+  await expect(toggle).toHaveText('Expand all');
+
+  // The label is derived, so opening ONE by hand is enough to flip it back.
+  await page.locator('.q-rp-filehead').first().click();
+  await expect(toggle).toHaveText('Collapse all');
+
+  await toggle.click();
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(0);
+  await toggle.click();
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(3);
+});
+
+test('search reaches the conditions, and restores what was open', async ({ page }) => {
+  await rules(page);
+
+  const owner = page
+    .locator('.q-rp-file')
+    .filter({ has: page.locator('.q-rp-id', { hasText: 'Q047' }) })
+    .first();
+  await owner.locator('.q-rp-filehead').click();
+  await expect(owner.locator('.q-rp-table')).toBeHidden();
+
+  // A match you cannot see is a filter that lies — searching force-opens it.
+  const search = page.getByLabel('Search rules');
+  await search.fill('Q047');
+  await expect(page.locator('.q-rp-count')).toHaveText('1 of 22 rules');
+  await expect(page.locator('.q-rp-file:visible')).toHaveCount(1);
+  await expect(owner.locator('.q-rp-table')).toBeVisible();
+  await expect(page.locator('.q-rp-table tbody tr:visible')).toHaveCount(1);
+
+  // The corpus covers the expressions, not just the ids: `lag` appears in no
+  // rule id and in exactly two rules' SQL — Q008's window condition and Q055's
+  // carry-forward, which uses it in both the condition and the update.
+  await search.fill('lag');
+  await expect(page.locator('.q-rp-count')).toHaveText('2 of 22 rules');
+  await expect(page.locator('.q-rp-table tbody tr:visible')).toHaveCount(2);
+
+  await search.fill('zzzz');
+  await expect(page.getByText("No rules match 'zzzz'.")).toBeVisible();
+  await expect(page.locator('.q-rp-file:visible')).toHaveCount(0);
+
+  // Clearing hands back exactly what the user had open: this one shut.
+  await search.fill('');
+  await expect(page.locator('.q-rp-count')).toHaveText('22 rules');
+  await expect(page.locator('.q-rp-file:visible')).toHaveCount(3);
+  await expect(owner.locator('.q-rp-table')).toBeHidden();
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(2);
 });
 
 test('empty slots show notes rather than hiding their tabs', async ({ page }) => {
@@ -243,6 +420,7 @@ test('empty slots show notes rather than hiding their tabs', async ({ page }) =>
   await expect(page.getByText('JSON Schema formatted as a data dictionary')).toBeVisible();
   await tab(page, 'QC rules').click();
   await expect(page.getByText('Load a QC rules file to see it here.')).toBeVisible();
+  await expect(page.getByText('QC rules files, one table per file')).toBeVisible();
 });
 
 test('the tablist is one tab stop and the arrow keys move and select', async ({ page }) => {

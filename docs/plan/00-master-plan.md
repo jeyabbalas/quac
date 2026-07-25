@@ -73,6 +73,52 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · UIX-4d · **The QC rules tab has content.** `rulesPreview.ts` was a 41-line stub: you could load three
+`.quac.csv` files, see `3 files · 22 rules` and read per-file lint on the slot card, and still not read a single rule
+anywhere on the Load tab — the Studio's grid is the only place they were tabulated, and at ~510–710px wide it
+deliberately omits both `condition` and `update_expression`. The panel is now the SAME component as the data
+dictionary over a different payload: one native `<details class="q-rp-file" open>` per file in **load order** (the
+cross-file correction-order contract), a `Search rules` box, a derived `Collapse all` / `Expand all`, a debounced
+`role="status"` count, and one `<table>` per file. Everything identical between the two panels — head, search,
+toggle, count, scroll region, disclosure, table base, chip, muted mono sub-line — is now declared ONCE in
+`preview.css` under grouped `.q-dd-*, .q-rp-*` selectors; only the payload cells and the measured percentages differ.
+
+**Six curated columns, not the raw ten**: `Rule` (id, with `type · scope` folded under it and `off`/`external` as
+badges), `Targets`, `Condition`, `Update expression`, `Severity`, `Comment`. **Syntax-highlighted** by the same
+`@lezer/highlight` `classHighlighter` and the same PostgreSQL/JS parsers the Studio editors use, so the two surfaces
+agree by construction; the `tok-*` colours moved from `studioView.css`'s `.q-studio` to `primitives.css` under a
+`.q-syntax` marker (scoped, or an unscoped `.tok-*` would restyle `@jeyabbalas/data-table`'s own bundled CodeMirror).
+The bundle gate drove the module split: `exprTokens.ts` is reachable only through the dynamic `import()` in
+`exprHighlight.ts`, since `lang-sql → language → view` and the Load view is eager. Entry JS **41.4 → 42.9 KB gz**,
+all of it QuaC's own code; the codemirror marker chunk reads 116.3 → 109.7 KB gz but that is a re-split, not a
+saving — total JS 909.8 → 912.3 KB gz over 47 → 50 chunks. Cold, the first cells paint plain mono and upgrade in
+place behind a stamp+`isConnected` guard; warm, every cell highlights synchronously off a 256-entry LRU.
+
+**Column widths measured, not guessed.** Unwrapped content need per column over all 22 rules (p50/p90/max px):
+Rule 125/154/190 · Targets 125/176/233 · Condition **348**/658/917 · Update expression **24**/176/363 ·
+Severity 53/72/72 · Comment 722/870/1024. Condition's MEDIAN need is 348px against the 333 it got at the starting
+25%, so it takes the largest share; Update expression is the Format pathology again — 15 of the 22 rules are
+`validate` or `external` and carry none, so its median content is an em-dash — and went 21 → 13% on the numbers,
+then back to **16%** on the eye, 13% being above its p90 but breaking `LAG(reference_education)` mid-identifier.
+Final **12 · 14 · 28 · 16 · 7 · 23** = 160/186/372/213/93/306 at 1440; `.q-rp-scroll` scrollWidth/clientWidth
+1514/1514 · 1354/1354 · 1280/1280 · 1194/1194 · 1112/938 · 1112/698 at 1600/1440/1366/1280/1024/768, page-level
+overflow **0** throughout. Expressions cap at 6 lines behind the dictionary's `+N more` (HESP Q021's 11-line
+condition → `+5 more`); the cap is exact because `highlightCode` emits every break as its own run and never emits a
+text run spanning one, verified through strings, block comments and template literals.
+
+**Three things found by driving it.** (1) The panel rebuilt on every `rulesState` publish, and every load ends with a
+second publish — the re-lint once the dataset lands — which threw away the `<details>` the user had just collapsed
+and the query they had just typed; guarded by reference-comparing `state.files`, which the store replaces on every
+real change and reuses when only lint moves. (2) axe caught a genuine serious violation the eye did not: a disabled
+rule's muted row painted its target chips `--q-gray-500` on `--q-gray-100`, **4.35:1** — `tokens.css:23` already said
+gray-500 is text on WHITE or gray-50. (3) After a Studio edit the serializer writes CRLF and PapaParse keeps `\r\n`
+inside quoted fields, so `renderExpr` normalises line endings the way CodeMirror does to its own documents.
+Deviation from plan: `TokenRun`/`ExprLang`/`splitLines` live in the DOM-free `rulesPreviewModel.ts` and
+`exprTokens.ts` imports the types, not the reverse, so the node-tested model never reaches CodeMirror — which also
+swapped the plan's commits 2 and 3. 640 unit green (**+41**: the model, and the real Lezer output on real HESP
+expressions, both in the fast `node` project); loadPreview 13 → 20 e2e; two new axe scans (rules populated, rules
+collapsed).
+
 2026-07-25 · UIX-4c · **The data dictionary's categories collapse.** All twelve opened at once, so the panel could
 tell you about any one variable and nothing about what it contained: measured on HESP at 1440×900, `.q-dd-scroll`
 was **51,354px of content in a 628px box** (`min(70vh, 720px)`) — 82 screens, with `Identification` and
@@ -129,8 +175,8 @@ promised the 50-row preview sees what the run will see, but a rebuild re-points 
 row: measured **250 BIGINT · 9 DOUBLE · 7 VARCHAR** after the cast against 266 VARCHAR before. (2) The panel-tab
 primitives moved to `primitives.css` and `components/panelTabs.ts`, discharging `phase-17-studio-editor.md:41`'s
 standing instruction; `ruleForm.ts` needed no change, which was the point. (3) All three tabs are permanently present
-(the option preview said disabled/absent-until-filled) — the rules tab has no content yet and would have hidden
-forever, and both roving-tabindex hazards vanish. (4) The dictionary renders where `columnDigest` refuses to: §A.5
+(the option preview said disabled/absent-until-filled) — the rules tab had no content yet (UIX-4d gave it some) and
+would have hidden forever, and both roving-tabindex hazards vanish. (4) The dictionary renders where `columnDigest` refuses to: §A.5
 says fatal set-level errors block validation, not schema browsing. The **agreement test** is the highest-value artifact
 — row count and variable-name set asserted equal across HESP, tiny and every synthetic set — and it caught a real
 divergence on the first run: `synthetic/no-ids` gives 0 from the digest and 2 from the package, because §E.1 walks

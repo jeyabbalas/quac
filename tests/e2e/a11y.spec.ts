@@ -119,12 +119,23 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
     await page.locator('.q-preview .q-paneltab', { hasText: name }).click();
     if (name === 'JSON Schema') {
       await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+    } else {
+      // The highlighter is a lazy chunk; its spans are QuaC-authored markup
+      // and must clear colour contrast, so wait for them before scanning.
+      await expect(page.locator('.q-rp-file')).toHaveCount(3, { timeout: 30_000 });
+      await expect(page.locator('.q-rp-expr .tok-keyword').first()).toBeVisible({
+        timeout: 30_000,
+      });
     }
     await expectNoSeriousViolations(page, `Load → ${name}`);
   }
 
-  // Collapsed is a state of its own — twelve <summary> controls and nothing
-  // else — and by the same rule it needs its own scan.
+  // Collapsed is a state of its own — a stack of <summary> controls and
+  // nothing else — and by the same rule each panel needs its own scan.
+  await page.locator('.q-rp-toggleall').click();
+  await expect(page.locator('.q-rp-table:visible')).toHaveCount(0);
+  await expectNoSeriousViolations(page, 'Load → QC rules (collapsed)');
+
   await page.locator('.q-preview .q-paneltab', { hasText: 'JSON Schema' }).click();
   await page.locator('.q-dd-toggleall').click();
   await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);

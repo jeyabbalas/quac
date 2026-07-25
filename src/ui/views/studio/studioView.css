@@ -50,40 +50,87 @@
   min-width: 0;
 }
 
+/* 1024–1279: two columns. The rail spans both rows so its divider runs the
+   full card height; the preview tucks under the work column. Placement is
+   explicit at every breakpoint — auto-placement across three zones with a
+   spanning item is not worth the guesswork. */
 .q-studio-rail {
+  grid-column: 1;
+  grid-row: 1 / span 2;
   border-right: var(--q-border-hairline);
 }
 
-/* Below 1280 the preview drops under both columns. */
+.q-studio-work {
+  grid-column: 2;
+  grid-row: 1;
+}
+
 .q-studio-preview {
-  grid-column: 1 / -1;
+  grid-column: 2;
+  grid-row: 2;
   border-top: var(--q-border-hairline);
 }
 
+/* ≥1280: three side-by-side zones — form and its test result on one screen. */
 @media (min-width: 1280px) {
   .q-studio-layout {
     grid-template-columns: 260px minmax(0, 1.1fr) minmax(380px, 1fr);
   }
 
+  .q-studio-rail {
+    grid-row: 1;
+  }
+
   .q-studio-preview {
     grid-column: 3;
+    grid-row: 1;
     border-top: none;
     border-left: var(--q-border-hairline);
   }
 }
 
+/* ≤1023: one column, and the rail turns into a horizontal file strip — a
+   full-width stack of file buttons would push the actual work below the
+   fold. */
 @media (max-width: 1023px) {
   .q-studio-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .q-studio-rail {
+    grid-row: 1;
     border-right: none;
     border-bottom: var(--q-border-hairline);
   }
 
+  .q-studio-work {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .q-studio-preview {
-    grid-column: auto;
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .q-studio-files {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  /* Dividers and the selection marker rotate with the strip: the hairline
+     moves to the right edge, the yellow marker to the bottom. */
+  .q-filebtn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 160px;
+    border-left: none;
+    border-right: var(--q-border-hairline);
+    border-bottom: 3px solid transparent;
+  }
+
+  .q-filebtn[aria-current='true'] {
+    border-bottom-color: var(--q-yellow);
   }
 }
 

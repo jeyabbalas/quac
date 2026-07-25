@@ -35,7 +35,7 @@
    (.q-combolist) is absolutely positioned and must escape the zone. */
 .q-studio-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   align-items: stretch;
   border: var(--q-stroke);
   border-radius: var(--q-radius-lg);
@@ -71,10 +71,16 @@
   border-top: var(--q-border-hairline);
 }
 
-/* ≥1280: three side-by-side zones — form and its test result on one screen. */
+/* ≥1280: three side-by-side zones — form and its test result on one screen.
+   The work track carries a 600px FLOOR, measured, not guessed: in this band
+   the rule table asks 534px min-content (see .q-rulegrid-targets below) and
+   the zone adds 32px of padding. Without the floor a 1280 viewport hands the
+   work column 475px and the primary work surface scrolls sideways — the thing
+   this pass exists to kill. The three minimums sum to 1200, which still
+   clears a 1280 viewport carrying a classic vertical scrollbar. */
 @media (min-width: 1280px) {
   .q-studio-layout {
-    grid-template-columns: 260px minmax(0, 1.1fr) minmax(380px, 1fr);
+    grid-template-columns: 240px minmax(600px, 1.1fr) minmax(360px, 1fr);
   }
 
   .q-studio-rail {
@@ -111,26 +117,6 @@
   .q-studio-preview {
     grid-column: 1;
     grid-row: 3;
-  }
-
-  .q-studio-files {
-    flex-direction: row;
-    overflow-x: auto;
-  }
-
-  /* Dividers and the selection marker rotate with the strip: the hairline
-     moves to the right edge, the yellow marker to the bottom. */
-  .q-filebtn {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 160px;
-    border-left: none;
-    border-right: var(--q-border-hairline);
-    border-bottom: 3px solid transparent;
-  }
-
-  .q-filebtn[aria-current='true'] {
-    border-bottom-color: var(--q-yellow);
   }
 }
 
@@ -213,6 +199,31 @@
   color: var(--q-gray-500);
 }
 
+/* ≤1023 the rail is a horizontal file strip — a full-width stack of file
+   buttons would push the actual work below the fold. Dividers and the
+   selection marker rotate with it: the hairline moves to the right edge, the
+   yellow marker to the bottom. Must follow the rules above — same
+   specificity, so source order decides. */
+@media (max-width: 1023px) {
+  .q-studio-files {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .q-filebtn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 160px;
+    border-left: none;
+    border-right: var(--q-border-hairline);
+    border-bottom: 3px solid transparent;
+  }
+
+  .q-filebtn[aria-current='true'] {
+    border-bottom-color: var(--q-yellow);
+  }
+}
+
 /* ---- rule grid ---- */
 .q-studio-gridhead {
   display: flex;
@@ -244,17 +255,18 @@
   font-size: var(--q-text-sm);
 }
 
+/* 6px gutters, not 8: seven columns pay for every extra pixel twice. */
 .q-rulegrid th {
   text-align: left;
   font-size: var(--q-text-xs);
   color: var(--q-gray-700);
-  padding: 6px 8px;
+  padding: 6px;
   border-bottom: var(--q-border-input);
   white-space: nowrap;
 }
 
 .q-rulegrid td {
-  padding: 6px 8px;
+  padding: 6px;
   border-bottom: var(--q-border-hairline);
   vertical-align: middle;
 }
@@ -291,6 +303,16 @@
   font-size: var(--q-text-xs);
 }
 
+/* The elastic column yields first: with three zones side by side there is no
+   room for 200px of target names. Full text stays in the cell's title (and
+   the rule is one click away). Must follow the rule above — same specificity,
+   so source order decides. */
+@media (min-width: 1280px) {
+  .q-rulegrid-targets {
+    max-width: 130px;
+  }
+}
+
 .q-rulegrid-actions {
   white-space: nowrap;
   text-align: right;
@@ -305,6 +327,15 @@
 .q-rowbtn:hover:not(:disabled),
 .q-rowbtn:focus-visible {
   color: var(--q-ink);
+}
+
+/* .q-btn:disabled out-specifies .q-btn--ghost, so the first row's ↑ and the
+   last row's ↓ came out as filled gray chips — louder than the live buttons
+   beside them. Unavailable should read as absent, not as a control. */
+.q-rowbtn:disabled {
+  background: none;
+  border-color: transparent;
+  color: var(--q-gray-400);
 }
 
 .q-rowbtn--group {

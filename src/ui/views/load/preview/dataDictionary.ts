@@ -28,28 +28,12 @@ import type {
   DictionaryValue,
 } from '../../../../core/schema/data-dictionary';
 import { needsRootChoice, schemaState } from '../../../../core/schema/schema-store';
+import { note, overflowDetails } from './previewDom';
 
 /** A screen reader should hear "12 of 265 variables" once, not per keystroke. */
 const COUNT_ANNOUNCE_DELAY_MS = 300;
 
 const variables = (n: number): string => `${String(n)} variable${n === 1 ? '' : 's'}`;
-
-function note(text: string): HTMLParagraphElement {
-  const p = document.createElement('p');
-  p.className = 'q-panel-note';
-  p.textContent = text;
-  return p;
-}
-
-/** `+3 more` behind a native <details> — keyboard-operable and axe-clean for free. */
-function overflowDetails(count: number, render: (host: HTMLElement) => void): HTMLDetailsElement {
-  const details = document.createElement('details');
-  const summary = document.createElement('summary');
-  summary.textContent = `+${String(count)} more`;
-  details.append(summary);
-  render(details);
-  return details;
-}
 
 function conditionLine(condition: string): HTMLElement {
   const when = document.createElement('span');

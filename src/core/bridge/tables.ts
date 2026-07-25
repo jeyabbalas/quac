@@ -28,6 +28,19 @@ export const DISPLAY_EXPORT_SQL = `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} 
 export const reportRowsSQL = (offset: number, limit: number): string =>
   `SELECT * FROM ${DATA_VIEW} ORDER BY __row__ LIMIT ${String(limit)} OFFSET ${String(offset)}`;
 
+/** Load-view Preview sample size (ingestion.md §2). */
+export const PREVIEW_ROW_CAP = 50;
+
+/**
+ * Load-view Preview rows: the first 50 in canonical order with `__row__`
+ * excluded. One constant, so the cap cannot drift between the SQL, the
+ * "first 50 of 101 rows" meta line, and the table's accessible name — it used
+ * to be a literal in all three.
+ */
+export const PREVIEW_SQL =
+  `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} ORDER BY __row__ ` +
+  `LIMIT ${String(PREVIEW_ROW_CAP)}`;
+
 /** Studio live-preview sample size (P18): the browsing grid caps at 10k rows;
  *  rule-test counts always run against the FULL `data` view. */
 export const STUDIO_SAMPLE_ROW_CAP = 10_000;

@@ -54,7 +54,10 @@
   }
 }
 
-/* Plain preview table */
+/* Preview section. The TABLE itself lives in
+   components/plainPreviewTable.css — it is shared with the Studio's rule-test
+   sample, and was reaching that view only because shell.ts eagerly imports
+   loadView.ts. */
 .q-preview {
   margin-top: var(--q-space-5);
 }
@@ -63,42 +66,6 @@
   margin: 0 0 var(--q-space-2);
   font-size: var(--q-text-lg);
   font-weight: 700;
-}
-
-/* Tier 3 data surface: quiet hairline containment, the data does the talking */
-.q-preview-scroll {
-  overflow-x: auto;
-  border: var(--q-border-hairline);
-  border-radius: var(--q-radius-md);
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.q-preview-table {
-  border-collapse: collapse;
-  font-size: var(--q-text-sm);
-  white-space: nowrap;
-}
-
-.q-preview-table th,
-.q-preview-table td {
-  padding: 4px 10px;
-  border-bottom: var(--q-border-hairline);
-  border-right: 1px solid var(--q-gray-100);
-  text-align: left;
-}
-
-.q-preview-table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--q-gray-100);
-  font-weight: 600;
-}
-
-/* The em-dash stands in for NULL, so it is meaningful text, not decoration —
-   gray-400 measures 2.52 on paper. gray-500 is 4.74 and still recedes. */
-.q-preview-null {
-  color: var(--q-gray-500);
 }
 
 /* Rules slot detail (P12): per-file blocks with the lint list file → rule. */

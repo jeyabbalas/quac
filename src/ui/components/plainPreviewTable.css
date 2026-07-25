@@ -1,0 +1,74 @@
+/* Plain preview table — Tier 3 data surface: quiet hairline containment, the
+   data does the talking. Moved out of loadView.css (ui-design.md:203, "CSS
+   lives with its owner"): the Studio's rule-test sample renders through the
+   same component and was styled only because shell.ts eagerly imports
+   loadView.ts, while shell.ts:3 states the intent is lazy per-route mounting —
+   a trap waiting to spring. */
+
+.q-preview-scroll {
+  overflow: auto;
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  max-height: 420px;
+}
+
+.q-preview-table {
+  /* `separate` is load-bearing: under border-collapse:collapse the TABLE paints
+     cell borders, so a sticky header's rule scrolls away with the table body
+     and the header floats unlined. Only border-bottom is ever set below, so
+     nothing doubles up. */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--q-text-sm);
+  white-space: nowrap;
+}
+
+.q-preview-table th,
+.q-preview-table td {
+  padding: 4px 10px;
+  border-bottom: var(--q-border-hairline);
+  text-align: left;
+}
+
+/* Stick the <thead>, not the cells — both rows travel together, so there is no
+   magic pixel offset for row 2 to get wrong when the root font is scaled. */
+.q-preview-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* The background must sit on the CELLS: on <thead> alone, body rows show
+   through it in Chromium. */
+.q-preview-table thead th {
+  background: var(--q-paper);
+  font-weight: 600;
+  border-bottom: none;
+}
+
+/* The type row closes the header block, so it carries the one strong rule. */
+.q-preview-table .q-preview-typerow td {
+  background: var(--q-paper);
+  border-bottom: var(--q-border-input);
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600); /* 7.0:1 on paper */
+}
+
+.q-preview-table .q-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* gray-50, never gray-100: the NULL dash below is --q-gray-500, which measures
+   4.54 on gray-50 (AA) but 4.35 on gray-100 (fails) — the pairing P19 fixed
+   elsewhere. */
+.q-preview-table tbody tr:hover {
+  background: var(--q-gray-50);
+}
+
+/* The em-dash stands in for NULL, so it is meaningful text, not decoration —
+   gray-400 measures 2.52 on paper. gray-500 is 4.74 and still recedes. */
+.q-preview-null {
+  color: var(--q-gray-500);
+}

@@ -218,7 +218,9 @@ export function createPreviewPane(): PreviewPane {
     if (rows.length === 0) return;
     const body = document.createElement('div');
     body.className = 'q-test-body';
-    renderPreviewTable(body, columns, rows);
+    // This is a ≤20-row rule-test sample, not the Load view's dataset preview —
+    // the component's default region name would be a lie here.
+    renderPreviewTable(body, columns, rows, { regionLabel: 'Rule test sample rows' });
     host.append(body);
     if (truncated) {
       const note = document.createElement('p');

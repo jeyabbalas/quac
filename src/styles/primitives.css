@@ -335,6 +335,43 @@
   font-size: var(--q-text-md);
 }
 
+/* Syntax colours on the design tokens (@lezer/highlight's classHighlighter
+   emits this stable tok-* set). A cross-view primitive since the Load view's
+   QC rules preview highlights the same SQL and JS the Studio editors do — one
+   definition, or the two surfaces drift.
+
+   Scoped to a `.q-syntax` marker rather than left bare: @jeyabbalas/data-table
+   bundles its own CodeMirror, and an unscoped `.tok-*` rule would reach inside
+   `.dt-root` and restyle third-party markup we do not own. The marker sits on
+   `.q-editor` (codeEditor.ts) and on the preview's expression cells. */
+.q-syntax .tok-keyword {
+  color: var(--q-info);
+  font-weight: 600;
+}
+
+.q-syntax .tok-string,
+.q-syntax .tok-string2 {
+  color: var(--q-success);
+}
+
+.q-syntax .tok-number {
+  color: var(--q-warning);
+}
+
+.q-syntax .tok-comment {
+  color: var(--q-gray-500);
+  font-style: italic;
+}
+
+.q-syntax .tok-operator,
+.q-syntax .tok-punctuation {
+  color: var(--q-gray-600);
+}
+
+.q-syntax .tok-typeName {
+  color: var(--q-info);
+}
+
 /* Empty state */
 .q-empty {
   max-width: 480px;

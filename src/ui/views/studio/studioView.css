@@ -968,34 +968,10 @@
   font-size: var(--q-text-sm);
 }
 
-/* Syntax colors on the design tokens (classHighlighter's stable tok-* set) */
-.q-studio .tok-keyword {
-  color: var(--q-info);
-  font-weight: 600;
-}
-
-.q-studio .tok-string,
-.q-studio .tok-string2 {
-  color: var(--q-success);
-}
-
-.q-studio .tok-number {
-  color: var(--q-warning);
-}
-
-.q-studio .tok-comment {
-  color: var(--q-gray-500);
-  font-style: italic;
-}
-
-.q-studio .tok-operator,
-.q-studio .tok-punctuation {
-  color: var(--q-gray-600);
-}
-
-.q-studio .tok-typeName {
-  color: var(--q-info);
-}
+/* The tok-* syntax colours moved to styles/primitives.css under `.q-syntax`,
+   which .q-editor now carries: the Load view's QC rules preview highlights the
+   same two languages with the same @lezer/highlight class names, and one
+   definition is the only way the two surfaces stay identical. */
 
 /* Mirrored diagnostics list — the stable e2e target under each editor */
 .q-editor-diags {

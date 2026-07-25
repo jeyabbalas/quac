@@ -88,7 +88,10 @@ export function createCodeEditor(options: CodeEditorOptions): CodeEditor {
     mode === 'text' ? [] : autocompletion();
 
   const el = document.createElement('div');
-  el.className = 'q-editor';
+  // `q-syntax` is the marker the tok-* colours hang off (primitives.css) — a
+  // cross-view primitive shared with the Load view's QC rules preview, scoped
+  // so it never reaches data-table's own bundled CodeMirror.
+  el.className = 'q-editor q-syntax';
   const mount = document.createElement('div');
   mount.className = 'q-editor-host';
   const diags = document.createElement('ul');

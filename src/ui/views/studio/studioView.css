@@ -22,6 +22,12 @@
   font-weight: 600;
 }
 
+/* Link-like: nothing to tint or ring, so hover underlines (see
+   .q-corshelp-details and .q-offender-focus). */
+.q-studio-banner a:hover {
+  text-decoration: underline;
+}
+
 /* ---- workspace layout: ONE Tier-1 sticker, three zones ----
    The sticker recipe lives on .q-studio-layout, not on its children: rail /
    work / preview are zones INSIDE one card, separated by Tier-2 hairlines
@@ -262,12 +268,17 @@
 }
 
 .q-filebtn:hover {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
 }
 
+/* Inset ring (tokens.css --q-focus-edge-inset): these stack flush, divided by
+   hairlines, so the outward 6px ink edge would print over the labels above and
+   below — and at ≤1023 .q-studio-files is an overflow-x scroller that clips it
+   outright. Both halves of the pair are restated, never just the offset. */
 .q-filebtn:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: -2px;
+  outline: var(--q-focus-ring);
+  outline-offset: var(--q-focus-offset-inset);
+  box-shadow: var(--q-focus-edge-inset);
 }
 
 .q-filebtn[aria-current='true'] {
@@ -387,12 +398,15 @@
 }
 
 .q-rulegrid tbody tr:hover {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
 }
 
+/* Inset ring, same reason as .q-filebtn: .q-studio-gridbody is an overflow-x
+   scroller, so an outward edge is clipped on the first and last rows. */
 .q-rulegrid tbody tr:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: -2px;
+  outline: var(--q-focus-ring);
+  outline-offset: var(--q-focus-offset-inset);
+  box-shadow: var(--q-focus-edge-inset);
 }
 
 .q-rulegrid-id {
@@ -610,6 +624,12 @@
   color: var(--q-gray-600);
 }
 
+/* Quiet disclosure: hover darkens the text to ink, the same answer
+   .q-slotcard-details and .q-share-urls give. */
+.q-test-sql summary:hover {
+  color: var(--q-ink);
+}
+
 .q-test-sql code {
   display: block;
   margin-top: 4px;
@@ -656,12 +676,18 @@
   max-width: 100%;
 }
 
-.q-studio input[type='text']:focus-visible,
-.q-studio select:focus-visible,
-.q-studio textarea:focus-visible,
-.q-newfile-field input:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
+/* The hover ring (tokens.css --q-hover-ring): an input-like control answers
+   the pointer by lighting its border, the language .q-dropzone already spoke.
+   Only the COLOUR moves — the 1px width is unchanged, so nothing reflows.
+   Focus needs no rule here at all: base.css reaches every one of these, and
+   the `outline-offset: 1px` these used to carry against the inherited 6px
+   edge put 1px of ink inside the orange band and 3px outside, while the
+   buttons beside them sat symmetric on base's 2px. */
+.q-studio input[type='text']:hover:not(:disabled),
+.q-studio select:hover:not(:disabled),
+.q-studio textarea:hover:not(:disabled),
+.q-newfile-field input:hover:not(:disabled) {
+  border-color: var(--q-hover-ring);
 }
 
 .q-studio textarea {
@@ -832,13 +858,29 @@
   cursor: text;
 }
 
-.q-chips:focus-within {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
+.q-chips:hover {
+  border-color: var(--q-hover-ring);
 }
 
-/* The combobox input lives INSIDE the bordered chips box — no double frame */
-.q-studio .q-chips-input {
+/* A composite control, so :focus-within stands in for :focus-visible — and
+   because base.css never matches a wrapper div, the full pair has to be
+   restated here. It used to declare the orange alone, which is the exact case
+   --q-focus-edge exists to prevent: 2.05:1 on paper, and it sat one field
+   away from the inputs above, which DID get the ink edge. */
+.q-chips:focus-within {
+  outline: var(--q-focus-ring);
+  outline-offset: var(--q-focus-offset);
+  box-shadow: var(--q-focus-edge);
+}
+
+/* The combobox input lives INSIDE the bordered chips box — no double frame.
+   `input.q-chips-input`, not `.q-studio .q-chips-input`: the field recipe above
+   is `.q-studio input[type='text']` (0,2,1) and out-specified the old 0,2,0
+   selector, so `border: none` never landed and the input HAS been wearing a
+   second gray frame. Qualifying by element takes it to 0,3,1 and the rule
+   finally applies — which is also what keeps the hover ring off it, since a
+   border-style of none gives the inherited border-color nothing to paint. */
+.q-studio input.q-chips-input {
   border: none;
   padding: 4px 2px;
   flex: 1;
@@ -847,8 +889,13 @@
   font-size: var(--q-text-sm);
 }
 
-.q-studio .q-chips-input:focus-visible {
+/* The box owns the ring, so the inner input must yield BOTH halves of it —
+   killing the outline alone left base.css's 6px ink edge painting a slab
+   around a borderless input in the middle of the chips. Also no hover ring:
+   this input has no border of its own to light. */
+.q-studio input.q-chips-input:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .q-chip {
@@ -880,13 +927,13 @@
   color: var(--q-gray-600);
 }
 
+/* The quiet-control answer measured from THIS control's backdrop, which is
+   the enclosing .q-chip's --q-gray-100 and not paper — hence the -tinted
+   token. The plain --q-hover-control would paint gray-100 on gray-100 and the
+   × would have no hover at all. */
 .q-chip-remove:hover {
   color: var(--q-ink);
-  background: var(--q-gray-200);
-}
-
-.q-chip-remove:focus-visible {
-  outline: 2px solid var(--q-orange);
+  background: var(--q-hover-control-tinted);
 }
 
 .q-combolist {
@@ -918,13 +965,16 @@
   font-size: var(--q-text-sm);
 }
 
+/* The control token, not the surface one: these options sit on the popup's
+   paper with no border of their own, and the same paint doubles as the
+   keyboard-active marker, which has to be unmistakable. */
 .q-combolist li:hover,
 .q-combolist li.q-combolist-active {
-  background: var(--q-gray-100);
+  background: var(--q-hover-control);
 }
 
 .q-combolist-type {
-  /* The hovered/active row paints gray-100, where gray-500 is 4.35. */
+  /* The hovered/active row paints --q-hover-control, where gray-500 is 4.35. */
   color: var(--q-gray-600);
   font-size: var(--q-text-xs);
 }
@@ -936,9 +986,16 @@
   background: var(--q-paper);
 }
 
+.q-editor:hover {
+  border-color: var(--q-hover-ring);
+}
+
+/* Same wrapper story as .q-chips: CodeMirror's own outline is suppressed
+   below, so this box carries the ring — and therefore both halves of it. */
 .q-editor:focus-within {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
+  outline: var(--q-focus-ring);
+  outline-offset: var(--q-focus-offset);
+  box-shadow: var(--q-focus-edge);
 }
 
 .q-studio .cm-editor {

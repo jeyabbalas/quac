@@ -60,11 +60,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* gray-50, never gray-100: the NULL dash below is --q-gray-500, which measures
-   4.54 on gray-50 (AA) but 4.35 on gray-100 (fails) — the pairing P19 fixed
-   elsewhere. */
+/* --q-hover-surface (gray-50), never the control token: the NULL dash below is
+   --q-gray-500, which measures 4.54 on gray-50 (AA) but 4.35 on gray-100
+   (fails) — the pairing P19 fixed elsewhere, and the reason tokens.css splits
+   the two hover families rather than shipping one grey. */
 .q-preview-table tbody tr:hover {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
 }
 
 /* The em-dash stands in for NULL, so it is meaningful text, not decoration —

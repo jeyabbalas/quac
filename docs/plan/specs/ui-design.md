@@ -79,6 +79,24 @@ unmarked. Ink is 18.9 / 13.0 / 10.0 on those same surfaces, clearing SC 1.4.11's
 `.q-btn:hover:focus-visible` re-declares the edge: the hover rules out-specify the global `:focus-visible` and would
 otherwise drop it when the pointer rests on a keyboard-focused button.
 
+The ring, its edge and its offset are **one trio** (`--q-focus-ring` / `--q-focus-edge` / `--q-focus-offset`),
+applied once by `base.css`. Restating the offset alone is what made the band lopsided on the studio fields (1px of
+ink inside the orange, 3px outside) and what turned a focused rule row into a black slab with a thin orange line in
+it. Only a wrapper `:focus-visible` cannot reach restates the trio — `.q-chips` and `.q-editor`, which are composite
+controls keyed on `:focus-within` — and then it restates **all three**, edge included. Two controls take the inset
+twin (`--q-focus-edge-inset` + `--q-focus-offset-inset`, the same geometry mirrored inward): `.q-rulegrid tbody tr`,
+because `.q-studio-gridbody` is an overflow scroller that clips an outward ring, and `.q-filebtn`, because the file
+buttons stack flush and the ink would print over their neighbours' labels.
+
+Hover: **four answers, one per kind of control**, so "what happens when I mouse over this" is never a per-component
+decision. `--q-hover-surface` (gray-50) for anything that already paints a surface — table rows, list rows,
+disclosure heads, the paper `.q-btn`; never gray-100, because the muted `--q-gray-500` these rows carry is 4.54 on
+gray-50 and 4.35 on gray-100. `--q-hover-control` (gray-100) for borderless quiet controls, which have no surface to
+darken and must materialize one — ghost buttons, panel tabs, modal close, the chip `×`, combobox options.
+`--q-hover-ring` (orange **border-color**, width unchanged so nothing reflows) for input-like controls — text inputs,
+selects, textareas, `.q-chips`, `.q-editor`, URL and search fields, choice rows, and the drop zone this language came
+from. Link-like controls underline instead: they have no box to tint or ring.
+
 ## 3. Layout & navigation
 
 Header banner (sky background, black bottom stroke): logo (40px) + wordmark "QuaC" + subtitle "in-browser data quality control" · right: **Share** button, GitHub link (`github-logo.svg`). Primary nav = 3 tabs: **Load** · **QC Report** · **Rule Studio** (Report tab shows a severity-count pill after a run). Persistent slim privacy line under the header on Load: "Your data never leaves this browser. No uploads, no servers, no storage."

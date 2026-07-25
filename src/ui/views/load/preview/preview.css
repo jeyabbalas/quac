@@ -150,10 +150,12 @@
   color: var(--q-ink);
 }
 
-.q-dd-search-input:focus-visible,
-.q-rp-search-input:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
+/* Input-like control → the hover ring (tokens.css --q-hover-ring). Focus is
+   base.css's, unrestated: the offset-only override this replaced made the ink
+   edge lopsided against every other field in the app. */
+.q-dd-search-input:hover:not(:disabled),
+.q-rp-search-input:hover:not(:disabled) {
+  border-color: var(--q-hover-ring);
 }
 
 /* Collapse all / Expand all — the established quiet-action recipe
@@ -227,7 +229,7 @@
    live" signal. */
 .q-dd-cathead:hover,
 .q-rp-filehead:hover {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
 }
 
 /* CSS chevron, no asset and no transition — so there is no movement for
@@ -311,7 +313,7 @@
 
 .q-dd-table tbody tr:hover,
 .q-rp-table tbody tr:hover {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
 }
 
 /* Defensive: the UA sheet's `tr { display: table-row }` is as specific as
@@ -345,13 +347,10 @@
   white-space: nowrap;
 }
 
-/* The default marker outline is easy to lose against these hairlines. */
-.q-dd-scroll summary:focus-visible,
-.q-dd-notes summary:focus-visible,
-.q-rp-scroll summary:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: 1px;
-}
+/* No local :focus-visible for these summaries: base.css's two-tone ring
+   already out-marks the UA default they were written to escape, and the
+   narrower offset they restated it at was the thing that made them read
+   differently from every other control in the panel. */
 
 /* Aimed at the `+N more` overflows this was written for, NOT the section
    headers: muting every section title to --q-gray-600 is the one thing this
@@ -360,6 +359,13 @@
 .q-rp-scroll details:not(.q-rp-file) > summary {
   cursor: pointer;
   color: var(--q-gray-600);
+}
+
+/* Quiet disclosure — hover darkens to ink, as in the slot cards. The section
+   heads are excluded here too: they take the surface tint above instead. */
+.q-dd-scroll details:not(.q-dd-cat) > summary:hover,
+.q-rp-scroll details:not(.q-rp-file) > summary:hover {
+  color: var(--q-ink);
 }
 
 /* ---- JSON Schema → data dictionary -------------------------------------- */

@@ -136,6 +136,10 @@
   color: var(--q-ink);
 }
 
+.q-share-link-input:hover:not(:disabled) {
+  border-color: var(--q-hover-ring);
+}
+
 .q-share-copy {
   flex: 0 0 auto;
 }

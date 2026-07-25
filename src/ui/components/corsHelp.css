@@ -14,6 +14,12 @@
   color: var(--q-info);
 }
 
+/* Link-like (info-coloured, not the quiet gray of the other disclosures), so
+   it underlines rather than darkening to ink. */
+.q-corshelp-details > summary:hover {
+  text-decoration: underline;
+}
+
 .q-corshelp-table {
   margin-top: var(--q-space-2);
   border-collapse: collapse;

@@ -14,8 +14,9 @@
   cursor: pointer;
 }
 
+/* Paper surface + ink stroke, so hover darkens the surface it already has. */
 .q-btn:hover:not(:disabled) {
-  background: var(--q-gray-50);
+  background: var(--q-hover-surface);
   box-shadow: var(--q-shadow-1);
 }
 
@@ -43,8 +44,10 @@
   background: none;
 }
 
+/* No surface of its own — hover has to materialize one, which is why this
+   takes the control token and not the surface token .q-btn hovers to. */
 .q-btn--ghost:hover:not(:disabled) {
-  background: var(--q-gray-100);
+  background: var(--q-hover-control);
   box-shadow: none;
 }
 
@@ -196,7 +199,7 @@
 }
 
 .q-modal-close:hover {
-  background: var(--q-gray-100);
+  background: var(--q-hover-control);
   color: var(--q-ink);
 }
 
@@ -314,7 +317,7 @@
 }
 
 .q-paneltab:hover {
-  background: var(--q-gray-100);
+  background: var(--q-hover-control);
   color: var(--q-ink);
 }
 

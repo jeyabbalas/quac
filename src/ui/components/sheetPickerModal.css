@@ -17,6 +17,11 @@
   cursor: pointer;
 }
 
+/* Same choice-row recipe as .q-idxpick-row. */
+.q-sheetpicker-option:hover {
+  border-color: var(--q-hover-ring);
+}
+
 .q-sheetpicker-option:has(input:checked) {
   border-color: var(--q-ink);
   background: var(--q-gray-50);

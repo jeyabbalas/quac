@@ -22,6 +22,12 @@
   cursor: pointer;
 }
 
+/* A bordered choice row is input-like, so hover lights the border rather than
+   the fill — the fill is already spoken for by the checked state below. */
+.q-idxpick-row:hover {
+  border-color: var(--q-hover-ring);
+}
+
 .q-idxpick-row:has(input:checked) {
   border-color: var(--q-ink);
   background: var(--q-gray-50);
@@ -48,4 +54,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-

@@ -389,9 +389,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Every other table in the app tints its rows under the pointer; this one was
+   the exception. --q-hover-surface, like .q-preview-table and .q-dd-table. */
+.q-offenders tbody tr:hover {
+  background: var(--q-hover-surface);
+}
+
 /* The grid-focus action is a real button in the rule cell (P19 — the row used
    to carry role="button", which broke aria-required-children). It dresses as
-   the mono rule id, so only the affordances change: pointer + hover tint. */
+   the mono rule id, so only the affordances change: pointer, plus the
+   link-like underline on hover (it has no box of its own to tint or ring). */
 .q-offender-focus {
   border: none;
   background: none;

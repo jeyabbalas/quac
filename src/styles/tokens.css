@@ -108,9 +108,62 @@
      companion painted (as a box-shadow, behind the outline) on both sides of
      the orange band; ink is 18.9:1 on paper, 13.0:1 on yellow, 10.0:1 on sky,
      so the indicator clears SC 1.4.11's 3:1 against every surface QuaC paints
-     while the orange stays the brand flourish ui-design.md §2 asks for. */
+     while the orange stays the brand flourish ui-design.md §2 asks for.
+
+     Geometry, since call sites used to each pick their own offset: the ring
+     and its edge are ONE pair. --q-focus-offset 2px against a 6px edge lays
+     ink 0–2, orange 2–4, ink 4–6 outward from the border box — symmetric,
+     which is the whole point of "either side". Change the offset alone and
+     the band goes lopsided, which is what `outline-offset: 1px` was doing to
+     every studio field. base.css applies the trio; only a wrapper that
+     :focus-visible cannot reach (.q-chips, .q-editor) restates it, and then
+     it restates all three. */
   --q-focus-ring: 2px solid var(--q-orange);
   --q-focus-edge: 0 0 0 6px var(--q-ink);
+  --q-focus-offset: 2px;
+
+  /* Inset twin, for controls that cannot wear an outward ring: a table row
+     inside an overflow scroller (clipped) and the flush-stacked file buttons
+     (the ink would cover the neighbours' labels). Mirrors the geometry
+     inward — ink 0–2, orange 2–4, ink 4–6 — so it needs offset -4px, NOT the
+     -2px that used to pair with the OUTWARD edge and rendered as a black slab
+     around the row with a thin orange line inside it. */
+  --q-focus-edge-inset: inset 0 0 0 6px var(--q-ink);
+  --q-focus-offset-inset: -4px;
+
+  /* Hover — the pointer's answer. FOUR answers, chosen by what kind of control
+     it is and never per-component, because "what happens when I mouse over
+     this" had drifted to a different answer in almost every file:
+       --q-hover-surface  something that already paints a surface steps one
+                          stop down from paper — table rows, list rows,
+                          disclosure heads, the paper .q-btn. Never gray-100:
+                          the muted text these rows carry (--q-gray-500) is
+                          4.54 on gray-50 and 4.35 on gray-100, the pairing
+                          plainPreviewTable.css already had to defend.
+       --q-hover-control  a borderless quiet control has no surface to darken,
+                          so hover materializes one — ghost buttons, panel
+                          tabs, modal close, combobox options. The step is
+                          measured from what the control SITS ON, which is
+                          paper for all of those.
+       --q-hover-control-tinted
+                          the same idea one stop along, for a quiet control
+                          whose backdrop is already gray-100: the chip ×,
+                          which lives on a --q-gray-100 .q-chip. Handing it
+                          the plain control token paints gray-100 on
+                          gray-100 and the hover simply vanishes — this token
+                          exists so that stays hard to do by accident.
+       --q-hover-ring     an input-like control lights its BORDER instead of
+                          its fill. This is the "hover ring": the drop zone
+                          already spoke it, and now every field does, so the
+                          rule editor's inputs, chips box and code editors
+                          answer the pointer the same way the drop zone does.
+     The fourth answer needs no token: a link-like control (a summary that
+     reads as a link, the offenders table's rule id) has no box to tint or
+     ring, so it underlines. */
+  --q-hover-surface: var(--q-gray-50);
+  --q-hover-control: var(--q-gray-100);
+  --q-hover-control-tinted: var(--q-gray-200);
+  --q-hover-ring: var(--q-orange);
 }
 
 /* data-table annotation mapping — grid tints match app semantics (ui-design §2).

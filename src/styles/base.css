@@ -78,6 +78,6 @@ textarea {
    lays an ink edge either side of it (tokens.css --q-focus-edge says why). */
 :focus-visible {
   outline: var(--q-focus-ring);
-  outline-offset: 2px;
+  outline-offset: var(--q-focus-offset);
   box-shadow: var(--q-focus-edge);
 }

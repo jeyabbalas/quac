@@ -57,6 +57,11 @@
   color: var(--q-gray-600);
 }
 
+/* Quiet disclosure — hover darkens to ink (.q-share-urls, .q-test-sql). */
+.q-slotcard-details > summary:hover {
+  color: var(--q-ink);
+}
+
 .q-slotcard-issues {
   margin: var(--q-space-2) 0 0;
   padding-left: 18px;
@@ -79,9 +84,13 @@
   cursor: pointer;
 }
 
+/* The original hover ring — --q-hover-ring is now the token every input-like
+   control across the app reads, so this reads it too rather than the raw hue.
+   The tint is this control's own: a drop target says "let go here", which no
+   other field has to say. */
 .q-dropzone:hover:not(:disabled),
 .q-dropzone--over {
-  border-color: var(--q-orange);
+  border-color: var(--q-hover-ring);
   background: var(--q-yellow-tint);
 }
 
@@ -117,4 +126,9 @@
   border-radius: var(--q-radius-sm);
   font: inherit;
   font-size: var(--q-text-md);
+}
+
+/* Input-like control → the hover ring, same as the drop zone above it. */
+.q-urlfield-input:hover:not(:disabled) {
+  border-color: var(--q-hover-ring);
 }

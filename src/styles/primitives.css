@@ -61,6 +61,20 @@
   box-shadow: var(--q-focus-edge);
 }
 
+/* Screen-reader-only: in the a11y tree, out of the visual one. Used for live
+   regions whose visible counterpart is a graphic (the run progress bar). */
+.q-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Toast */
 .q-toast-region {
   position: fixed;

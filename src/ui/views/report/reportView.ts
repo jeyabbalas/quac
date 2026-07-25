@@ -71,9 +71,18 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     cancelButton.textContent = 'Cancelling…';
   });
   progressWrap.append(progress.el, cancelButton);
+  // ui-design.md §7 asks for a polite live region on pipeline progress, but the
+  // DuckProgress bar itself must NOT be one — it retargets every few ms and
+  // would narrate every percent. This announces STAGE CHANGES only, and it
+  // lives OUTSIDE progressWrap on purpose: the card ends every run in
+  // `[hidden]`, and a live region inside a hidden subtree announces nothing.
+  const runStatus = document.createElement('p');
+  runStatus.className = 'q-sr-only';
+  runStatus.setAttribute('role', 'status');
+  runStatus.setAttribute('aria-live', 'polite');
   const gridHost = document.createElement('div');
   gridHost.className = 'q-report-gridhost';
-  gridArea.append(capBanner, progressWrap, gridHost);
+  gridArea.append(capBanner, progressWrap, runStatus, gridHost);
 
   const panelHost = document.createElement('aside');
   layout.append(gridArea, panelHost);
@@ -176,6 +185,14 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   // surface animates in/out so nothing snaps.
   const runProgress = createRunProgressMapper();
   let wasRunning = false;
+  // Deduped so the mapper's per-tick label only reaches the live region when
+  // the STAGE changed — the percentage never does.
+  let announced = '';
+  const announce = (text: string): void => {
+    if (text === announced) return;
+    announced = text;
+    runStatus.textContent = text;
+  };
   effect(() => {
     const state = ctx.store.pipeline.get();
     const running = isRunningStage(state.stage);
@@ -183,15 +200,20 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       if (!wasRunning) {
         // New run: snap the bar to 0 before the first glide.
         runProgress.reset();
+        announced = ''; // a re-run re-announces from stage one
         progress.setProgress('Starting the run', 0, { glideMs: 0 });
         revealProgressSurface(progressWrap);
       }
       const view = runProgress.view(state.stage, state.progress.done, state.progress.total);
       progress.setProgress(view.label, view.pct, { glideMs: view.glideMs });
+      announce(view.label);
       cancelButton.disabled = state.cancel.cancelled;
       if (!state.cancel.cancelled) cancelButton.textContent = 'Cancel';
     } else if (wasRunning) {
       collapseProgressSurface(progressWrap);
+      // Cancellation already speaks through runController's toast (its own
+      // polite region) — announcing it here too would say it twice.
+      if (!state.cancel.cancelled) announce('QC run complete.');
     }
     wasRunning = running;
   });

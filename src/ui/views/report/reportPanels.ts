@@ -132,11 +132,13 @@ export function mountReportPanels(
   const panels = new Map<TabName, HTMLElement>();
   const tabButtons = new Map<TabName, HTMLButtonElement>();
   for (const name of TABS) {
+    const slug = name.replaceAll(' ', '-');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'q-paneltab';
     button.setAttribute('role', 'tab');
-    button.id = `q-tab-${name.replaceAll(' ', '-')}`;
+    button.id = `q-tab-${slug}`;
+    button.setAttribute('aria-controls', `q-panel-${slug}`);
     button.textContent = name;
     if (TAB_FULL_NAMES[name] !== name) {
       button.title = TAB_FULL_NAMES[name];
@@ -150,18 +152,54 @@ export function mountReportPanels(
 
     const panel = document.createElement('div');
     panel.className = 'q-panel';
+    panel.id = `q-panel-${slug}`;
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', button.id);
     panels.set(name, panel);
   }
   host.append(tablist, ...panels.values());
 
+  // ARIA APG tabs pattern: the tablist is ONE tab stop (roving tabindex — only
+  // the selected tab is reachable with Tab) and ←/→/Home/End move between tabs,
+  // selecting as they go. Without this, Tab walked all four and the arrows did
+  // nothing, which is not what a screen-reader user is told to expect from
+  // role="tablist".
+  const moveTo = (index: number): void => {
+    const name = TABS[((index % TABS.length) + TABS.length) % TABS.length];
+    if (name === undefined) return;
+    activeTab.set(name);
+    tabButtons.get(name)?.focus();
+  };
+  tablist.addEventListener('keydown', (event) => {
+    const index = TABS.indexOf(activeTab.get());
+    if (index < 0) return;
+    switch (event.key) {
+      case 'ArrowRight':
+        moveTo(index + 1);
+        break;
+      case 'ArrowLeft':
+        moveTo(index - 1);
+        break;
+      case 'Home':
+        moveTo(0);
+        break;
+      case 'End':
+        moveTo(TABS.length - 1);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  });
+
   effect(() => {
     const current = activeTab.get();
     for (const name of TABS) {
       const selected = name === current;
-      tabButtons.get(name)?.setAttribute('aria-selected', String(selected));
-      tabButtons.get(name)?.classList.toggle('q-paneltab--active', selected);
+      const button = tabButtons.get(name);
+      button?.setAttribute('aria-selected', String(selected));
+      button?.classList.toggle('q-paneltab--active', selected);
+      if (button) button.tabIndex = selected ? 0 : -1;
       const panel = panels.get(name);
       if (panel) panel.hidden = !selected;
     }
@@ -382,6 +420,10 @@ export function mountReportPanels(
 
     const list = document.createElement('ul');
     list.className = 'q-findings-list';
+    // Capped at 480px and scrollable — needs a tab stop of its own so the
+    // findings below the fold are reachable without a mouse.
+    list.tabIndex = 0;
+    list.setAttribute('aria-label', 'Dataset and column findings');
     for (const row of rows) {
       const item = document.createElement('li');
       item.append(createSeverityLabel(row.severity));
@@ -469,9 +511,17 @@ export function mountReportPanels(
           : [schemaRuleTargets(aggregate.ruleId)],
       );
       const exact = exactOf(aggregate.ruleId, aggregate.count);
+      const filterable =
+        rule !== undefined &&
+        rule.ruleType !== 'correct' &&
+        (rule.ruleScope === 'row' || rule.ruleScope === 'longitudinal');
 
       // Rule cell: breakable mono id + the source as a muted sub-tag (its own
-      // column wasted width on a two-value fact).
+      // column wasted width on a two-value fact). When the rule can drive the
+      // grid filter, the id becomes a real <button>. It used to be the whole
+      // <tr role="button" tabindex="0"> — which put a `button` inside a
+      // `rowgroup` and broke aria-required-children, axe's only CRITICAL
+      // finding in the app. A row stays a row; the action lives in a cell.
       const ruleCell = document.createElement('td');
       const ruleId = document.createElement('span');
       ruleId.className = 'q-offenders-ruleid';
@@ -479,7 +529,20 @@ export function mountReportPanels(
       const source = document.createElement('span');
       source.className = 'q-offenders-source';
       source.textContent = aggregate.source;
-      ruleCell.append(ruleId, source);
+      if (filterable) {
+        const focusButton = document.createElement('button');
+        focusButton.type = 'button';
+        focusButton.className = 'q-offender-focus';
+        focusButton.title = 'Focus matching rows in the grid';
+        focusButton.setAttribute('aria-label', `Focus grid rows matching ${aggregate.ruleId}`);
+        focusButton.append(ruleId);
+        focusButton.addEventListener('click', () => {
+          void hooks.onOffenderFocus(rule.condition, aggregate.ruleId);
+        });
+        ruleCell.append(focusButton, source);
+      } else {
+        ruleCell.append(ruleId, source);
+      }
 
       const severityCell = document.createElement('td');
       severityCell.append(createSeverityLabel(aggregate.severity));
@@ -497,31 +560,16 @@ export function mountReportPanels(
       pctCell.textContent = aggregate.pctOfRows === undefined ? '—' : pct(aggregate.pctOfRows);
 
       row.append(ruleCell, severityCell, targetsCell, countCell, pctCell);
-      const filterable =
-        rule !== undefined &&
-        rule.ruleType !== 'correct' &&
-        (rule.ruleScope === 'row' || rule.ruleScope === 'longitudinal');
-      if (filterable) {
-        row.classList.add('q-offender--clickable');
-        row.tabIndex = 0;
-        row.setAttribute('role', 'button');
-        row.title = 'Focus matching rows in the grid';
-        const focus = (): void => {
-          void hooks.onOffenderFocus(rule.condition, aggregate.ruleId);
-        };
-        row.addEventListener('click', focus);
-        row.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            focus();
-          }
-        });
-      }
       body.append(row);
     }
     table.append(head, body);
+    // A capped scroller needs its own tab stop, or the rows below the fold are
+    // unreachable without a mouse (axe: scrollable-region-focusable).
     const scroller = document.createElement('div');
     scroller.className = 'q-offenders-scroll';
+    scroller.tabIndex = 0;
+    scroller.setAttribute('role', 'region');
+    scroller.setAttribute('aria-label', 'Repeat offenders');
     scroller.append(table);
     target.append(scroller);
   };

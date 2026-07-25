@@ -427,15 +427,19 @@
   font-variant-numeric: tabular-nums;
 }
 
-.q-offender--clickable {
+/* The grid-focus action is a real button in the rule cell (P19 — the row used
+   to carry role="button", which broke aria-required-children). It dresses as
+   the mono rule id, so only the affordances change: pointer + hover tint. */
+.q-offender-focus {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.q-offender--clickable:hover {
-  background: var(--q-gray-50);
-}
-
-.q-offender--clickable:focus-visible {
-  outline: 2px solid var(--q-orange);
-  outline-offset: -2px;
+.q-offender-focus:hover .q-offenders-ruleid {
+  text-decoration: underline;
 }

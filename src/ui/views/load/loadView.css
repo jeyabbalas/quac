@@ -95,8 +95,10 @@
   font-weight: 600;
 }
 
+/* The em-dash stands in for NULL, so it is meaningful text, not decoration —
+   gray-400 measures 2.52 on paper. gray-500 is 4.74 and still recedes. */
 .q-preview-null {
-  color: var(--q-gray-400);
+  color: var(--q-gray-500);
 }
 
 /* Rules slot detail (P12): per-file blocks with the lint list file → rule. */

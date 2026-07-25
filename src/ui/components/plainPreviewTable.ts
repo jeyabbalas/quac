@@ -9,8 +9,14 @@ export function renderPreviewTable(
   columns: readonly string[],
   rows: readonly Record<string, unknown>[],
 ): void {
+  // Scrolls in both axes (266 HESP columns, 50 rows) — a scroll container with
+  // no focusable descendant is unreachable by keyboard, so it takes its own tab
+  // stop and a name (axe: scrollable-region-focusable).
   const wrapper = document.createElement('div');
   wrapper.className = 'q-preview-scroll';
+  wrapper.tabIndex = 0;
+  wrapper.setAttribute('role', 'region');
+  wrapper.setAttribute('aria-label', 'Dataset preview, first 50 rows');
 
   const table = document.createElement('table');
   table.className = 'q-preview-table';

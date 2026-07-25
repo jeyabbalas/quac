@@ -48,6 +48,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@duckdb/node-api": "1.5.5-r.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",

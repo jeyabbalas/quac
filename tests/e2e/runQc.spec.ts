@@ -195,9 +195,14 @@ test('cancel mid-run leaves a sane partial state', async ({ page }) => {
   });
 
   await runButton(page).click();
-  await expect(page.getByText('Validating against the schema')).toBeVisible({
-    timeout: RUN_TIMEOUT,
-  });
+  // Scoped to the visible progress meta, not a bare getByText: P19 added a
+  // polite live region that announces the same PROGRESS_LABELS text, so the
+  // page now legitimately carries this string twice. The pinned COPY is
+  // unchanged — only the locator got specific enough to say which one it means.
+  await expect(page.locator('.q-run-progress .q-duckprogress-meta')).toContainText(
+    'Validating against the schema',
+    { timeout: RUN_TIMEOUT },
+  );
   await page.locator('.q-run-cancel').click();
 
   await expect(page.getByText('Run cancelled — showing partial results.')).toBeVisible({

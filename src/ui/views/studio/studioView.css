@@ -304,7 +304,10 @@
 
 .q-filebtn-pertinence {
   font-size: var(--q-text-xs);
-  color: var(--q-gray-500);
+  /* gray-500 measures 4.74 on paper but 4.49 on --q-yellow-tint, which is
+     exactly the background the aria-current file button paints — axe caught it
+     there. gray-600 is 7.40 and still reads as the quiet sub-line. */
+  color: var(--q-gray-600);
 }
 
 /* ≤1023 the rail is a horizontal file strip — a full-width stack of file
@@ -911,7 +914,8 @@
 }
 
 .q-combolist-type {
-  color: var(--q-gray-500);
+  /* The hovered/active row paints gray-100, where gray-500 is 4.35. */
+  color: var(--q-gray-600);
   font-size: var(--q-text-xs);
 }
 

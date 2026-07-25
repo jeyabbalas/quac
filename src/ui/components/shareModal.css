@@ -53,8 +53,10 @@
   color: var(--q-success);
 }
 
+/* The ✗ is the whole signal for an excluded artifact; gray-400 measures 2.52
+   on paper, which is not readable text. */
 .q-share-item--out .q-share-mark {
-  color: var(--q-gray-400);
+  color: var(--q-gray-600);
 }
 
 .q-share-item-body {

@@ -12,6 +12,7 @@
  */
 import { effect } from '../../../app/signals';
 import { reportError } from '../../../app/errors';
+import { assetUrl } from '../../../app/urlBase';
 import { createEmptyState } from '../../components/emptyState';
 import { rulesState } from '../../../core/rules/rules-store';
 import type { ShellContext } from '../../../app/shell';
@@ -22,6 +23,13 @@ export function mountStudioView(container: HTMLElement, ctx: ShellContext): void
     title: 'No rules yet.',
     body: 'Load a dataset to compose rules against it — completions and previews need your columns.',
   });
+  // Same duck mark as the QC Report empty (reportView.ts) — decorative, so the
+  // alt is empty and the copy carries the whole message.
+  const emptyDuck = document.createElement('img');
+  emptyDuck.className = 'q-empty-duck';
+  emptyDuck.src = assetUrl('logo/quac-duck.svg');
+  emptyDuck.alt = '';
+  empty.prepend(emptyDuck);
   const emptyAction = document.createElement('a');
   emptyAction.className = 'q-btn q-empty-action';
   emptyAction.href = '#/load';

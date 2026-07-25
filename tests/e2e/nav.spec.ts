@@ -56,6 +56,9 @@ test('deep link #/studio lands on Studio', async ({ page }) => {
     'page',
   );
   await expect(page.getByText('Load a dataset to compose rules against it', { exact: false })).toBeVisible();
+  // Studio's framed empty carries the same duck mark as the QC Report's
+  // (UIX-2). Scoped to the visible view — the Report empty owns one too.
+  await expect(page.locator('.q-view:not([hidden]) .q-empty .q-empty-duck')).toBeVisible();
 });
 
 test('unknown routes render Load without rewriting the address bar', async ({ page }) => {

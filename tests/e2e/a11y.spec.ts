@@ -115,9 +115,9 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
   // before it is scanned — otherwise two thirds of the component (the
   // dictionary's twelve tables, its search field, the rules surface) escape
   // the gate entirely.
-  for (const name of ['Data dictionary', 'QC rules']) {
+  for (const name of ['JSON Schema', 'QC rules']) {
     await page.locator('.q-preview .q-paneltab', { hasText: name }).click();
-    if (name === 'Data dictionary') {
+    if (name === 'JSON Schema') {
       await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
     }
     await expectNoSeriousViolations(page, `Load → ${name}`);

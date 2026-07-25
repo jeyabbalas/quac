@@ -1,8 +1,8 @@
 /**
  * Load-view Preview section (UIX-4): one Tier 1 sticker holding a tabbed view
- * of all three inputs — the dataset, the schema's data dictionary, and the QC
- * rules. It replaces a bare 50-row table that only ever showed you one of the
- * three things you loaded.
+ * of all three inputs — the dataset, the JSON Schema, and the QC rules. It
+ * replaces a bare 50-row table that only ever showed you one of the three
+ * things you loaded.
  *
  * The SECTION stays hidden until at least one slot fills, so first run is
  * unchanged. The three TABS are always present once it shows; an empty panel
@@ -20,9 +20,16 @@ import type { PreviewAvailability, PreviewTabId } from './previewModel';
 import type { ShellContext } from '../../../../app/shell';
 import './preview.css';
 
+// The three labels are the three SLOT CARD names, verbatim (ui-design.md:100):
+// Dataset · JSON Schema · QC Rules. A tab strip sitting directly under the
+// cards has to name the same three things the same way — "Data dictionary"
+// named the RENDERING, not the input, and left the schema card the only slot
+// with no tab bearing its name. The dictionary framing survives inside the
+// panel, where it describes what you are looking at rather than what you
+// loaded. The tab ID stays `dictionary` — it is internal.
 const TABS = [
   { id: 'dataset', label: 'Dataset' },
-  { id: 'dictionary', label: 'Data dictionary' },
+  { id: 'dictionary', label: 'JSON Schema' },
   { id: 'rules', label: 'QC rules' },
 ] as const;
 

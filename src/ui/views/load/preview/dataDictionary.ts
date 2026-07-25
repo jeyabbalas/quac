@@ -1,6 +1,10 @@
 /**
- * Preview → Data dictionary panel: every variable the loaded JSON Schema
- * defines, one table per category, with a search box over the lot.
+ * Preview → JSON Schema panel: every variable the loaded JSON Schema defines,
+ * one table per category, with a search box over the lot.
+ *
+ * The TAB is named for the input (`JSON Schema`, the slot card's name); the
+ * caption inside names the rendering. Nobody loads "a data dictionary" — they
+ * load a schema and QuaC reformats it into one.
  *
  * DOM only — the model is core/schema/data-dictionary.ts. This panel never
  * duplicates the schema slot card's findings, ignored-file list or CORS help:
@@ -197,11 +201,37 @@ const COLUMNS = [
   'Variable',
   'Description',
   'Type',
-  'Format',
   'Valid values',
   'Constraints',
   'Additional information',
 ] as const;
+
+/**
+ * Type and Format in ONE cell. Format was its own column until it was measured
+ * against real data: 260 of HESP's 265 variables carry none, so the column was
+ * ~95px of em-dash at 1440 — and the 5 that do carry one get a 40-character
+ * `Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$`, which wrapped to five
+ * lines inside it. Folded in, the empty case costs nothing and the present case
+ * gets the whole cell width. It also reads correctly: JSON Schema's `format`
+ * qualifies a `type`, it is not a peer of it.
+ */
+function typeCell(row: DictionaryRow): HTMLTableCellElement {
+  const td = document.createElement('td');
+  if (row.type === '' && row.format === '') {
+    td.textContent = '—';
+    return td;
+  }
+  if (row.type !== '') td.append(document.createTextNode(row.type));
+  if (row.format !== '') {
+    // Same treatment as `.q-dd-when`: a muted mono line under the cell's
+    // primary content. The payload is a regex far more often than a keyword.
+    const format = document.createElement('span');
+    format.className = 'q-dd-format';
+    format.textContent = row.format;
+    td.append(format);
+  }
+  return td;
+}
 
 interface RenderedRow {
   tr: HTMLTableRowElement;
@@ -219,19 +249,30 @@ export function mountDataDictionary(panel: HTMLElement): void {
   head.className = 'q-preview-panelhead';
   const title = document.createElement('h3');
   title.className = 'q-preview-paneltitle';
-  title.textContent = 'Data dictionary';
+  title.textContent = 'JSON Schema';
   const meta = document.createElement('span');
   meta.className = 'q-preview-meta';
   head.append(title, meta);
 
+  // Says what the thing below the head IS, in every state — the tab and title
+  // name the input, so something has to name the rendering. Outside `body`, so
+  // the state notes below replace themselves without taking it with them.
+  const caption = document.createElement('p');
+  caption.className = 'q-preview-panelcaption';
+  caption.textContent = 'JSON Schema formatted as a data dictionary';
+
   const body = document.createElement('div');
-  panel.append(head, body);
+  panel.append(head, caption, body);
 
   const showNote = (text: string): void => {
     meta.textContent = '';
     body.replaceChildren(note(text));
   };
-  showNote('Load a JSON Schema to see its data dictionary.');
+  // "…to see it here", not "…to see its data dictionary": the caption directly
+  // above already says what you would see, and the QC rules panel ends its
+  // empty note the same way.
+  const EMPTY = 'Load a JSON Schema to see it here.';
+  showNote(EMPTY);
 
   let token = 0;
   effect(() => {
@@ -244,7 +285,7 @@ export function mountDataDictionary(panel: HTMLElement): void {
     }
     const set = state.set;
     if (state.phase === 'empty' || set === null) {
-      showNote('Load a JSON Schema to see its data dictionary.');
+      showNote(EMPTY);
       return;
     }
     if (needsRootChoice(set)) {
@@ -366,11 +407,7 @@ export function mountDataDictionary(panel: HTMLElement): void {
         const desc = document.createElement('td');
         desc.className = 'q-dd-desc';
         desc.textContent = row.description;
-        const type = document.createElement('td');
-        type.textContent = row.type === '' ? '—' : row.type;
-        const format = document.createElement('td');
-        format.textContent = row.format === '' ? '—' : row.format;
-        tr.append(name, desc, type, format, valuesCell(row), constraintsCell(row), extrasCell(row));
+        tr.append(name, desc, typeCell(row), valuesCell(row), constraintsCell(row), extrasCell(row));
         tbody.append(tr);
         rows.push({ tr, row });
       }

@@ -31,7 +31,7 @@ test('the section appears with all three tabs, Dataset selected', async ({ page 
   await loadExample(page);
 
   await expect(page.locator('.q-preview')).toBeVisible();
-  for (const name of ['Dataset', 'Data dictionary', 'QC rules']) {
+  for (const name of ['Dataset', 'JSON Schema', 'QC rules']) {
     await expect(tab(page, name)).toBeVisible();
   }
   await expect(tab(page, 'Dataset')).toHaveAttribute('aria-selected', 'true');
@@ -56,10 +56,11 @@ test('the dataset type row flips from VARCHAR to the schema cast', async ({ page
 
 test('the data dictionary lists 265 variables under 12 categories', async ({ page }) => {
   await loadExample(page);
-  await tab(page, 'Data dictionary').click();
+  await tab(page, 'JSON Schema').click();
 
   await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
   await expect(page.locator('.q-dd-count')).toHaveText('265 variables');
+  await expect(page.getByText('JSON Schema formatted as a data dictionary')).toBeVisible();
 
   const first = page.locator('.q-dd-cat').first();
   await expect(first.locator('.q-dd-cattitle')).toHaveText(
@@ -76,7 +77,7 @@ test('the data dictionary lists 265 variables under 12 categories', async ({ pag
 
 test('a coded variable shows its range, sentinels and unit', async ({ page }) => {
   await loadExample(page);
-  await tab(page, 'Data dictionary').click();
+  await tab(page, 'JSON Schema').click();
   await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
 
   const row = page
@@ -91,9 +92,41 @@ test('a coded variable shows its range, sentinels and unit', async ({ page }) =>
   await expect(row).toContainText('-888');
 });
 
+test('Format is folded into Type, not a column of its own', async ({ page }) => {
+  await loadExample(page);
+  await tab(page, 'JSON Schema').click();
+  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+
+  const headers = page.locator('.q-dd-table').first().locator('thead th');
+  await expect(headers).toHaveCount(6);
+  await expect(headers).toHaveText([
+    'Variable',
+    'Description',
+    'Type',
+    'Valid values',
+    'Constraints',
+    'Additional information',
+  ]);
+
+  // record_id is one of the 5 HESP variables that carry a format; it now sits
+  // under its own type rather than in an eighty-pixel column of its own.
+  const type = page
+    .locator('.q-dd-table tbody tr')
+    .filter({ has: page.locator('.q-dd-name', { hasText: 'record_id' }) })
+    .first()
+    .locator('td')
+    .nth(1);
+  await expect(type).toContainText('string');
+  await expect(type.locator('.q-dd-format')).toHaveText(
+    'Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$',
+  );
+  // The other 260 print nothing where the em-dash column used to be.
+  await expect(page.locator('.q-dd-format')).toHaveCount(5);
+});
+
 test('search narrows the count, hides empty categories, and clears', async ({ page }) => {
   await loadExample(page);
-  await tab(page, 'Data dictionary').click();
+  await tab(page, 'JSON Schema').click();
   await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
 
   const search = page.getByLabel('Search variables');
@@ -134,8 +167,10 @@ test('empty slots show notes rather than hiding their tabs', async ({ page }) =>
   // The whole dataset fits, so the meta line drops the "first N of".
   await expect(page.getByText('12 rows · 5 columns')).toBeVisible();
 
-  await tab(page, 'Data dictionary').click();
-  await expect(page.getByText('Load a JSON Schema to see its data dictionary.')).toBeVisible();
+  await tab(page, 'JSON Schema').click();
+  await expect(page.getByText('Load a JSON Schema to see it here.')).toBeVisible();
+  // The caption names the rendering in EVERY state, empty included.
+  await expect(page.getByText('JSON Schema formatted as a data dictionary')).toBeVisible();
   await tab(page, 'QC rules').click();
   await expect(page.getByText('Load a QC rules file to see it here.')).toBeVisible();
 });
@@ -145,11 +180,11 @@ test('the tablist is one tab stop and the arrow keys move and select', async ({ 
 
   await tab(page, 'Dataset').focus();
   await expect(tab(page, 'Dataset')).toHaveAttribute('tabindex', '0');
-  await expect(tab(page, 'Data dictionary')).toHaveAttribute('tabindex', '-1');
+  await expect(tab(page, 'JSON Schema')).toHaveAttribute('tabindex', '-1');
 
   await page.keyboard.press('ArrowRight');
-  await expect(tab(page, 'Data dictionary')).toHaveAttribute('aria-selected', 'true');
-  await expect(tab(page, 'Data dictionary')).toBeFocused();
+  await expect(tab(page, 'JSON Schema')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab(page, 'JSON Schema')).toBeFocused();
 
   await page.keyboard.press('End');
   await expect(tab(page, 'QC rules')).toHaveAttribute('aria-selected', 'true');

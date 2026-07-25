@@ -63,7 +63,7 @@ for (const ref of refs) {
     process.exit(1);
   }
   // And for the data-dictionary extractor: only the lazy chunk behind the Load
-  // view's Data dictionary tab may carry it.
+  // view's JSON Schema tab may carry it.
   if (bytes.includes(DICTIONARY_MARKER)) {
     console.error(
       `check-bundle-size: FAIL — json-schema-data-dictionary leaked into the entry chunk ${rel}`,

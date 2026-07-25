@@ -48,7 +48,17 @@
   color: var(--q-gray-600);
 }
 
-/* ---- Data dictionary ---------------------------------------------------- */
+/* One quiet line under a panel head naming what the panel RENDERS, where that
+   differs from what the tab names (the JSON Schema tab shows a data
+   dictionary). Sits between head and body so a state note replacing the body
+   never takes it with it. */
+.q-preview-panelcaption {
+  margin: calc(-1 * var(--q-space-1)) 0 var(--q-space-3);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-600);
+}
+
+/* ---- JSON Schema → data dictionary -------------------------------------- */
 
 .q-dd-head {
   display: flex;
@@ -152,15 +162,16 @@
    widths from identical th:nth-child(n) percentages, ignoring content.
 
    Measured .q-dd-scroll scrollWidth / clientWidth (Chromium, HESP, default
-   zoom):
+   zoom), MIN-WIDTH RE-MEASURED after Format folded into Type:
      1600 → 1514 / 1514   1440 → 1354 / 1354   1366 → 1280 / 1280
-     1280 → 1194 / 1194   1024 → 1192 /  938   768 → 1192 / 698
+     1280 → 1194 / 1194   1024 → 1082 /  938   768 → 1082 / 698
    So it fills the panel without scrolling from 1280 up, and scrolls
-   horizontally below — which is exactly what the min-width is for. Page-level
-   horizontal overflow is 0 at every one of those widths. */
+   horizontally below — which is exactly what the min-width is for, now over
+   110px less of it. Page-level horizontal overflow is 0 at every one of those
+   widths. */
 .q-dd-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1070px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--q-text-xs);
@@ -184,40 +195,42 @@
   font-weight: 600;
 }
 
-/* Variable · Description · Type · Format · Valid values · Constraints ·
-   Additional information — measured, not guessed (ui-design.md §5). Natural
-   content widths over the 28-row Household composition category at 1440:
-   Variable p90 159px · Description p90 338 · Type p90 130 · Format MEDIAN 12
-   (an em-dash: only 5 of HESP's 265 variables carry a `format`, so the
-   package falls back to describing `pattern`) · Additional info header alone
-   124. Hence Format is the narrowest column and Type takes what it gives up —
-   at 8% "integer + coded values" wrapped to two lines on every coded row. */
+/* Variable · Description · Type · Valid values · Constraints · Additional
+   information — measured, not guessed (ui-design.md §5). Natural content
+   widths over the 28-row Household composition category at 1440: Variable p90
+   159px · Description p90 338 · Type p90 130 · Additional info header alone
+   124.
+
+   Format used to be a seventh column at 7% and is now folded into Type: its
+   MEDIAN content was 12px (an em-dash — 260 of HESP's 265 variables carry no
+   `format`), so it spent ~95px of every row at 1440 rendering nothing. Every
+   remaining column got wider AND the table got narrower: at 1440 the six are
+   186/266/160/279/239/200 against the old seven's 176/257/135/95/271/230/190.
+   Type took the largest share (+25px) because it was the column against its
+   ceiling — its widest content is 130px and 10% of a 1354px table is 135, so
+   it wrapped; at 12% none of Household composition's 28 rows does. */
 .q-dd-table th:nth-child(1) {
-  width: 13%;
+  width: 14%;
 }
 
 .q-dd-table th:nth-child(2) {
-  width: 19%;
-}
-
-.q-dd-table th:nth-child(3) {
-  width: 10%;
-}
-
-.q-dd-table th:nth-child(4) {
-  width: 7%;
-}
-
-.q-dd-table th:nth-child(5) {
   width: 20%;
 }
 
-.q-dd-table th:nth-child(6) {
-  width: 17%;
+.q-dd-table th:nth-child(3) {
+  width: 12%;
 }
 
-.q-dd-table th:nth-child(7) {
-  width: 14%;
+.q-dd-table th:nth-child(4) {
+  width: 21%;
+}
+
+.q-dd-table th:nth-child(5) {
+  width: 18%;
+}
+
+.q-dd-table th:nth-child(6) {
+  width: 15%;
 }
 
 .q-dd-table tbody tr:hover {
@@ -269,7 +282,11 @@
   color: var(--q-gray-700);
 }
 
-.q-dd-when {
+.q-dd-when,
+/* The folded-in Format: a qualifier under its Type, same treatment as a
+   condition — the payload is `Matches pattern ^…$` far more often than a
+   `format` keyword. */
+.q-dd-format {
   display: block;
   font-family: var(--q-font-mono);
   color: var(--q-gray-600);

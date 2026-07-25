@@ -73,6 +73,23 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-25 · UIX-4b · Follow-up on the Preview panel, on review of the shipped one. **The schema tab is now named for
+the input, not the rendering**: `Dataset · JSON Schema · QC rules`, the three slot-card names verbatim, so the strip
+under the cards names the same three things the cards do — `Data dictionary` left the schema card the only slot with
+no tab bearing its name. The dictionary framing moves inside as a `.q-preview-panelcaption` under the panel head,
+`JSON Schema formatted as a data dictionary`, present in every state (the empty note shortens to `…to see it here.`,
+matching the rules panel, since the caption above it now says what you would see). **Format folded into Type**,
+superseding this entry's `Format 8→7%` below: at 7% it was ~95px of em-dash on 260 of HESP's 265 rows, and the 5 rows
+that do carry one get a 40-character `Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$` that wrapped to five lines
+inside it. Folded in it renders as a muted mono line under the type (`.q-dd-format`, the `.q-dd-when` treatment) —
+which is also what `format` IS in JSON Schema, a qualifier of `type`, not a peer. Re-measured at 1440: the six columns
+are **186/266/160/279/239/200** against the old seven's 176/257/135/95/271/230/190 — every remaining column wider AND
+the table 110px narrower (`min-width` 1180 → 1070, `.q-dd-scroll` 1192 → **1082** at 1024/768, page overflow still 0
+at all six widths). Type took the largest share (+25px) because it was the column against its ceiling: widest content
+130px against 10% of a 1354px table. 260 of the table's 347 em-dashes are gone. 599 unit green unchanged (the model
+still carries `format`; only the DOM changed) + 1 new e2e pinning the six headers, the folded cell and the count of 5;
+59 e2e green.
+
 2026-07-25 · UIX-4 · Interstitial Load-view pass on main (post-P19, before P20): **the Load tab now previews all three
 inputs, not one.** It took a dataset, a schema set and rules files and showed you a bare 50-row table — you could load
 the bundled 14-file, 265-variable HESP schema and never see a single variable it defines. One Tier 1 sticker now holds

@@ -231,8 +231,12 @@
   white-space: nowrap;
 }
 
+.q-rulegrid-typescope {
+  color: var(--q-gray-700);
+}
+
 .q-rulegrid-targets {
-  max-width: 240px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -246,8 +250,52 @@
 }
 
 .q-rowbtn {
-  padding: 2px 8px;
+  padding: 2px 6px;
   font-size: var(--q-text-sm);
+  color: var(--q-gray-700); /* 7.4:1 on paper; 96 glyphs at full ink shouted */
+}
+
+.q-rowbtn:hover:not(:disabled),
+.q-rowbtn:focus-visible {
+  color: var(--q-ink);
+}
+
+.q-rowbtn--group {
+  margin-left: 6px; /* separates the edit pair (⧉ ✕) from the order pair (↑ ↓) */
+}
+
+/* Quiet Tier-2 severity INSIDE the grid only (createSeverityLabel is
+   untouched, and so is every other place it renders): 24 solid pills in one
+   narrow column read as an alarm. The text label stays — severity is never
+   conveyed by color alone. */
+.q-rulegrid .q-pill {
+  font-size: var(--q-text-xs);
+  font-weight: 600;
+  color: var(--q-ink);
+}
+
+.q-rulegrid .q-pill--error {
+  background: var(--q-error-fill);
+}
+
+.q-rulegrid .q-pill--warning {
+  background: var(--q-warning-fill);
+}
+
+.q-rulegrid .q-pill--info {
+  background: var(--q-info-fill);
+}
+
+/* Lint reports by exception: a clean row is gray, problems keep full color. */
+.q-rulegrid .q-badge {
+  font-size: var(--q-text-xs);
+  padding: 2px 8px;
+}
+
+.q-rulegrid .q-badge--valid {
+  background: var(--q-gray-100);
+  border-color: var(--q-gray-300);
+  color: var(--q-gray-600); /* 7.0:1 on gray-100 */
 }
 
 /* ---- live preview pane (P18) ---- */

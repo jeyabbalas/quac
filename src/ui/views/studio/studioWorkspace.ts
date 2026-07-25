@@ -658,7 +658,9 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     table.className = 'q-rulegrid';
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const heading of ['ID', 'Type', 'Scope', 'Targets', 'Severity', 'Enabled', 'Lint', 'Actions']) {
+    // 7 columns, not 8: the work column is ~510–710px wide since UIX-2, and
+    // (type, scope) is one idea — the format's own matrix pairs them.
+    for (const heading of ['ID', 'Type · Scope', 'Targets', 'Severity', 'Lint', 'On', 'Actions']) {
       const th = document.createElement('th');
       th.scope = 'col';
       th.textContent = heading;
@@ -698,10 +700,9 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     idCell.className = 'q-rulegrid-id';
     idCell.textContent = rule.ruleId === '' ? '(blank)' : rule.ruleId;
 
-    const typeCell = document.createElement('td');
-    typeCell.textContent = rule.ruleType;
-    const scopeCell = document.createElement('td');
-    scopeCell.textContent = rule.ruleScope;
+    const typeScopeCell = document.createElement('td');
+    typeScopeCell.className = 'q-rulegrid-typescope';
+    typeScopeCell.textContent = `${rule.ruleType} · ${rule.ruleScope}`;
 
     const targetsCell = document.createElement('td');
     targetsCell.className = 'q-rulegrid-targets';
@@ -753,6 +754,16 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       return button;
     };
     const ruleName = rule.ruleId === '' ? `row ${String(index + 1)}` : rule.ruleId;
+    const moveUp = actionButton(
+      '↑',
+      `Move rule ${ruleName} up`,
+      'Row order = correction order',
+      index === 0,
+      () => {
+        moveRuleAt(fileName, index, 'up');
+      },
+    );
+    moveUp.classList.add('q-rowbtn--group'); // splits the edit pair from the order pair
     actionsCell.append(
       actionButton('⧉', `Duplicate rule ${ruleName}`, 'Duplicate rule', false, () => {
         shiftDrawerIndex(fileName, (i) => (i > index ? i + 1 : i));
@@ -764,9 +775,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       actionButton('✕', `Delete rule ${ruleName}`, 'Delete rule', false, () => {
         deleteRuleAt(fileName, index, total);
       }),
-      actionButton('↑', `Move rule ${ruleName} up`, 'Row order = correction order', index === 0, () => {
-        moveRuleAt(fileName, index, 'up');
-      }),
+      moveUp,
       actionButton(
         '↓',
         `Move rule ${ruleName} down`,
@@ -780,12 +789,11 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
 
     tr.append(
       idCell,
-      typeCell,
-      scopeCell,
+      typeScopeCell,
       targetsCell,
       severityCell,
-      enabledCell,
       lintCell,
+      enabledCell,
       actionsCell,
     );
     return tr;

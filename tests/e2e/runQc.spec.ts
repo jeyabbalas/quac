@@ -154,6 +154,9 @@ test('full run: progress → annotated grid + popover → counts → panels → 
   await expect(offenders.first()).toBeVisible();
   await expect(page.locator('.q-offenders td', { hasText: 'Q003' }).first()).toBeVisible();
   await expect(page.locator('.q-offenders td', { hasText: 'H004' }).first()).toBeVisible();
+  // Row-scope SQL rules (H004 et al.) are grid-filterable → the focus hint
+  // renders; partialRun.spec pins its absence when nothing is filterable.
+  await expect(page.getByText('Click a row-level SQL rule', { exact: false })).toBeVisible();
 
   // ---- Re-run: corrections idempotent, counts identical ----
   await panelTab(page, 'Summary').click();

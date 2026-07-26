@@ -8,7 +8,7 @@
 |---|---|---|
 | **Unit (node)** | Vitest 4, node env | Everything pure + everything SQL-paritied: `share/urlConfig`, `flags/*` (store, messages), `report/reportModel` **and exceljs write→re-read assertions (exceljs runs in node)**, `rules/{parse,serialize,lint(1–3),assertions,sql}`, `schema/{schema-set,ref-graph,root-detection,column-meta,value-spec,conditionals,translator,casting-derivation,pertinence}`, Ajv setup (Ajv runs in node); **SQL parity**: engine + rule + correction + casting SQL executed against **`@duckdb/node-api`** through the `SQLRunner` interface with fixtures, results asserted vs expected-flag manifests |
 | **Browser (Vitest browser mode, `@vitest/browser-playwright`, real Chromium)** | anything needing real WASM/workers/DOM APIs | `core/bridge` against real duckdb-wasm (**P03 spike assertions live on as regression tests**: DDL via bridge, clearQueryCache-after-DML, COPY→buffer, `enable_external_access`/`lock_configuration` semantics, `__rowid__ == __row__` after loadData), SheetJS conversion, validation worker end-to-end, QuickJS sandbox limits, lazy-chunk loading, CodeMirror smoke |
-| **E2E (Playwright)** | `vite preview` with `base:'/quac/'` + a local CORS-enabled static fixture server | the eight golden journeys (§2), download-content assertions (parse the .xlsx bytes in the test), a11y (axe), reduced-motion, network-isolation |
+| **E2E (Playwright)** | `vite preview` with `base:'/quac/'` + a local CORS-enabled static fixture server | the nine golden journeys (§2), download-content assertions (parse the .xlsx bytes in the test), a11y (axe), reduced-motion, network-isolation |
 
 Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM/worker/DOM truth. Playwright is only for user journeys.
 
@@ -22,6 +22,7 @@ Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM
 6. **CORS failure:** URL from a non-CORS fixture endpoint → typed failure message → manual upload fallback succeeds.
 7. **Zero-flag happy path:** valid dataset → run → "no findings" state, report still downloadable.
 8. **Partial inputs (UIX-6):** tiny/ fixtures, both single-check-source modes run to completion. Schema-only: em-dash rules cards + "No QC rules were loaded" scope note, none-missing Missing vars, offenders present with the focus hint ABSENT, annotated cells. Rules-only: R003/R005 lint-excluded pre-run (observed: DuckDB's binder refuses VARCHAR↔INTEGER comparison/arithmetic on the schema-less all-VARCHAR table — Warning badge, 4 of 6 executable), corrections applied, "No JSON Schema was loaded" scope note, the no-schema Missing-vars empty, focus hint absent (nothing filterable survives; the visible case rides journey 1). Excel workbook shape in partial modes is unit-tier (reportModel + roundtrip).
+9. **Clearable inputs (UIX-7, `clearInputs.spec`):** tiny/ fixtures, six passes. Rules clear after a run strips annotations/pill/findings but keeps the data grid, and the run bar asks for a check source; dataset clear → SAME-FILE re-upload builds a fresh grid (the monotonic-generation regression) and a re-run repaints; per-file ✕ removes one of two files with the lint context kept (no `data checks pending` regression); a saved Studio edit gates the rules clear behind `Clear the QC rules?` (Cancel preserves, confirm empties); `Clear all inputs` always confirms and restores first-run (hero, hidden preview, disabled Share, hidden button); a cleared share link stays cleared across reload — `schema=` drops while `rules=` survives, then a bare `#/load` reloads to the hero. Plus an a11y.spec axe scan of the open clear-all confirm dialog.
 
 ## 3. Fixtures
 
@@ -69,6 +70,9 @@ Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM
 | `unit/studio/{ruleSerialize,ruleTest,draftLint,completionSource}.test.ts` | node (+duckdb for ruleTest/draftLint) | lossless round-trip; live-test dispatch on qc_fixture (−2500→2500 pinned here); draft-lint bucketing; completion feeds |
 | `unit/pipeline/pipeline.test.ts` | node (mocked executors) | stage order, cancel token, rerun idempotence, invalidation, `inputs` echo (schema-only ⇒ non-null rules with empty perRule) |
 | `unit/app/runReadiness.test.ts` | node | the ONE run gate (UIX-6): per-code blocked states incl. dataset-error-with-stale-store and fatal-vs-index-pending, either-leg-ready with exact run inputs, non-blocking notes, unconditional signal reads under an early-return blocker |
+| `unit/app/runInvalidation.test.ts` | node | UIX-7 invalidateRun: epoch bump, in-flight token cancelled, run+artifacts nulled, idle behind a PRE-CANCELLED token, repeat-stable |
+| `unit/app/clearInputs.test.ts` | node | UIX-7 buildClearedConfig: config= drops with the remainder inline, passthrough verbatim, index= dies with the last schema=, uploads contribute nothing |
+| `unit/schema/schemaStore.test.ts` | node | UIX-7 loadToken: reset mid-load wins (entries + URL paths), newer load supersedes older, chooseRoot no-op after reset |
 | `browser/bridge.browser.test.ts` | browser | V1/V2 regressions: DDL, cache invalidation |
 | `browser/roundtrip.browser.test.ts` | browser | V5/V7: COPY→bytes→loadData→`__rowid__==__row__` |
 | `browser/harden.browser.test.ts` | browser | V6: external access blocked (httpfs read fails), lock_configuration holds, buffers still readable |
@@ -76,7 +80,7 @@ Rule of thumb: if it can be tested in node, it is. Browser mode is only for WASM
 | `browser/validation-worker.browser.test.ts` | browser | mini fixture end-to-end flag equality, progress ordering, abort, cap truncation |
 | `browser/rulesExec.browser.test.ts` | browser | representative rules through the real bridge, hardened |
 | `browser/jsSandbox.browser.test.ts` | browser | sandbox in-browser smoke + lazy-chunk-only-when-needed |
-| `e2e/*.spec.ts` | Playwright | `smoke`, `nav`, `ingest`, `schemaLoad`, `rulesLoad`, `runQc`, `partialRun`, `download`, `preconfig`, `shareLink`, `corsFallback`, `studio-edit`, `studio`, `a11y`, `reducedMotion`, `perf.smoke`, `network-isolation` |
+| `e2e/*.spec.ts` | Playwright | `smoke`, `nav`, `ingest`, `schemaLoad`, `rulesLoad`, `runQc`, `partialRun`, `clearInputs`, `download`, `preconfig`, `shareLink`, `corsFallback`, `studio-edit`, `studio`, `a11y`, `reducedMotion`, `perf.smoke`, `network-isolation` |
 
 ## 4. Lint / typecheck / CI
 

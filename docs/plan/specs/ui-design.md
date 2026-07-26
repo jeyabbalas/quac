@@ -129,9 +129,10 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |  |  : drop file / browse:  |  |  : drop files/folder :  |  |  : drop CSVs: | |
 |  |  :...................:  |  |  :...................:  |  |  :..........: | |
 |  | Dataset URL [___][Fetch]|  | URL [________][Fetch]   |  | Rules URL […] | |
-|  | [details v]             |  | [Browse folder]         |  | [details v]   | |
-|  +-------------------------+  | [details v]             |  +---------------+ |
-|                               +-------------------------+                    |
+|  | [Clear]                 |  | [Browse folder] [Clear] |  | [Clear]       | |
+|  | [details v]             |  | [details v]             |  | [details v]   | |  <- rules details rows
+|  +-------------------------+  +-------------------------+  |  file.csv [✕] | |     each carry a ✕ (UIX-7)
+|                                                            +---------------+ |
 |  +== Preview =============================================================+ |
 |  |  [OK] Inputs look consistent — the dataset, JSON Schema, and QC rules   | |  <- §E.5 line
 |  |       all describe the same variables.                                 | |     (Tier 2, in the head)
@@ -144,8 +145,9 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |  |  | HH0000001 |      1 | HH00000001   |  ...                             | |
 |  +========================================================================+ |
 +------------------------------------------------------------------------------+
-|  Load a dataset to run QC.       [x] Apply corrections          [ Run QC ]  |  <- sticky bottom bar
-+------------------------------------------------------------------------------+
+| [Clear all inputs]   Load a dataset to run QC.  [x] Apply corrections        |  <- sticky bottom bar
+|                                                              [ Run QC ]     |     (Clear all pins left,
++------------------------------------------------------------------------------+      UIX-7)
 ```
 
 **QC Report (`#/report`)** — during a run one monotonic DuckProgress card sits above the grid area (`~(duck)~ Validating against the schema · 43%  [Cancel]`); the panel column is a sticky Tier 1 sticker with one-line tabs.
@@ -231,7 +233,8 @@ Run QC — so it is one line in the Preview head (`json-schema-subsystem.md §E.
 AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, DataDictionaryTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
 Conventions:
-- **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body). `createSlotCard(title, { requirement })` renders a visible `Required` / `Optional` tag (`.q-slotcard-req`, uppercase text-xs) beside the title — plain text content, so AT reads it with no ARIA wiring; Dataset is `required`, JSON Schema and QC Rules are `optional` (UIX-6: at least one check source, enforced by `app/runReadiness.ts`).
+- **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, `actionsHost` — hidden while every child is `[hidden]` (UIX-7: a permanently-mounted hidden Clear must not pin the row visible), optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button; `clear()` empties the typed URL on slot clear, `setDisabled()` is the latch variant without the `Fetching…` label swap). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body). `createSlotCard(title, { requirement })` renders a visible `Required` / `Optional` tag (`.q-slotcard-req`, uppercase text-xs) beside the title — plain text content, so AT reads it with no ARIA wiring; Dataset is `required`, JSON Schema and QC Rules are `optional` (UIX-6: at least one check source, enforced by `app/runReadiness.ts`).
+- **Every slot is clearable (UIX-7)**: each card carries a small text `Clear` (`.q-slotcard-clear`) in its actions row with a DISTINCT accessible name — `Clear dataset` / `Clear JSON Schema` / `Clear QC rules` (Playwright name matching is substring-based; bare `Clear` collides with `Clear focus`/`Clear preview filter`). Schema/rules Clear hide only when empty and stay ENABLED during `loading` — that is the cancel for a hung no-timeout fetch (the store loadTokens discard the late completion). Dataset Clear additionally disables while loading/busy (ingest is uninterruptible mid-CTAS). The rules card adds a per-file ✕ (`.q-rulesfile-remove`, `aria-label` `Remove rules file <name>`) per `.q-rulesfile-header`; the schema stays whole-slot (a set compiles as one unit). The run bar's first child is `Clear all inputs` (`.q-clearall`, ghost small, `margin-right: auto` pins it left), hidden while every slot is empty and disabled while the dataset latch is held. Focus never strands: a completed clear lands on the card's drop-zone browse control (clear-all: the dataset card's), a confirmed per-file remove on the next row's ✕, a cancelled confirm keeps the modal's native restore-to-opener.
 - **Modal sizes**: `openModal({ size: 'default' | 'wide' })` — 560px / 720px caps. Wide is for content-heavy dialogs; ShareModal is the only wide modal today.
 - **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker and IndexPicker share it. One primary per modal at most.
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.
@@ -316,6 +319,13 @@ too. This can't be undone — download the rules CSV first if you want a copy.` 
 `Delete rule` (primary, exactly as `Discard` is). Plain and serious: §6 reserves puns for empty states. This
 dialog **subsumes** the `Discard changes?` guard when the deleted row is the open draft — `modal.ts` supports one
 modal at a time, and once you've agreed to delete the rule the discard question is moot.
+
+**UIX-7 copy additions (pinned):** the clear confirms share `confirmDialog` (`app/clearInputs.ts` — `openModal`, question `<p>`, `.q-panel-note`, `.q-modal-actions` with Cancel-then-verb, focus opens on Cancel, exactly the `Delete rule?` recipe). Confirmation only when work would be lost; clear-all always asks. The three dialogs:
+- **Clear all inputs?** / `Remove the dataset, the JSON Schema, and the QC rules from this session?` / note `The QC report resets too. Your files stay on your computer.` (with unsaved Studio work, prepend `Unsaved Rule Studio edits in {names} will be lost — download the rules CSV first if you want a copy. `) / verb `Clear all inputs`.
+- **Clear the QC rules?** (unsaved work only) / `Remove all loaded QC rules files from this session?` / note `Unsaved Rule Studio edits in {names} will be lost. Download the rules CSV first if you want a copy.` / verb `Clear rules`.
+- **Remove this rules file?** (that file unsaved only) / `Remove {name} from this session?` / note `It has unsaved edits from Rule Studio that will be lost. Download the rules CSV first if you want a copy.` / verb `Remove file`.
+
+Feedback is one polite toast per action — the only announcement path AT users get (badges are not live regions): `Dataset cleared.` / `JSON Schema cleared.` / `QC rules cleared.` / `` `Removed ${name}.` `` / `All inputs cleared.`, each with hint `The QC report was reset.` iff a run existed at entry. "Unsaved Studio work" means `dirtyFiles` ∪ the open drawer draft (`app/rulesDraftProbe.ts` — an unsaved draft is invisible to `dirtyFiles`).
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 

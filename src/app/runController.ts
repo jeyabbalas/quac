@@ -70,6 +70,23 @@ export async function startRun(ctx: ShellContext): Promise<void> {
     },
   };
   const generationAtStart = dataset.generation;
+  const epochAtStart = store.runEpoch.get();
+  // True once a dataset replacement or an explicit clear (invalidateRun)
+  // superseded this run — every late write below checks it first.
+  const invalidated = (): boolean =>
+    store.dataset.get()?.generation !== generationAtStart ||
+    store.runEpoch.get() !== epochAtStart;
+  // Defense in depth for the discard paths: if a pre-abort progress tick left
+  // the pipeline carrying OUR token over the invalidation's idle, release it —
+  // never touch a newer owner's state (a fresh run may already be in flight).
+  const releaseStrandedPipeline = (): void => {
+    if (store.pipeline.get().cancel !== token) return;
+    store.pipeline.set({
+      stage: 'idle',
+      progress: { done: 0, total: 0 },
+      cancel: createCancelToken(),
+    });
+  };
   store.pipeline.set({ stage: 'prepare', progress: { done: 0, total: 0 }, cancel: token });
   router.navigate('report');
 
@@ -89,18 +106,29 @@ export async function startRun(ctx: ShellContext): Promise<void> {
       jsSandbox,
       signal: controller.signal,
       onProgress: (p) => {
+        // A cancelled run's late tick must not rewrite the pipeline the
+        // invalidation just reset — that stranded Run on 'in progress' forever.
+        if (controller.signal.aborted) return;
         store.pipeline.set({
           stage: p.stage,
           progress: { done: p.done, total: p.total },
           cancel: token,
         });
       },
-      present: presentRun,
+      present: async (payload) => {
+        // A doomed run may not repaint the grid over a clear.
+        if (invalidated()) return;
+        await presentRun(payload);
+      },
     });
 
-    // A dataset replaced mid-run wins: the reset effect already cleared run
-    // state and cancelled us — do not resurrect stale results over it.
-    if (store.dataset.get()?.generation !== generationAtStart) return;
+    // A dataset replaced mid-run — or any explicit clear (epoch) — wins: the
+    // invalidation already cleared run state and cancelled us; do not
+    // resurrect stale results (even partial ones) over it.
+    if (invalidated()) {
+      releaseStrandedPipeline();
+      return;
+    }
 
     store.runArtifacts.set(artifacts);
     const summary = artifacts.flagStore.summary(artifacts.rowsTotal);
@@ -129,6 +157,11 @@ export async function startRun(ctx: ShellContext): Promise<void> {
   } catch (err) {
     // runPipeline contains stage failures; reaching here means the run could
     // not execute at all (e.g. bridge init failed).
+    if (invalidated()) {
+      // The run was discarded before it failed — its error is moot noise.
+      releaseStrandedPipeline();
+      return;
+    }
     reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
     store.pipeline.set({
       stage: 'failed',

@@ -30,6 +30,17 @@ const STAGE_LABELS: Record<IngestStage, string> = {
   preparing: 'Preparing tables',
 };
 
+/**
+ * Monotonic high-water generation (UIX-7). A clear nulls `store.dataset`, so
+ * `previous?.generation ?? 0` alone would hand out generation 1 twice across a
+ * clear→re-upload — and reportGrid's ensureTable memoizes on generation, so the
+ * PREVIOUS dataset's grid would be reused for the new one. This module is the
+ * sole `store.dataset` writer and is retained once loaded, so the counter
+ * never regresses. Generations start at 1; 0 stays the no-dataset sentinel
+ * (shell/reportView/previewPane/studioWorkspace rely on it).
+ */
+let generationCounter = 0;
+
 export async function ingestFromFile(ctx: ShellContext, file: File, ui: IngestUi): Promise<void> {
   await runIngest(ctx, ui, file, file.name);
 }
@@ -91,6 +102,7 @@ async function runIngest(
     });
 
     const previous = ctx.store.dataset.get();
+    generationCounter = Math.max(generationCounter, previous?.generation ?? 0) + 1;
     ctx.store.dataset.set({
       name,
       format,
@@ -103,7 +115,7 @@ async function runIngest(
       source,
       ...(sheetName === undefined ? {} : { sheetName }),
       ...(sourceUrl === undefined ? {} : { sourceUrl }),
-      generation: (previous?.generation ?? 0) + 1,
+      generation: generationCounter,
     });
 
     renderDetails(ui.detailHost, result);

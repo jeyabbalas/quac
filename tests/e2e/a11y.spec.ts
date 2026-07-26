@@ -237,6 +237,21 @@ test('SheetPicker modal', async ({ page }) => {
   await expectNoSeriousViolations(page, 'SheetPicker modal');
 });
 
+test('Clear-all confirm dialog', async ({ page }) => {
+  await page.goto('/quac/');
+  await page
+    .locator('[data-slot="rules"] input[type="file"]')
+    .setInputFiles(join(FIXTURES, 'tiny', 'people_rules.quac.csv'));
+  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
+    'Valid',
+    { timeout: INGEST_TIMEOUT },
+  );
+
+  await page.getByRole('button', { name: 'Clear all inputs' }).click();
+  await expect(page.getByRole('dialog', { name: 'Clear all inputs?' })).toBeVisible();
+  await expectNoSeriousViolations(page, 'Clear-all confirm dialog');
+});
+
 test('IndexPicker modal', async ({ page }) => {
   await page.goto('/quac/');
   const a = `${CORS}/synthetic/two-roots/a.schema.json`;

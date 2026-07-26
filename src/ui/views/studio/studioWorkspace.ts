@@ -23,6 +23,7 @@
 import { effect, signal } from '../../../app/signals';
 import { isRunningStage } from '../../../app/store';
 import { openModal } from '../../../app/modal';
+import { registerRulesDraftProbe } from '../../../app/rulesDraftProbe';
 import { showToast } from '../../../app/toast';
 import { createBadge } from '../../components/badge';
 import { createSeverityLabel } from '../../components/severityPill';
@@ -221,6 +222,14 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   });
   drawer.append(form.el);
 
+  // UIX-7: an open UNSAVED drawer draft is invisible to dirtyFiles (only
+  // saved edits land there) but a rules clear destroys it — the render effect
+  // below closes the drawer unconfirmed when its file vanishes. The clear
+  // actions probe this before deciding whether a confirm dialog is owed.
+  registerRulesDraftProbe(() =>
+    drawerTarget !== null && form.isDirty() ? drawerTarget.fileName : null,
+  );
+
   drawer.addEventListener('keydown', (event) => {
     // CodeMirror/combobox/modal Escapes arrive defaultPrevented — theirs.
     if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -323,6 +332,10 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     if (isRunningStage(ctx.store.pipeline.get().stage)) return;
     const lintCtx = getLintContext();
     if (lintCtx === null) return;
+    // A cleared dataset leaves the context stale (it re-installs on the next
+    // generation) — testing against dropped tables would render a spurious
+    // failure (UIX-7 R5).
+    if (ctx.store.dataset.get() === null) return;
     const token = ++testToken;
     testState = 'testing';
     syncGate();
@@ -334,6 +347,13 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
       loadSandbox: loadJSSandbox,
     });
     if (token !== testToken || drawerTarget === null) return; // stale — discarded
+    if (ctx.store.dataset.get() === null) {
+      // Dataset cleared mid-test — the tables are gone, so the result (an
+      // error) is meaningless; reset the panel instead of rendering "failed".
+      resetTest();
+      syncGate();
+      return;
+    }
     testState =
       result.kind === 'error' ? 'failed' : result.kind === 'not-testable' ? 'untested' : 'passed';
     previewPane.renderTestResult(draft, result);

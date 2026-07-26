@@ -124,6 +124,15 @@ export interface AppStore {
   run: Signal<RunSummary | null>;
   /** Heavy per-run artifacts (FlagStore + stats) — the Report panels' source. */
   runArtifacts: Signal<RunArtifacts | null>;
+  /**
+   * Bumped by every EXPLICIT run invalidation (UIX-7 `invalidateRun`: input
+   * clears, dataset replacement). `startRun` captures it at start; a moved
+   * epoch discards the run's late writes (present/progress/commit), so a
+   * doomed run can never repaint state a clear just emptied. Lives here, not
+   * in runController — that module is lazy (Run-click import) and a counter
+   * there would be unreachable from the always-loaded clear helpers.
+   */
+  runEpoch: Signal<number>;
   /** "Apply corrections" run toggle (qc-rules-engine.md §2); false = assess-only. */
   applyCorrections: Signal<boolean>;
   shareables: Signal<readonly ArtifactProvenance[]>;
@@ -148,6 +157,7 @@ export function createAppStore(): AppStore {
     }),
     run: signal<RunSummary | null>(null),
     runArtifacts: signal<RunArtifacts | null>(null),
+    runEpoch: signal(0),
     applyCorrections: signal(true),
     shareables: signal<readonly ArtifactProvenance[]>([]),
     preconfigured: signal(false),

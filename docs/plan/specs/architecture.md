@@ -116,6 +116,7 @@ annotate     COPY display bytes → loadData → re-apply annotations + tooltips
 
 - Cancel = cooperative token checked at chunk/rule boundaries (DuckDB statement interrupt not assumed; P03 verdict V12: there is no `bridge.cancel()` — per-call `AbortSignal` on `query()`/`loadData()`/`exportToBuffer()`).
 - Re-run semantics: artifacts persist; new data upload invalidates flags + `quac_*` tables; every run starts from a fresh CTAS so corrections are idempotent per run. Determinism: a run is a pure function of (source bytes, schema set, rule files); `SELECT setseed(0.42)` before each correction.
+- **Any explicit input clear invalidates the run via `store.runEpoch` (UIX-7):** `app/runInvalidation.ts` bumps the epoch, cancels the in-flight token, nulls `run`/`runArtifacts`, and idles the pipeline behind a PRE-CANCELLED token (silences the completion announcement). `startRun` captures the epoch beside the dataset generation and treats either moving as invalidation — the present port skips repainting, the commit path discards partial artifacts, late `onProgress` ticks self-suppress after abort, and the discard paths release the pipeline only when it still carries that run's token. Replacements of a CHECK source and Studio edits deliberately do not come here — the report persists for consultation; dataset replacement always did invalidate and now routes through the same helper.
 - Progress: `core/pipeline.ts` owns an emitter (`onStage`, `onTick`); UI binds DuckProgress. Per-rule failures are never fatal (broken-rule policy in `qc-rules-engine.md`).
 
 ## 7. State management & errors
@@ -127,6 +128,7 @@ annotate     COPY display bytes → loadData → re-apply annotations + tooltips
   pipeline: { stage: 'idle'|'prepare'|'corrections'|'schema'|'rules'|'annotate'|'done'|'cancelled'|'failed';
               progress: {done:number; total:number}; cancel: CancelToken }
   run: { flagsSummary; lastRunAt; datasetName } | null
+  runEpoch: number                        // bumped by every explicit run invalidation (UIX-7, §6)
   shareables: ArtifactProvenance[]        // per artifact: 'upload' | {url}
   ```
 - data-table's own signals drive grid internals; QuaC subscribes to its events (`ready`, `loadProgress`, `loadComplete`) and never duplicates grid state.

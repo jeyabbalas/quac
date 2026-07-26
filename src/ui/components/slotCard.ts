@@ -94,7 +94,10 @@ export function createSlotCard(
     update: (state) => {
       badgeHost.replaceChildren(createBadge(BADGE_TEXT[state.status], BADGE_TONE[state.status]));
       summary.textContent = state.detail;
-      actionsHost.hidden = actionsHost.childElementCount === 0;
+      // Count only NON-hidden children (UIX-7): a permanently-mounted but
+      // currently-hidden control (a card's Clear button) must not pin the
+      // row visible over an otherwise-empty slot.
+      actionsHost.hidden = actionsHost.querySelector(':scope > :not([hidden])') === null;
       details.hidden = detailHost.childElementCount === 0;
     },
     setDetailsOpen: (open) => {

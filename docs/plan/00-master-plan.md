@@ -74,6 +74,29 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-7 · **Every input is clearable; an explicit clear invalidates the run, the hash, and the tables.**
+Each slot card grows a `Clear` (rules also a per-file ✕; schema stays whole-slot — a set compiles as one unit) and
+the run bar a left-pinned `Clear all inputs` (always confirms; per-slot confirms only when unsaved Studio work would
+be lost — `dirtyFiles` ∪ the open drawer draft via the new `app/rulesDraftProbe.ts`). New `app/clearInputs.ts` owns
+the actions: `invalidateRun` (`app/runInvalidation.ts` bumps the new `store.runEpoch`, idles the pipeline behind a
+PRE-CANCELLED token so the collapse never announces "QC run complete."), a `history.replaceState` hash rewrite from
+the remaining live sources (`config=` drops, `index=` dies with the last `schema=`), and for the dataset a
+best-effort `dropDatasetTables` through the new `peekBridge()` (never boots WASM) under the card's busy latch (R4).
+Races closed with store-level load tokens (rules AND schema — a clear mid-fetch/mid-lint wins; Clear doubles as the
+hung-fetch cancel), an epoch-gated `startRun` (R1: a check-source clear mid-run can no longer resurrect the report),
+and TWO live bugs fixed en route: R2 — a dataset replace mid-run left a late `onProgress` tick rewriting the reset
+pipeline, wedging Run on "in progress" forever (now abort-suppressed + token-ownership release); and ingest
+generations now come from a module high-water counter, else clear→re-upload reissued generation 1 and reportGrid's
+memo served the PREVIOUS dataset's grid. reportGrid gains `disposeGrid` (dataset clear) / `clearRunPresentation`
+(check-source clear keeps the data grid, strips annotations + the offender filter + stale header tooltips).
+Deliberate deviation from the reviewed plan: the rules-card Clear does NOT ride the card's `run()` latch — the busy
+refusal would dead-button it during exactly the hung fetch the loading-state amendment wants it to cancel; the
+loadToken makes the direct call race-safe. Deferred niggles: older back-stack entries still carry pre-clear URLs
+(replaceState fixes only the current entry); the rules URL-fetch window still shows no Loading badge, so a hung
+FIRST rules fetch has nothing visible to clear; a cancelled run racing a dataset clear may log swallowed worker-side
+stage errors to the console; `store.shareables` stays declared-but-dead (separate cleanup).
+Unit 695 → 718, e2e 76 → 83, entry JS 44.4 → 46.3 KB gz.
+
 2026-07-26 · UIX-6 · **Only the dataset is mandatory; either check source alone runs** (contract for P20's README).
 The engine always worked this way — what shipped is the surface: `app/runReadiness.ts` is now the ONE gate the Run
 button and `startRun` both consume (a Warning dataset runs; a failed re-ingest with a stale `store.dataset` refuses;

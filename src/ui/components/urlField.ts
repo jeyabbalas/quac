@@ -12,6 +12,10 @@ export interface UrlFieldOptions {
 export interface UrlField {
   readonly el: HTMLElement;
   setBusy: (busy: boolean) => void;
+  /** Disable without the 'Fetching…' label swap (the clear path's latch). */
+  setDisabled: (disabled: boolean) => void;
+  /** Empty the typed URL (slot clear — a stale URL must not survive it). */
+  clear: () => void;
 }
 
 let urlFieldSeq = 0;
@@ -56,6 +60,13 @@ export function createUrlField(options: UrlFieldOptions): UrlField {
       input.disabled = busy;
       button.disabled = busy;
       button.textContent = busy ? 'Fetching…' : 'Fetch';
+    },
+    setDisabled: (disabled) => {
+      input.disabled = disabled;
+      button.disabled = disabled;
+    },
+    clear: () => {
+      input.value = '';
     },
   };
 }

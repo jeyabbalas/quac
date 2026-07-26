@@ -6,6 +6,7 @@
  * least one of Schema/Rules are valid; never auto-runs).
  */
 import { effect } from '../../../app/signals';
+import { clearAllInputs, isDatasetUiBusy } from '../../../app/clearInputs';
 import { reportError } from '../../../app/errors';
 import { assetUrl } from '../../../app/urlBase';
 import { registerDatasetUrlLoader } from '../../../app/bootConfig';
@@ -97,7 +98,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   grid.append(dataHost, schemaHost, rulesHost);
 
   const dataCard = mountDatasetCard(dataHost, ctx);
-  mountSchemaSlotCard(schemaHost);
+  mountSchemaSlotCard(schemaHost, ctx);
   mountRulesSlotCard(rulesHost, ctx);
 
   // P16: the boot flow drives the Dataset card's own URL loader (real progress).
@@ -119,6 +120,26 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   // ---- Run bar (P14): toggle + Run QC + disabled-state reason ----
   const runBar = document.createElement('section');
   runBar.className = 'q-runbar';
+  // UIX-7: session-wide reset, pinned to the bar's far left — diagonally
+  // opposite Run QC, so the destructive act can't be fat-fingered from the
+  // primary one. Hidden while every slot is empty (which also closes the
+  // clear-all-during-boot-manifest-fetch window: nothing shows until a slot
+  // fills). clearAllInputs always confirms.
+  const clearAll = document.createElement('button');
+  clearAll.type = 'button';
+  clearAll.className = 'q-btn q-btn--ghost q-btn--small q-clearall';
+  clearAll.textContent = 'Clear all inputs';
+  clearAll.hidden = true;
+  clearAll.addEventListener('click', () => {
+    void clearAllInputs(ctx).then(() => {
+      const allEmpty = (['data', 'schema', 'rules'] as const).every(
+        (id) => ctx.store.slots[id].get().status === 'empty',
+      );
+      // The button hid itself — hand keyboard focus to the dataset card's
+      // browse control. A cancelled confirm keeps the native restore.
+      if (allEmpty) dataCard.focusBrowse();
+    });
+  });
   const reason = document.createElement('p');
   reason.className = 'q-runbar-reason';
   const toggleLabel = document.createElement('label');
@@ -143,7 +164,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
       reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
     });
   });
-  runBar.append(reason, toggleLabel, runButton);
+  runBar.append(clearAll, reason, toggleLabel, runButton);
 
   container.append(hint, example, rubric, grid, previewHost, runBar);
 
@@ -151,13 +172,18 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
     slot.status === 'valid' || slot.status === 'warning';
 
   // Hero visibility: first-run only. Any filled slot (or a pre-configured
-  // link) means the user is past the pitch.
+  // link) means the user is past the pitch. The same anyFilled drives the
+  // Clear-all button the other way, and the dataset leg gates it: an ingest
+  // in flight cannot be cleared (the busy latch also covers the pre-loading
+  // sliver the slot status misses).
   effect(() => {
     const anyFilled =
       ctx.store.slots.data.get().status !== 'empty' ||
       ctx.store.slots.schema.get().status !== 'empty' ||
       ctx.store.slots.rules.get().status !== 'empty';
     example.hidden = anyFilled || ctx.store.preconfigured.get();
+    clearAll.hidden = !anyFilled;
+    clearAll.disabled = ctx.store.slots.data.get().status === 'loading' || isDatasetUiBusy();
   });
   // The disabled state and its reason come from the ONE readiness predicate —
   // the same assessment startRun makes, so button and controller cannot drift.

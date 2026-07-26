@@ -12,7 +12,9 @@
  * dataset context; `setLintContext` re-lints when the dataset changes (or
  * clears). A monotonic token guards BOTH staleness dimensions — the dataset
  * context and the files array can each change while a lint is in flight; only
- * the newest lint may publish.
+ * the newest lint may publish. A second token (`loadToken`) closes the load
+ * window the same way: a clear/remove landing while addRuleFiles/addRuleUrls
+ * is parked on an await discards that load's publishes.
  */
 import { effect, signal } from '../../app/signals';
 import type { Signal } from '../../app/signals';
@@ -40,7 +42,10 @@ export interface RulesSlotState {
   dirtyFiles: ReadonlySet<string>;
 }
 
-const EMPTY: RulesSlotState = {
+/** Always a FRESH object: `signal.set` dedupes on Object.is, and a re-set of a
+ *  shared EMPTY const would strand an error badge `reportError` wrote into the
+ *  `store.slots.rules` mirror (the bind effect only re-runs on a new object). */
+const emptyState = (): RulesSlotState => ({
   phase: 'empty',
   files: [],
   results: [],
@@ -48,11 +53,15 @@ const EMPTY: RulesSlotState = {
   fetchErrors: [],
   sources: [],
   dirtyFiles: new Set(),
-};
+});
 
-export const rulesState: Signal<RulesSlotState> = signal<RulesSlotState>(EMPTY);
+export const rulesState: Signal<RulesSlotState> = signal<RulesSlotState>(emptyState());
 
 let lintToken = 0;
+/** Staleness guard for the LOAD dimension: a reset/remove landing while
+ *  addRuleFiles/addRuleUrls is parked on an await must win — captured at
+ *  loader top, checked before every publish (lintToken twin). */
+let loadToken = 0;
 let currentCtx: DatasetLintContext | null = null;
 
 async function relint(files: readonly ParsedRuleFile[]): Promise<void> {
@@ -84,7 +93,9 @@ export async function addRuleFiles(
   entries: readonly { name: string; text: string; sourceUrl?: string }[],
 ): Promise<void> {
   if (entries.length === 0) return;
+  const token = loadToken;
   const { parseRuleFile } = await loadCodecs();
+  if (token !== loadToken) return; // a clear/remove superseded this load
   const current = rulesState.get();
   const files = [...current.files];
   const sources = [...current.sources];
@@ -110,6 +121,7 @@ export async function addRuleFiles(
 export async function addRuleUrls(urls: readonly string[]): Promise<void> {
   const targets = urls.map((u) => u.trim()).filter((u) => u !== '');
   if (targets.length === 0) return;
+  const token = loadToken;
   const entries: { name: string; text: string; sourceUrl?: string }[] = [];
   const fetchErrors: string[] = [];
   for (const url of targets) {
@@ -126,6 +138,7 @@ export async function addRuleUrls(urls: readonly string[]): Promise<void> {
       );
     }
   }
+  if (token !== loadToken) return; // a clear landed during the fetch window
   rulesState.set({ ...rulesState.get(), fetchErrors });
   await addRuleFiles(entries);
 }
@@ -326,10 +339,45 @@ export async function duplicateRule(fileName: string, index: number): Promise<nu
   return result === null ? null : index + 1;
 }
 
-export function resetRulesSlot(): void {
+/**
+ * Remove ONE loaded rules file by name (per-file ✕ on the slot card).
+ * `files` and `sources` are index-aligned by contract — they splice together.
+ * The file's dirty flag drops with it; survivors relint under the KEPT dataset
+ * context (the context belongs to the dataset, not the files — rulesSlotCard
+ * only re-installs it on a generation change). Removing the last file empties
+ * the slot outright, fetchErrors included (summarizeSlot would otherwise read
+ * status 'error' over an empty file list). Returns false for an unknown name.
+ */
+export async function removeRuleFile(name: string): Promise<boolean> {
+  const current = rulesState.get();
+  const index = current.files.findIndex((f) => f.file.name === name);
+  if (index < 0) return false;
+  loadToken += 1; // in-flight adds snapshotted the removed file — discard them
+  const files = current.files.filter((_, i) => i !== index);
+  const sources = current.sources.filter((_, i) => i !== index);
+  const dirtyFiles = new Set(current.dirtyFiles);
+  dirtyFiles.delete(name);
+  if (files.length === 0) {
+    lintToken += 1; // kill any in-flight lint
+    rulesState.set(emptyState());
+    return true;
+  }
+  rulesState.set({ ...current, phase: 'loading', files, sources, dirtyFiles });
+  await relint(files);
+  return true;
+}
+
+/** Empty the rules slot but KEEP the dataset lint context (the Clear button —
+ *  the dataset is still loaded, so later files lint against it). */
+export function clearRuleFiles(): void {
+  loadToken += 1; // discard in-flight adds
   lintToken += 1; // kill any in-flight lint
+  rulesState.set(emptyState());
+}
+
+export function resetRulesSlot(): void {
   currentCtx = null;
-  rulesState.set(EMPTY);
+  clearRuleFiles();
 }
 
 /** True when the file failed structurally (nothing in it can execute). */

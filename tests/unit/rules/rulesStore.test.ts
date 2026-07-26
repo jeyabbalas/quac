@@ -7,12 +7,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addRuleFiles,
+  addRuleUrls,
+  clearRuleFiles,
   createRuleFile,
   duplicateRule,
   getLintContext,
   insertRule,
   moveRule,
   removeRule,
+  removeRuleFile,
   resetRulesSlot,
   rulesState,
   setLintContext,
@@ -250,5 +253,138 @@ describe('getLintContext', () => {
     expect(getLintContext()).toBe(ctx);
     resetRulesSlot();
     expect(getLintContext()).toBeNull();
+  });
+});
+
+// UIX-7: per-file removal + whole-slot clear, and the loadToken that makes
+// both safe against loads still parked on an await when the clear lands.
+const lintCtx = () => ({ runner: { query: () => Promise.resolve([]) }, datasetColumns: ['a'] });
+
+describe('removeRuleFile', () => {
+  it('splices files and sources together — survivors stay aligned', async () => {
+    await load(); // upload → source null
+    await addRuleFiles([
+      { name: 'remote.quac.csv', text: THREE_RULES, sourceUrl: 'https://example.test/remote.quac.csv' },
+    ]);
+    await load('third.quac.csv');
+    expect(await removeRuleFile('test.quac.csv')).toBe(true);
+    const state = rulesState.get();
+    expect(state.phase).toBe('ready');
+    expect(state.files.map((f) => f.file.name)).toEqual(['remote.quac.csv', 'third.quac.csv']);
+    expect(state.sources).toEqual(['https://example.test/remote.quac.csv', null]);
+    expect(state.results.map((r) => r.file)).toEqual(['remote.quac.csv', 'third.quac.csv']);
+  });
+
+  it('removing the last file empties the slot but keeps the lint context', async () => {
+    const ctx = lintCtx();
+    await setLintContext(ctx);
+    await load();
+    expect(rulesState.get().lintedWithData).toBe(true);
+    expect(await removeRuleFile('test.quac.csv')).toBe(true);
+    const state = rulesState.get();
+    expect(state.phase).toBe('empty');
+    expect(state.files).toEqual([]);
+    expect(state.results).toEqual([]);
+    expect(state.lintedWithData).toBe(false);
+    expect(getLintContext()).toBe(ctx);
+    await load(); // a later load lints against the kept context
+    expect(rulesState.get().lintedWithData).toBe(true);
+  });
+
+  it('returns false for an unknown name and leaves the state untouched', async () => {
+    await load();
+    const before = rulesState.get();
+    expect(await removeRuleFile('nope.quac.csv')).toBe(false);
+    expect(rulesState.get()).toBe(before);
+  });
+
+  it('fetchErrors survive a non-last remove and clear with the last one', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new Error('offline'));
+    try {
+      await addRuleUrls(['https://bad.test/x.quac.csv']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    await load();
+    await load('other.quac.csv');
+    expect(rulesState.get().fetchErrors).toHaveLength(1);
+    await removeRuleFile('test.quac.csv');
+    expect(rulesState.get().fetchErrors).toHaveLength(1);
+    await removeRuleFile('other.quac.csv');
+    expect(rulesState.get().fetchErrors).toEqual([]);
+  });
+
+  it('drops the removed file from dirtyFiles; siblings stay dirty', async () => {
+    await load();
+    await load('other.quac.csv');
+    await updateRule('test.quac.csv', 0, draft({ ruleId: 'R1' }));
+    await updateRule('other.quac.csv', 0, draft({ ruleId: 'R1x' }));
+    await removeRuleFile('test.quac.csv');
+    const { dirtyFiles } = rulesState.get();
+    expect(dirtyFiles.has('test.quac.csv')).toBe(false);
+    expect(dirtyFiles.has('other.quac.csv')).toBe(true);
+  });
+});
+
+describe('clearRuleFiles', () => {
+  it('empties the slot but keeps the lint context', async () => {
+    const ctx = lintCtx();
+    await setLintContext(ctx);
+    await load();
+    clearRuleFiles();
+    expect(rulesState.get().phase).toBe('empty');
+    expect(rulesState.get().files).toEqual([]);
+    expect(getLintContext()).toBe(ctx);
+  });
+
+  it('publishes a FRESH object every time (Object.is dedupe must not swallow it)', () => {
+    clearRuleFiles();
+    const first = rulesState.get();
+    clearRuleFiles();
+    expect(rulesState.get()).not.toBe(first);
+  });
+});
+
+describe('load-token races', () => {
+  it('a clear landing while addRuleFiles awaits its codecs wins', async () => {
+    const pending = load(); // parks on the codec import before any publish
+    clearRuleFiles();
+    await pending;
+    expect(rulesState.get().phase).toBe('empty');
+    expect(rulesState.get().files).toEqual([]);
+  });
+
+  it('a clear landing during the addRuleUrls fetch window wins', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      gate.then(() => ({
+        ok: true,
+        text: () => Promise.resolve(THREE_RULES),
+      }))) as unknown as typeof fetch;
+    try {
+      const pending = addRuleUrls(['https://slow.test/rules.quac.csv']);
+      clearRuleFiles();
+      release?.();
+      await pending;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(rulesState.get().phase).toBe('empty');
+    expect(rulesState.get().files).toEqual([]);
+    expect(rulesState.get().fetchErrors).toEqual([]);
+  });
+
+  it('a remove landing while a sibling add is parked discards the stale add', async () => {
+    await load();
+    const pending = load('late.quac.csv'); // snapshot still contains test.quac.csv
+    await removeRuleFile('test.quac.csv');
+    await pending;
+    const state = rulesState.get();
+    expect(state.files.map((f) => f.file.name)).not.toContain('test.quac.csv');
   });
 });

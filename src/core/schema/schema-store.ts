@@ -30,6 +30,12 @@ export const schemaState: Signal<SchemaSlotState> = signal<SchemaSlotState>({
   sourceUrls: [],
 });
 
+/** Staleness guard (rules-store `lintToken` twin): each load claims a fresh
+ *  token and re-checks it before every publish, so a reset — or a newer load —
+ *  landing while this one is parked on an await discards the stale completion
+ *  silently (no publish, no throw). */
+let loadToken = 0;
+
 /** True when the IndexPickerModal is required (§A.3.4) and nothing chose yet. */
 export function needsRootChoice(set: SchemaSet): boolean {
   return (
@@ -40,11 +46,14 @@ export function needsRootChoice(set: SchemaSet): boolean {
 
 /** Load uploaded files (browse, folder, or drop) into the schema slot. */
 export async function loadSchemaEntries(entries: readonly IntakeEntry[]): Promise<void> {
+  const token = ++loadToken;
   schemaState.set({ phase: 'loading', set: null, sourceUrls: [] });
   try {
     const set = await buildSchemaSet(entries, { origin: 'upload' });
+    if (token !== loadToken) return; // superseded by a reset or a newer load
     schemaState.set({ phase: 'ready', set, sourceUrls: [] });
   } catch (err) {
+    if (token !== loadToken) return; // the failure belongs to a discarded load
     schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
     throw err;
   }
@@ -62,6 +71,7 @@ export async function loadSchemaUrls(
 ): Promise<void> {
   const targets = urls.map((u) => u.trim()).filter((u) => u !== '');
   if (targets.length === 0) return;
+  const token = ++loadToken;
   schemaState.set({ phase: 'loading', set: null, sourceUrls: targets });
   try {
     const entries: IntakeEntry[] = [];
@@ -93,8 +103,10 @@ export async function loadSchemaUrls(
       ...(indexParam !== undefined ? { indexParam } : {}),
     });
     set.errors.unshift(...fetchErrors);
+    if (token !== loadToken) return; // superseded by a reset or a newer load
     schemaState.set({ phase: 'ready', set, sourceUrls: targets });
   } catch (err) {
+    if (token !== loadToken) return; // the failure belongs to a discarded load
     schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
     throw err;
   }
@@ -112,6 +124,7 @@ export function chooseRoot(fileId: string): void {
 }
 
 export function resetSchemaSlot(): void {
+  loadToken += 1; // discard any in-flight load — its late completion may not publish
   schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
 }
 

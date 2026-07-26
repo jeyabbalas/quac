@@ -14,7 +14,7 @@ import { openShareModal } from '../ui/components/shareModal';
 import { mountLoadView } from '../ui/views/load/loadView';
 import { mountReportView } from '../ui/views/report/reportView';
 import { mountStudioView } from '../ui/views/studio/studioView';
-import { createCancelToken } from './store';
+import { invalidateRun } from './runInvalidation';
 import { installTypedSync } from './typedSync';
 import type { RouteId, Router } from './router';
 import type { AppStore } from './store';
@@ -187,14 +187,7 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
     const generation = ctx.store.dataset.get()?.generation ?? 0;
     if (generation === runGeneration) return;
     runGeneration = generation;
-    ctx.store.pipeline.get().cancel.cancel();
-    ctx.store.run.set(null);
-    ctx.store.runArtifacts.set(null);
-    ctx.store.pipeline.set({
-      stage: 'idle',
-      progress: { done: 0, total: 0 },
-      cancel: createCancelToken(),
-    });
+    invalidateRun(ctx.store);
   });
 
   installTypedSync(ctx);

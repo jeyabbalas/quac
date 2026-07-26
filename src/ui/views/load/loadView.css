@@ -76,6 +76,11 @@
   margin: 0;
 }
 
+/* UIX-7: the per-file remove ✕ keeps to the header's right edge. */
+.q-rulesfile-remove {
+  margin-left: auto;
+}
+
 .q-rulesfile-name {
   font-family: var(--q-font-mono);
   font-size: var(--q-text-sm);
@@ -121,6 +126,12 @@
   background: var(--q-paper);
   border-top: var(--q-stroke);
   box-shadow: 0 -6px 12px -8px rgb(17 17 17 / 0.25);
+}
+
+/* UIX-7: Clear all inputs pins to the bar's far left (the bar itself is
+   flex-end), diagonally opposite the primary Run QC. */
+.q-clearall {
+  margin-right: auto;
 }
 
 .q-runbar-reason {

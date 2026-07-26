@@ -9,7 +9,7 @@
 import { reportError } from './errors';
 import { showToast } from './toast';
 import { getBridge } from '../core/bridge/bridge';
-import { executableRuleFile } from '../core/rules/lint';
+import { executableRuleFile } from '../core/rules/executable';
 import { rulesState } from '../core/rules/rules-store';
 import { columnDigest } from '../core/schema/column-meta';
 import { schemaState } from '../core/schema/schema-store';

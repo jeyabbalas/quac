@@ -29,7 +29,7 @@ function severityLabel(error: SchemaLoadError): string {
 }
 
 export function mountSchemaSlotCard(container: HTMLElement): void {
-  const card = createSlotCard('JSON Schema');
+  const card = createSlotCard('JSON Schema', { requirement: 'optional' });
 
   const load = (work: Promise<void>): void => {
     work.catch((err: unknown) => reportError(err, { fallbackCode: 'SCHEMA_INVALID' }));

@@ -18,7 +18,7 @@ export interface DatasetCardHandle {
 }
 
 export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): DatasetCardHandle {
-  const card = createSlotCard('Dataset');
+  const card = createSlotCard('Dataset', { requirement: 'required' });
 
   const progress = createDuckProgress();
   progress.el.hidden = true;

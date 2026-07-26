@@ -6,6 +6,13 @@
   color: var(--q-gray-600);
 }
 
+/* The input contract, one muted line above the cards (UIX-6). */
+.q-load-rubric {
+  margin: 0 0 var(--q-space-2);
+  font-size: var(--q-text-md);
+  color: var(--q-gray-600);
+}
+
 .q-slotgrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -120,6 +127,13 @@
   margin: 0;
   color: var(--q-gray-700);
   font-size: var(--q-text-md);
+}
+
+/* Non-blocking readiness note (UIX-6): the run CAN start, but a loaded input
+   won't participate — muted so it never reads as the disabled reason. */
+.q-runbar-reason.q-runbar-note {
+  color: var(--q-gray-600);
+  font-size: var(--q-text-sm);
 }
 
 .q-runbar-toggle {

@@ -25,7 +25,9 @@ const colMeta = (o: Partial<ColumnMeta> & { name: string }): ColumnMeta => ({
   ...o,
 });
 
-function buildFixtureModel(): ReturnType<typeof buildReportModel> {
+type ModelInput = Parameters<typeof buildReportModel>[0];
+
+function buildFixtureModel(over: Partial<ModelInput> = {}): ReturnType<typeof buildReportModel> {
   const store = createFlagStore();
   const flags: QCFlag[] = [
     {
@@ -78,6 +80,7 @@ function buildFixtureModel(): ReturnType<typeof buildReportModel> {
       caps: [],
       stageErrors: [],
     },
+    ...over,
   });
 }
 
@@ -91,8 +94,8 @@ const rowSource: ReportRowSource = () =>
     ];
   })();
 
-async function writeAndReread(): Promise<import('exceljs').Workbook> {
-  const model = buildFixtureModel();
+async function writeAndReread(over: Partial<ModelInput> = {}): Promise<import('exceljs').Workbook> {
+  const model = buildFixtureModel(over);
   const blob = await writeReportWorkbook(model, rowSource);
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -176,5 +179,23 @@ describe('writeReportWorkbook round-trip', () => {
     const runInfo = wb.getWorksheet('Run Info');
     const runText = JSON.stringify(runInfo?.getSheetValues());
     expect(runText).toContain('9.9.9');
+  });
+
+  it('schema-less run: Sheet 2 is headers + the never-compared note row (UIX-6)', async () => {
+    const wb = await writeAndReread({ columnMeta: null });
+    const missing = wb.getWorksheet('Missing Variables');
+    expect((missing?.getRow(1).values as unknown[]).slice(1)).toEqual([
+      'Variable',
+      'Title',
+      'Description',
+      'Variable group',
+      'Required?',
+    ]);
+    // No data rows — the note lands directly under the header, unstyled.
+    expect(missing?.getCell('A2').text).toBe(
+      'No JSON Schema was loaded for this run — schema-vs-dataset comparison was not performed.',
+    );
+    expect(argb(missing?.getCell('A2').fill)).toBeUndefined();
+    expect(missing?.getCell('A3').text).toBe('');
   });
 });

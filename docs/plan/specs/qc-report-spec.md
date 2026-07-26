@@ -30,7 +30,13 @@ Layout (wireframe in `ui-design.md`): left ~65% = data-table grid (annotated, fi
 - **Summary** — stat cards: rows / columns / errors / warnings / info / corrections applied / rules run / rules skipped; severity filter toggles (drive the annotation severity filter); primary button "Download QC Report (.xlsx)".
 - **Missing variables** (= Sheet 2 content): schema variables absent from the data, with titles/descriptions/groups.
 - **Dataset findings** (= Sheet 3): dataset- and column-scope flags + broken/skipped/external rules with statuses.
-- **Repeat offenders** (= Sheet 4): table rule → severity, targets, exact count, % of rows; sorted desc. Row click: when the rule is SQL row-scope, apply `addRawSQLFilter(condition)` to focus matching rows (best effort, window-free only; otherwise focus the rule's entry) — nice-to-have, not a gate.
+- **Repeat offenders** (= Sheet 4): table rule → severity, targets, exact count, % of rows; sorted desc. Row click: when the rule is SQL row-scope, apply `addRawSQLFilter(condition)` to focus matching rows (best effort, window-free only; otherwise focus the rule's entry) — nice-to-have, not a gate. The "Click a row-level SQL rule…" hint + `Clear focus` render only when ≥1 listed rule is actually filterable (a schema-only run has none).
+
+**Partial-run scope (UIX-6).** The panels read `RunArtifacts.inputs = { schemaProvided, ruleFileCount }` — the echo of what THIS run was handed, assigned at artifacts assembly. Run-time truth, never live-store reads (the stores can change post-run), and never `rules`-null-ness (a schema-only run still returns a non-null rules result with empty `perRule`; a crashed rules stage returns null with files loaded). Surfaces:
+
+- `ruleFileCount === 0` → the `Corrections applied` / `Rules run` / `Rules skipped` cards show `—` with title "No QC rules were loaded for this run.", plus a muted `q-scope-note` line above the hero row: "No QC rules were loaded for this run — the rules stage was skipped."
+- `schemaProvided === false` → scope note "No JSON Schema was loaded for this run — schema validation was skipped."
+- Missing variables keeps two DISTINCT empties (live-store panel, works pre-run): no digest → "No JSON Schema loaded — nothing to compare. Load one to see schema variables missing from the dataset."; digest but no dataset → "Load a dataset to compare against the schema's variables." The tab stays visible in both.
 
 During a run the grid area shows DuckProgress (stage label + cancel). After data re-upload, stale flags/annotations are cleared and the view returns to its empty "run QC" state.
 
@@ -53,6 +59,8 @@ Single `.xlsx`, filename **`quac-report_<dataset-stem>_<YYYYMMDD-HHmm>.xlsx`**, 
 
 Columns: variable, title, description, variable group (`x-variable-group`), required?. Required first, then optional, schema declaration order.
 
+When the run had no schema (`columnMeta === null`), the sheet is headers plus ONE unstyled note row — "No JSON Schema was loaded for this run — schema-vs-dataset comparison was not performed." (`ReportModel.missingVariablesNote`, rendered via `addTableSheet`'s note mechanism, the same one Sheet 1 uses for its truncation row). This keeps "never compared" distinguishable from a genuinely-empty none-missing sheet (UIX-6).
+
 ### Sheet 3 — `Dataset Findings`
 
 Columns: ruleId, source (schema/rules), severity, scope (dataset/column), column (if any), message (rendered), affected count. Includes: dataset-scope flags (duplicates, min-items, dataset SELECT results), column-scope flags (missing/unexpected/case-mismatch, count_distinct violations), broken rules ("Rule failed to execute: …"), skipped-inapplicable rules, and `external` rules as "not evaluated — requires external reference data".
@@ -67,4 +75,4 @@ App version, run timestamp, dataset filename + row/col counts, schema files (nam
 
 ## 6. Report model (`reportModel.ts`) — pure & testable
 
-`buildReportModel(flagStore, columnMeta, runInfo, rowSource)` → a plain object describing every sheet (headers, column layout incl. review-column placement + collision-resolved names, cell texts, fills) that `excelWriter.ts` renders 1:1. All layout decisions (sister-column insertion, merge order, truncation, collisions) happen in the model so node tests can assert them without exceljs; a second node test round-trips through exceljs (write → re-read) to pin styling.
+`buildReportModel(flagStore, columnMeta, runInfo, rowSource)` → a plain object describing every sheet (headers, column layout incl. review-column placement + collision-resolved names, cell texts, fills, the Sheet 2 `missingVariablesNote` on schema-less runs) that `excelWriter.ts` renders 1:1. All layout decisions (sister-column insertion, merge order, truncation, collisions) happen in the model so node tests can assert them without exceljs; a second node test round-trips through exceljs (write → re-read) to pin styling.

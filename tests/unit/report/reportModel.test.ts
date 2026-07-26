@@ -184,8 +184,24 @@ describe('buildReportModel — Sheet 2 missing variables', () => {
     expect(model.missingVariables[0]).toMatchObject({ title: 'Income', group: 'money', required: true });
   });
 
-  it('is empty when no schema is loaded', () => {
-    expect(buildReportModel(input({ flagStore: createFlagStore() })).missingVariables).toEqual([]);
+  it('is empty when no schema is loaded, with the never-compared note (UIX-6)', () => {
+    const model = buildReportModel(input({ flagStore: createFlagStore() })); // columnMeta: null
+    expect(model.missingVariables).toEqual([]);
+    expect(model.missingVariablesNote).toBe(
+      'No JSON Schema was loaded for this run — schema-vs-dataset comparison was not performed.',
+    );
+  });
+
+  it('carries no note when a schema compared and nothing is missing', () => {
+    const model = buildReportModel(
+      input({
+        flagStore: createFlagStore(),
+        datasetColumns: ['a'],
+        columnMeta: [colMeta({ name: 'a' })],
+      }),
+    );
+    expect(model.missingVariables).toEqual([]);
+    expect(model.missingVariablesNote).toBeUndefined();
   });
 });
 

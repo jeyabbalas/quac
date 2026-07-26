@@ -96,6 +96,14 @@
   font-size: var(--q-text-md);
 }
 
+/* Partial-run scope line (UIX-6): which check source this run ran without.
+   Quieter than .q-assess-note — it explains the em-dash cards, not a mode. */
+.q-scope-note {
+  margin: 0 0 var(--q-space-2);
+  color: var(--q-gray-600);
+  font-size: var(--q-text-sm);
+}
+
 /* Panel tabs — the panel column is a Tier 1 sticker */
 .q-report-panels {
   border: var(--q-stroke);

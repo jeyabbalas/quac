@@ -118,17 +118,23 @@ function harness(overrides: Partial<PipelineExecutors> = {}): Harness {
     },
     // Contract-faithful runQC fake: corrections → hook → validations, with
     // the engine's abort short-circuits (pinned by the engine unit tests).
-    runQC: async (_runner, _files, opts?) => {
+    // Zero files still runs the CTAS + hook and returns EMPTY perRule — the
+    // real engine's schema-only shape (pipeline.ts composition contract).
+    runQC: async (_runner, files, opts?) => {
       const o = opts ?? {};
       engineOpts = o;
       calls.push('runQC:start');
-      o.onFlags?.([rulesFlag()]);
+      if (files.length > 0) o.onFlags?.([rulesFlag()]);
       if (sigAborted(o.signal)) {
         return { flags: [], perRule: [], correctedCells: 0, aborted: true };
       }
       await o.betweenPhases?.();
       if (sigAborted(o.signal)) {
         return { flags: [], perRule: [], correctedCells: 0, aborted: true };
+      }
+      if (files.length === 0) {
+        calls.push('runQC:resume');
+        return { flags: [], perRule: [], correctedCells: 0, aborted: false };
       }
       o.onProgress?.({ ruleId: 'V1', index: 0, total: 1, phase: 'validate' });
       calls.push('runQC:resume');
@@ -321,6 +327,27 @@ describe('runPipeline stage machine', () => {
     expect(h.calls).toEqual(['harden', 'export']);
     expect(artifacts.rules).toBeNull();
     expect(h.presented).toHaveLength(1);
+  });
+
+  it('inputs echo, schema-only: rules result NON-null with empty perRule (UIX-6)', async () => {
+    const h = harness();
+    const artifacts = await runPipeline(h.deps({ ruleFiles: [] }));
+
+    expect(artifacts.inputs).toEqual({ schemaProvided: true, ruleFileCount: 0 });
+    // Null-ness cannot mean "no rules loaded": runQC still ran the work-table
+    // CTAS and returned an empty perRule. The report reads `inputs` instead.
+    expect(artifacts.rules).not.toBeNull();
+    expect(artifacts.rules?.perRule).toEqual([]);
+    expect(artifacts.rules?.correctedCells).toBe(0);
+    expect(h.calls).toContain('schema'); // the schema stage still ran in the hook
+  });
+
+  it('inputs echo, rules-only: schemaProvided false, file count carried', async () => {
+    const h = harness();
+    const artifacts = await runPipeline(h.deps({ schema: null }));
+
+    expect(artifacts.inputs).toEqual({ schemaProvided: false, ruleFileCount: 1 });
+    expect(artifacts.schema).toBeNull();
   });
 
   it('annotate failure (present rejects) is contained in stageErrors', async () => {

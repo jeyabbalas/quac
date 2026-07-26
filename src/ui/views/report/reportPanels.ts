@@ -100,9 +100,11 @@ function statCard(
   label: string,
   value: string,
   tone?: 'error' | 'warning' | 'info' | 'success',
+  title?: string,
 ): HTMLElement {
   const card = document.createElement('div');
   card.className = tone === undefined ? 'q-statcard' : `q-statcard q-statcard--${tone}`;
+  if (title !== undefined) card.title = title;
   const v = document.createElement('div');
   v.className = 'q-statcard-value';
   v.textContent = value;
@@ -112,6 +114,17 @@ function statCard(
   card.append(v, l);
   return card;
 }
+
+/** Muted per-run scope line (UIX-6): names the check source this run ran
+ *  without, so em-dash cards read as "not applicable", never as zero. */
+function scopeNote(text: string): HTMLParagraphElement {
+  const p = document.createElement('p');
+  p.className = 'q-scope-note';
+  p.textContent = text;
+  return p;
+}
+
+const NO_RULES_TITLE = 'No QC rules were loaded for this run.';
 
 export function mountReportPanels(
   host: HTMLElement,
@@ -163,6 +176,19 @@ export function mountReportPanels(
       target.append(note);
     }
 
+    // Partial-run scope (UIX-6): what THIS run was handed, from the artifacts
+    // echo — live stores may have changed since. Rules-less runs dash out the
+    // three rules-stage cards rather than showing a made-up 0.
+    const noRules = artifacts.inputs.ruleFileCount === 0;
+    if (!artifacts.inputs.schemaProvided) {
+      target.append(
+        scopeNote('No JSON Schema was loaded for this run — schema validation was skipped.'),
+      );
+    }
+    if (noRules) {
+      target.append(scopeNote('No QC rules were loaded for this run — the rules stage was skipped.'));
+    }
+
     // Hero row: the verdict numbers, severity-tinted so "39 Errors" cannot
     // read like "266 Columns". Quiet fact row below.
     const heroCards = document.createElement('div');
@@ -171,15 +197,21 @@ export function mountReportPanels(
       statCard('Errors', num(summary.severityTotals.error), 'error'),
       statCard('Warnings', num(summary.severityTotals.warning), 'warning'),
       statCard('Info', num(summary.severityTotals.info), 'info'),
-      statCard('Corrections applied', num(artifacts.rules?.correctedCells ?? 0), 'success'),
+      noRules
+        ? statCard('Corrections applied', '—', 'success', NO_RULES_TITLE)
+        : statCard('Corrections applied', num(artifacts.rules?.correctedCells ?? 0), 'success'),
     );
     const factCards = document.createElement('div');
     factCards.className = 'q-statgrid';
     factCards.append(
       statCard('Rows', num(dataset?.rowCount ?? artifacts.rowsTotal)),
       statCard('Columns', num(dataset?.columnCount ?? 0)),
-      statCard('Rules run', num(rulesRun)),
-      statCard('Rules skipped', num(rulesSkipped)),
+      noRules
+        ? statCard('Rules run', '—', undefined, NO_RULES_TITLE)
+        : statCard('Rules run', num(rulesRun)),
+      noRules
+        ? statCard('Rules skipped', '—', undefined, NO_RULES_TITLE)
+        : statCard('Rules skipped', num(rulesSkipped)),
     );
     target.append(heroCards, factCards);
 
@@ -274,13 +306,20 @@ export function mountReportPanels(
     const schema = schemaState.get();
     const dataset = ctx.store.dataset.get();
     const digest = schema.phase === 'ready' && schema.set !== null ? columnDigest(schema.set) : null;
-    if (digest === null || dataset === null) {
+    // Two distinct empties (UIX-6): a rules-only session has no schema to
+    // compare (say which input is absent), while a schema awaiting data needs
+    // the dataset. The tab stays visible either way.
+    if (digest === null) {
       target.append(
         panelNote(
-          'Nothing to compare. Load a JSON Schema and a dataset to see schema variables ' +
-            'missing from the data.',
+          'No JSON Schema loaded — nothing to compare. Load one to see schema variables ' +
+            'missing from the dataset.',
         ),
       );
+      return;
+    }
+    if (dataset === null) {
+      target.append(panelNote("Load a dataset to compare against the schema's variables."));
       return;
     }
     const missing = missingVariables(digest.meta, dataset.columns);
@@ -398,18 +437,30 @@ export function mountReportPanels(
       exactByRule.get(ruleId) ?? fallback;
     const ranked = rankOffenders(summary.perRule, exactByRule);
 
-    const hint = document.createElement('p');
-    hint.className = 'q-panel-note';
-    hint.textContent = 'Click a row-level SQL rule to focus matching grid rows (best effort).';
-    const clear = document.createElement('button');
-    clear.type = 'button';
-    clear.className = 'q-btn q-btn--small';
-    clear.textContent = 'Clear focus';
-    clear.addEventListener('click', () => {
-      hooks.onClearOffenderFocus();
-    });
-    hint.append(' ', clear);
-    target.append(hint);
+    // Grid-filterable = a validate row/longitudinal rule with a SQL condition;
+    // one predicate decides both the hint's presence and each row's button
+    // (a schema-only run has zero filterable rows — no hint for a click that
+    // can't happen).
+    const filterableRule = (rule: QCRule | undefined): rule is QCRule =>
+      rule !== undefined &&
+      rule.ruleType !== 'correct' &&
+      (rule.ruleScope === 'row' || rule.ruleScope === 'longitudinal');
+    const rows = ranked.map((aggregate) => ({ aggregate, rule: findRule(aggregate.ruleId) }));
+
+    if (rows.some(({ rule }) => filterableRule(rule))) {
+      const hint = document.createElement('p');
+      hint.className = 'q-panel-note';
+      hint.textContent = 'Click a row-level SQL rule to focus matching grid rows (best effort).';
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'q-btn q-btn--small';
+      clear.textContent = 'Clear focus';
+      clear.addEventListener('click', () => {
+        hooks.onClearOffenderFocus();
+      });
+      hint.append(' ', clear);
+      target.append(hint);
+    }
 
     const table = document.createElement('table');
     table.className = 'q-offenders';
@@ -429,19 +480,15 @@ export function mountReportPanels(
     }
     head.append(headRow);
     const body = document.createElement('tbody');
-    for (const aggregate of ranked) {
+    for (const { aggregate, rule } of rows) {
       const row = document.createElement('tr');
-      const rule = findRule(aggregate.ruleId);
       const targets = targetsCellText(
         aggregate.source === 'rules'
           ? (rule?.targetVariables ?? [])
           : [schemaRuleTargets(aggregate.ruleId)],
       );
       const exact = exactOf(aggregate.ruleId, aggregate.count);
-      const filterable =
-        rule !== undefined &&
-        rule.ruleType !== 'correct' &&
-        (rule.ruleScope === 'row' || rule.ruleScope === 'longitudinal');
+      const filterable = filterableRule(rule);
 
       // Rule cell: breakable mono id + the source as a muted sub-tag (its own
       // column wasted width on a two-value fact). When the rule can drive the

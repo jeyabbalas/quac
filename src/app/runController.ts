@@ -9,40 +9,13 @@
 import { reportError } from './errors';
 import { showToast } from './toast';
 import { getBridge } from '../core/bridge/bridge';
-import { executableRuleFile } from '../core/rules/lint';
-import { rulesState } from '../core/rules/rules-store';
-import { columnDigest } from '../core/schema/column-meta';
-import { schemaState } from '../core/schema/schema-store';
+import { assessRunReadiness } from './runReadiness';
 import { runPipeline } from '../core/pipeline';
 import { presentRun } from '../ui/views/report/presenter';
-import { createCancelToken, isRunningStage } from './store';
+import { createCancelToken } from './store';
 import type { RuleFile } from '../core/rules/types';
 import type { JSSandbox } from '../core/rules/types';
-import type { SchemaRunInput } from '../core/pipeline';
 import type { ShellContext } from './shell';
-
-/** Schema input for the run: only a resolved, digestible set participates. */
-function schemaInput(): SchemaRunInput | null {
-  const state = schemaState.get();
-  if (state.phase !== 'ready' || state.set === null) return null;
-  const digest = columnDigest(state.set);
-  if (digest === null) return null;
-  return { set: state.set, digest };
-}
-
-/** Rule files as the run sees them: lint-error rows excluded (engine §7). */
-function executableFiles(): RuleFile[] {
-  const state = rulesState.get();
-  const resultByFile = new Map(state.results.map((r) => [r.file, r]));
-  const files: RuleFile[] = [];
-  for (const parsed of state.files) {
-    const result = resultByFile.get(parsed.file.name);
-    if (result === undefined) continue;
-    const file = executableRuleFile(parsed, result);
-    if (file !== null) files.push(file);
-  }
-  return files;
-}
 
 /** QuickJS loads only when the run will actually execute a js correction. */
 async function resolveSandbox(
@@ -70,24 +43,21 @@ async function resolveSandbox(
  */
 export async function startRun(ctx: ShellContext): Promise<void> {
   const { store, router } = ctx;
-  if (isRunningStage(store.pipeline.get().stage)) return;
-
+  const readiness = assessRunReadiness(store);
+  if (!readiness.ready) {
+    // Same predicate as the Run QC button — a refusal here means the caller
+    // bypassed the button (report Re-run), so say why. Silent while running.
+    if (readiness.code !== 'running') {
+      showToast(readiness.reason, {
+        kind: 'info',
+        ...(readiness.hint === undefined ? {} : { hint: readiness.hint }),
+      });
+    }
+    return;
+  }
+  const { schema, ruleFiles } = readiness;
   const dataset = store.dataset.get();
-  if (dataset === null) {
-    showToast('Load a dataset first.', { kind: 'info' });
-    return;
-  }
-  const schema = schemaInput();
-  const ruleFiles = executableFiles();
-  if (schema === null && ruleFiles.length === 0) {
-    // Slot-status gating approximates this (a schema awaiting its index pick
-    // shows Warning but has no digest) — re-check with the real predicates.
-    showToast('Load a JSON Schema or a QC rules file first.', {
-      kind: 'info',
-      hint: 'A schema stuck on "choose the index schema" needs that choice before it can run.',
-    });
-    return;
-  }
+  if (dataset === null) return; // readiness guarantees otherwise (TS narrowing)
 
   const applyCorrections = store.applyCorrections.get();
   const controller = new AbortController();

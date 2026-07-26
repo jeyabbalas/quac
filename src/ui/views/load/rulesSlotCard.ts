@@ -28,7 +28,7 @@ import type { RuleFileLintResult, RuleLintIssue } from '../../../core/rules/type
 import type { ShellContext } from '../../../app/shell';
 
 export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): void {
-  const card = createSlotCard('QC Rules');
+  const card = createSlotCard('QC Rules', { requirement: 'optional' });
 
   let busy = false;
   const setBusy = (value: boolean): void => {

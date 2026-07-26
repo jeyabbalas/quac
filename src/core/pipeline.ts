@@ -100,6 +100,14 @@ export interface RunArtifacts {
   rowsTotal: number;
   /** The "Apply corrections" toggle state this run executed with. */
   correctionsApplied: boolean;
+  /**
+   * What THIS run was handed (UIX-6 partial-run surfaces). Run-time truth,
+   * not live-store state — the stores can change after the run, and `rules`
+   * null-ness can't carry it: a schema-only run still gets a non-null rules
+   * result (runQC runs the work-table CTAS with zero files), while a crashed
+   * rules stage yields null with files loaded.
+   */
+  inputs: { schemaProvided: boolean; ruleFileCount: number };
 }
 
 /** Injectable executor seam — production defaults; unit tests override. */
@@ -345,5 +353,6 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunArtifacts> {
     durations,
     rowsTotal: deps.dataset.rowCount,
     correctionsApplied: deps.applyCorrections,
+    inputs: { schemaProvided: schema !== null, ruleFileCount: deps.ruleFiles.length },
   };
 }

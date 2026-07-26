@@ -101,35 +101,39 @@
   --q-dur-2: 200ms;
   --q-dur-3: 300ms;
 
-  /* Focus ring — 2px orange, visible on every interactive element.
-     The orange ALONE is not visible: it measures 2.05:1 on paper, 1.42:1 on
-     --q-yellow, and 1.08:1 on --q-sky, so keyboard focus on the header's Share
-     / GitHub / nav tabs was effectively unmarked. --q-focus-edge is an ink
-     companion painted (as a box-shadow, behind the outline) on both sides of
-     the orange band; ink is 18.9:1 on paper, 13.0:1 on yellow, 10.0:1 on sky,
-     so the indicator clears SC 1.4.11's 3:1 against every surface QuaC paints
-     while the orange stays the brand flourish ui-design.md §2 asks for.
+  /* Focus ring — 3px orange, visible on every interactive element. One colour,
+     deliberately: the ring used to be a three-band sandwich (ink 0–2, orange
+     2–4, ink 4–6, the orange outline over a 6px ink box-shadow) and at the
+     width a focus indicator needs, that much black read as a slab rather than
+     a flourish. Focus is now the SAME orange the pointer already draws, just
+     thicker — --q-hover-ring lights a 1px border, focus lays a 3px ring — so
+     the two states are one language at two weights instead of two languages.
 
-     Geometry, since call sites used to each pick their own offset: the ring
-     and its edge are ONE pair. --q-focus-offset 2px against a 6px edge lays
-     ink 0–2, orange 2–4, ink 4–6 outward from the border box — symmetric,
-     which is the whole point of "either side". Change the offset alone and
-     the band goes lopsided, which is what `outline-offset: 1px` was doing to
-     every studio field. base.css applies the trio; only a wrapper that
+     The tradeoff this makes, stated plainly because the ink edge existed to
+     prevent it: orange alone is 2.05:1 on paper, 1.42:1 on --q-yellow and
+     1.08:1 on --q-sky, so the indicator no longer clears SC 1.4.11's 3:1 on
+     its own. Darkening --q-orange past L=0.3 (≈#c26a00) is the fix that keeps
+     one band if that 3:1 is ever wanted back; the ink companion is not.
+
+     Geometry: ring and offset are ONE pair, and the offset is ZERO on purpose.
+     Any gap lets the control's own 1px border show through it, and a thin gray
+     line, a sliver of paper, then orange reads as TWO rings — checked at 1px,
+     which is exactly what it looked like. Flush, the border disappears under
+     the band and the field wears a single orange ring, which is the point.
+     The whole indicator is 3px outward, inside the 6px the old sandwich
+     already reserved, so nothing reflows. Restating the offset alone goes
+     lopsided — base.css applies the pair, and only a wrapper that
      :focus-visible cannot reach (.q-chips, .q-editor) restates it, and then
-     it restates all three. */
-  --q-focus-ring: 2px solid var(--q-orange);
-  --q-focus-edge: 0 0 0 6px var(--q-ink);
-  --q-focus-offset: 2px;
+     it restates both. */
+  --q-focus-ring: 3px solid var(--q-orange);
+  --q-focus-offset: 0;
 
   /* Inset twin, for controls that cannot wear an outward ring: a table row
      inside an overflow scroller (clipped) and the flush-stacked file buttons
-     (the ink would cover the neighbours' labels). Mirrors the geometry
-     inward — ink 0–2, orange 2–4, ink 4–6 — so it needs offset -4px, NOT the
-     -2px that used to pair with the OUTWARD edge and rendered as a black slab
-     around the row with a thin orange line inside it. */
-  --q-focus-edge-inset: inset 0 0 0 6px var(--q-ink);
-  --q-focus-offset-inset: -4px;
+     (an outward ring would print over the neighbours' labels). The same
+     geometry mirrored — a 3px outline at -3px occupies 3px→0 inward, flush
+     against the edge, so it reads as the same single band turned inside. */
+  --q-focus-offset-inset: -3px;
 
   /* Hover — the pointer's answer. FOUR answers, chosen by what kind of control
      it is and never per-component, because "what happens when I mouse over

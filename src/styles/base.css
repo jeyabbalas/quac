@@ -74,10 +74,11 @@ textarea {
   font: inherit;
 }
 
-/* Two-tone ring: the outline paints the orange band on top, the box-shadow
-   lays an ink edge either side of it (tokens.css --q-focus-edge says why). */
+/* One orange band, offset off the border box (tokens.css --q-focus-ring says
+   why it is one colour and not three). No box-shadow: the ring is purely an
+   outline now, so a focused element keeps whatever elevation it already had
+   and no hover rule can out-specify half the indicator away. */
 :focus-visible {
   outline: var(--q-focus-ring);
   outline-offset: var(--q-focus-offset);
-  box-shadow: var(--q-focus-edge);
 }

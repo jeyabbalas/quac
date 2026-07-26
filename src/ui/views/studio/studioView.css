@@ -271,14 +271,13 @@
   background: var(--q-hover-surface);
 }
 
-/* Inset ring (tokens.css --q-focus-edge-inset): these stack flush, divided by
-   hairlines, so the outward 6px ink edge would print over the labels above and
-   below — and at ≤1023 .q-studio-files is an overflow-x scroller that clips it
-   outright. Both halves of the pair are restated, never just the offset. */
+/* Inset ring (tokens.css --q-focus-offset-inset): these stack flush, divided by
+   hairlines, so an outward ring would print over the labels above and below —
+   and at ≤1023 .q-studio-files is an overflow-x scroller that clips it
+   outright. Only the offset flips; the ring itself is the shared token. */
 .q-filebtn:focus-visible {
   outline: var(--q-focus-ring);
   outline-offset: var(--q-focus-offset-inset);
-  box-shadow: var(--q-focus-edge-inset);
 }
 
 .q-filebtn[aria-current='true'] {
@@ -406,7 +405,6 @@
 .q-rulegrid tbody tr:focus-visible {
   outline: var(--q-focus-ring);
   outline-offset: var(--q-focus-offset-inset);
-  box-shadow: var(--q-focus-edge-inset);
 }
 
 .q-rulegrid-id {
@@ -863,14 +861,12 @@
 }
 
 /* A composite control, so :focus-within stands in for :focus-visible — and
-   because base.css never matches a wrapper div, the full pair has to be
-   restated here. It used to declare the orange alone, which is the exact case
-   --q-focus-edge exists to prevent: 2.05:1 on paper, and it sat one field
-   away from the inputs above, which DID get the ink edge. */
+   because base.css never matches a wrapper div, the pair has to be restated
+   here. Both halves, never just the offset: the ring and its offset are one
+   geometry (tokens.css) and splitting them is what made this field lopsided. */
 .q-chips:focus-within {
   outline: var(--q-focus-ring);
   outline-offset: var(--q-focus-offset);
-  box-shadow: var(--q-focus-edge);
 }
 
 /* The combobox input lives INSIDE the bordered chips box — no double frame.
@@ -995,7 +991,6 @@
 .q-editor:focus-within {
   outline: var(--q-focus-ring);
   outline-offset: var(--q-focus-offset);
-  box-shadow: var(--q-focus-edge);
 }
 
 .q-studio .cm-editor {

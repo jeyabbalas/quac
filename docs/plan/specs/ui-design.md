@@ -72,21 +72,27 @@ Surface tiers (the "sticker" language — decided in the UIX overhaul):
 - **Tier 3 — data surfaces** (borderless or hairline, white): preview table, report grid container, finding lists. The data is the interface.
 - **Chrome** (header, tabs, buttons, toasts, modals) keeps its existing ink-stroke language.
 
-Focus ring: 2px `--q-orange` **plus `--q-focus-edge`**, an ink companion laid either side of the orange band as a
-`box-shadow` behind the outline. The orange alone is not an indicator — measured 2.05:1 on paper, 1.42:1 on
-`--q-yellow`, **1.08:1 on `--q-sky`**, so keyboard focus on the header's Share / GitHub / nav tabs was effectively
-unmarked. Ink is 18.9 / 13.0 / 10.0 on those same surfaces, clearing SC 1.4.11's 3:1 everywhere QuaC paints.
-`.q-btn:hover:focus-visible` re-declares the edge: the hover rules out-specify the global `:focus-visible` and would
-otherwise drop it when the pointer rests on a keyboard-focused button.
+Focus ring: **3px `--q-orange`, one colour**, drawn purely as an `outline`. It is the same orange the pointer already
+draws, one weight up — `--q-hover-ring` lights a 1px border, focus lays a 3px ring — so hover and focus read as one
+language at two weights. It replaces a three-band sandwich (ink 0–2, orange 2–4, ink 4–6, the orange outline over a
+6px `--q-focus-edge` ink `box-shadow`); at the width an indicator needs, that much black read as a slab, not a
+flourish. Because the ring is an outline and nothing else, a focused element keeps its own elevation and no hover
+rule can out-specify half the indicator away — which is why `.q-btn:hover:focus-visible` is gone too.
 
-The ring, its edge and its offset are **one trio** (`--q-focus-ring` / `--q-focus-edge` / `--q-focus-offset`),
-applied once by `base.css`. Restating the offset alone is what made the band lopsided on the studio fields (1px of
-ink inside the orange, 3px outside) and what turned a focused rule row into a black slab with a thin orange line in
-it. Only a wrapper `:focus-visible` cannot reach restates the trio — `.q-chips` and `.q-editor`, which are composite
-controls keyed on `:focus-within` — and then it restates **all three**, edge included. Two controls take the inset
-twin (`--q-focus-edge-inset` + `--q-focus-offset-inset`, the same geometry mirrored inward): `.q-rulegrid tbody tr`,
+**Known tradeoff:** orange alone is 2.05:1 on paper, 1.42:1 on `--q-yellow` and **1.08:1 on `--q-sky`**, so the ring
+no longer clears SC 1.4.11's 3:1 on its own — a deliberate call for the calmer look. The fix that preserves the
+single band, should that 3:1 be wanted back, is darkening `--q-orange` past relative luminance 0.3 (≈`#c26a00`), not
+restoring the ink companion.
+
+The ring and its offset are **one pair** (`--q-focus-ring` / `--q-focus-offset`), applied once by `base.css`, and the
+offset is **0 on purpose**: any gap lets the control's own 1px border show through, and gray line + paper sliver +
+orange reads as *two* rings (verified at 1px — it did). Flush, the border vanishes under the band and the field wears
+one ring. 3px outward total, inside the 6px the old sandwich already reserved, so nothing reflows. Restating the
+offset alone is what made the band lopsided on the studio fields. Only a wrapper `:focus-visible` cannot reach
+restates the pair — `.q-chips` and `.q-editor`, composite controls keyed on `:focus-within` — and then it restates
+**both**. Two controls flip to `--q-focus-offset-inset` (-3px, the same geometry mirrored): `.q-rulegrid tbody tr`,
 because `.q-studio-gridbody` is an overflow scroller that clips an outward ring, and `.q-filebtn`, because the file
-buttons stack flush and the ink would print over their neighbours' labels.
+buttons stack flush and the ring would print over their neighbours.
 
 Hover: **four answers, one per kind of control**, so "what happens when I mouse over this" is never a per-component
 decision. `--q-hover-surface` (gray-50) for anything that already paints a surface — table rows, list rows,

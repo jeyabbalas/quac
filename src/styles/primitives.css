@@ -56,14 +56,6 @@
   font-size: var(--q-text-sm);
 }
 
-/* The focus ring's ink edge is a box-shadow (base.css :focus-visible, 0,1,0);
-   every .q-btn hover rule above is 0,3,0 and would otherwise drop it when the
-   pointer happens to rest on a keyboard-focused button. Same specificity, later
-   in the file, so this wins: the ring stays, the 1px hover lift yields. */
-.q-btn:hover:focus-visible {
-  box-shadow: var(--q-focus-edge);
-}
-
 /* Screen-reader-only: in the a11y tree, out of the visual one. Used for live
    regions whose visible counterpart is a graphic (the run progress bar). */
 .q-sr-only {

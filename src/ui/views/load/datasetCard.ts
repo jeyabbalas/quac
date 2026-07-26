@@ -16,6 +16,8 @@ import type { ShellContext } from '../../../app/shell';
 export interface DatasetCardHandle {
   /** Programmatic URL ingest — the "Load example files" path (P14). */
   fetchUrl: (url: string) => void;
+  /** Focus the drop-zone browse control (post-clear-all focus home, UIX-7). */
+  focusBrowse: () => void;
 }
 
 export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): DatasetCardHandle {
@@ -138,6 +140,9 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
   return {
     fetchUrl: (url) => {
       run('url', url);
+    },
+    focusBrowse: () => {
+      dropZone.el.focus();
     },
   };
 }

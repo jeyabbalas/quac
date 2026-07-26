@@ -47,6 +47,12 @@ export function registerDatasetClearUi(ui: DatasetClearUi): void {
   datasetClearUi = ui;
 }
 
+/** Run-bar gating: whether the dataset card's busy latch is held (an ingest
+ *  or another clear owns the slot — clear-all would refuse the dataset leg). */
+export function isDatasetUiBusy(): boolean {
+  return datasetClearUi?.isBusy() ?? false;
+}
+
 // ---- hash rewrite -----------------------------------------------------------
 
 export interface LiveSources {

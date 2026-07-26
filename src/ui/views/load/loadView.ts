@@ -15,7 +15,7 @@ import { mountDatasetCard } from './datasetCard';
 import { mountPreviewSection } from './preview/previewSection';
 import { mountRulesSlotCard } from './rulesSlotCard';
 import { mountSchemaSlotCard } from './schema/schemaSlotCard';
-import { isRunningStage } from '../../../app/store';
+import { assessRunReadiness } from '../../../app/runReadiness';
 import type { ShellContext } from '../../../app/shell';
 import type { SlotState } from '../../../app/store';
 import './loadView.css';
@@ -152,21 +152,17 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
       ctx.store.slots.rules.get().status !== 'empty';
     example.hidden = anyFilled || ctx.store.preconfigured.get();
   });
+  // The disabled state and its reason come from the ONE readiness predicate —
+  // the same assessment startRun makes, so button and controller cannot drift.
   effect(() => {
-    const data = ctx.store.slots.data.get();
-    const schema = ctx.store.slots.schema.get();
-    const rules = ctx.store.slots.rules.get();
-    const running = isRunningStage(ctx.store.pipeline.get().stage);
-
-    let why = '';
-    if (running) why = 'A QC run is in progress…';
-    else if (data.status === 'loading') why = 'The dataset is still loading…';
-    else if (data.status !== 'valid') why = 'Load a dataset to run QC.';
-    else if (!usable(schema) && !usable(rules))
-      why = 'Load a JSON Schema or a QC rules file to run QC.';
-    runButton.disabled = why !== '';
-    reason.textContent = why;
-    reason.hidden = why === '';
+    const readiness = assessRunReadiness(ctx.store);
+    runButton.disabled = !readiness.ready;
+    const text = readiness.ready
+      ? (readiness.note ?? '')
+      : [readiness.reason, readiness.hint].filter((s) => s !== undefined).join(' ');
+    reason.textContent = text;
+    reason.hidden = text === '';
+    reason.classList.toggle('q-runbar-note', readiness.ready && readiness.note !== undefined);
   });
 
   // Partial-config highlight (P16): only for pre-configured sessions, and only

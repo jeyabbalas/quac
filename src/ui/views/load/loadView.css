@@ -122,6 +122,13 @@
   font-size: var(--q-text-md);
 }
 
+/* Non-blocking readiness note (UIX-6): the run CAN start, but a loaded input
+   won't participate — muted so it never reads as the disabled reason. */
+.q-runbar-reason.q-runbar-note {
+  color: var(--q-gray-600);
+  font-size: var(--q-text-sm);
+}
+
 .q-runbar-toggle {
   display: inline-flex;
   align-items: center;

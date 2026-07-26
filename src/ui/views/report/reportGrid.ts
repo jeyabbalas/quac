@@ -206,3 +206,41 @@ export function clearOffenderFilter(): void {
     return Promise.resolve();
   });
 }
+
+/**
+ * Dataset cleared (UIX-7): destroy the DataTable outright — dropping its
+ * quac_display table with it — and reset every module latch, so a later
+ * re-upload (even of the same file) builds a fresh grid from fresh bytes.
+ */
+export function disposeGrid(): Promise<void> {
+  return enqueue(async () => {
+    if (table !== undefined) {
+      await table.destroy();
+      table = undefined;
+    }
+    tableGeneration = 0;
+    tooltipColumns = new Set();
+    pendingTooltips = null;
+    offenderFilterId = null;
+  });
+}
+
+/**
+ * Run invalidated while the dataset survives (rules/schema-only clear): strip
+ * the run's paint — annotations and any offender raw-SQL filter — but KEEP
+ * the data grid. Disposing here instead would strand the report on an empty
+ * host: the pre-run render memoizes on generation, which did not change. The
+ * offender filter must go too — its only other remover, the panels' "Clear
+ * focus" affordance, vanished with the findings.
+ */
+export function clearRunPresentation(): Promise<void> {
+  return enqueue(async () => {
+    if (table === undefined) return;
+    table.annotations.clear();
+    if (offenderFilterId !== null) {
+      table.actions.removeRawSQLFilter(offenderFilterId);
+      offenderFilterId = null;
+    }
+    return Promise.resolve();
+  });
+}

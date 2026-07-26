@@ -194,6 +194,12 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       empty.hidden = false;
       layout.hidden = true;
       renderedGeneration = 0;
+      // Dataset cleared (UIX-7): the grid's data is gone — dispose the
+      // instance (never force-loading the chunk) and drop run-paint leftovers
+      // so a later session cannot inherit them.
+      capBanner.hidden = true;
+      pendingTooltips = null;
+      void gridModule?.disposeGrid();
       return;
     }
     empty.hidden = true;
@@ -254,6 +260,24 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     wasRunning = running;
   });
 
+  // Any run invalidation (invalidateRun nulls runArtifacts) strips the run's
+  // paint from the surviving grid — annotations, offender raw-SQL filter, cap
+  // banner. A rules/schema-only clear keeps the data grid, so this must NOT
+  // dispose it; a dataset clear disposes via the dataset-null branch above.
+  // Never force-loads the chunk: no module ⇒ no table ⇒ nothing painted.
+  let hadArtifacts = false;
+  effect(() => {
+    const artifacts = ctx.store.runArtifacts.get();
+    if (artifacts !== null) {
+      hadArtifacts = true;
+      return;
+    }
+    if (!hadArtifacts) return;
+    hadArtifacts = false;
+    void gridModule?.clearRunPresentation();
+    capBanner.hidden = true;
+  });
+
   // Header tooltips recompute on schema/rules/dataset change (spec §3) so the
   // pre-run grid is already inspectable. Applied via the grid module when (or
   // once) a table exists; cheap to rebuild.
@@ -263,7 +287,14 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     const rules = rulesState.get();
     if (dataset === null) return;
     const digest = schema.phase === 'ready' && schema.set !== null ? columnDigest(schema.set) : null;
-    if (digest === null && rules.files.length === 0) return;
+    if (digest === null && rules.files.length === 0) {
+      // Dataset present, no check sources left (schema/rules cleared): apply
+      // an EMPTY plan — setTooltips prunes every previously-set header — and
+      // drop any stale stash a not-yet-rendered grid would otherwise flush.
+      pendingTooltips = null;
+      gridModule?.applyTooltips({ byColumn: new Map() });
+      return;
+    }
     const plan = buildHeaderTooltips(
       digest,
       rules.files.map((f) => f.file),

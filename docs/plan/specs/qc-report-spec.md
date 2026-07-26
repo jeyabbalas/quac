@@ -59,6 +59,8 @@ Single `.xlsx`, filename **`quac-report_<dataset-stem>_<YYYYMMDD-HHmm>.xlsx`**, 
 
 Columns: variable, title, description, variable group (`x-variable-group`), required?. Required first, then optional, schema declaration order.
 
+When the run had no schema (`columnMeta === null`), the sheet is headers plus ONE unstyled note row — "No JSON Schema was loaded for this run — schema-vs-dataset comparison was not performed." (`ReportModel.missingVariablesNote`, rendered via `addTableSheet`'s note mechanism, the same one Sheet 1 uses for its truncation row). This keeps "never compared" distinguishable from a genuinely-empty none-missing sheet (UIX-6).
+
 ### Sheet 3 — `Dataset Findings`
 
 Columns: ruleId, source (schema/rules), severity, scope (dataset/column), column (if any), message (rendered), affected count. Includes: dataset-scope flags (duplicates, min-items, dataset SELECT results), column-scope flags (missing/unexpected/case-mismatch, count_distinct violations), broken rules ("Rule failed to execute: …"), skipped-inapplicable rules, and `external` rules as "not evaluated — requires external reference data".
@@ -73,4 +75,4 @@ App version, run timestamp, dataset filename + row/col counts, schema files (nam
 
 ## 6. Report model (`reportModel.ts`) — pure & testable
 
-`buildReportModel(flagStore, columnMeta, runInfo, rowSource)` → a plain object describing every sheet (headers, column layout incl. review-column placement + collision-resolved names, cell texts, fills) that `excelWriter.ts` renders 1:1. All layout decisions (sister-column insertion, merge order, truncation, collisions) happen in the model so node tests can assert them without exceljs; a second node test round-trips through exceljs (write → re-read) to pin styling.
+`buildReportModel(flagStore, columnMeta, runInfo, rowSource)` → a plain object describing every sheet (headers, column layout incl. review-column placement + collision-resolved names, cell texts, fills, the Sheet 2 `missingVariablesNote` on schema-less runs) that `excelWriter.ts` renders 1:1. All layout decisions (sister-column insertion, merge order, truncation, collisions) happen in the model so node tests can assert them without exceljs; a second node test round-trips through exceljs (write → re-read) to pin styling.

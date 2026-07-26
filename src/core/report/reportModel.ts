@@ -187,6 +187,11 @@ export interface ReportModelInput {
 export interface ReportModel {
   data: DataSheetModel;
   missingVariables: MissingVarRow[];
+  /**
+   * Sheet 2 note row when the run had no schema (UIX-6): distinguishes
+   * "never compared" from a genuinely-empty none-missing sheet.
+   */
+  missingVariablesNote?: string;
   datasetFindings: FindingRow[];
   repeatOffenders: OffenderRow[];
   runInfo: InfoRow[];
@@ -490,6 +495,12 @@ export function buildReportModel(input: ReportModelInput): ReportModel {
   return {
     data,
     missingVariables: buildMissingVariables(input),
+    ...(input.columnMeta === null
+      ? {
+          missingVariablesNote:
+            'No JSON Schema was loaded for this run — schema-vs-dataset comparison was not performed.',
+        }
+      : {}),
     datasetFindings: buildDatasetFindings(input),
     repeatOffenders: buildRepeatOffenders(input),
     runInfo: buildRunInfo(input, data.truncated),

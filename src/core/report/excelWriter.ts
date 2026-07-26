@@ -163,6 +163,7 @@ export async function writeReportWorkbook(
       m.group,
       m.required ? 'Yes' : 'No',
     ]),
+    model.missingVariablesNote,
   );
   addTableSheet(
     workbook,
@@ -204,12 +205,15 @@ export async function writeReportWorkbook(
   return new Blob([buffer], { type: XLSX_MIME });
 }
 
-/** A bold-header table sheet (frozen row 1, clamped widths) — sheets 2–5. */
+/** A bold-header table sheet (frozen row 1, clamped widths) — sheets 2–5.
+ *  `note` appends one unstyled row after the data (Sheet 1's truncationNote
+ *  mechanism): Sheet 2 uses it when no schema participated in the run. */
 function addTableSheet(
   workbook: import('exceljs').Workbook,
   name: string,
   headerLabels: readonly string[],
   dataRows: readonly (readonly CellValue[])[],
+  note?: string,
 ): void {
   const ws = workbook.addWorksheet(name);
   ws.views = [{ state: 'frozen', ySplit: 1 }];
@@ -227,6 +231,7 @@ function addTableSheet(
       if (len > (widths[i] ?? 0)) widths[i] = len;
     });
   }
+  if (note !== undefined) ws.addRow([note]);
   widths.forEach((w, i) => {
     ws.getColumn(i + 1).width = clampWidth(w, 60);
   });

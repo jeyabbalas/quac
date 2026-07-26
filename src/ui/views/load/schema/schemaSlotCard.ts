@@ -5,6 +5,7 @@
  * re-open button, and a bespoke details renderer (facts, ignored files,
  * findings) whose q-schemaslot-* inner classes are pinned by e2e specs.
  */
+import { clearSchema } from '../../../../app/clearInputs';
 import { reportError } from '../../../../app/errors';
 import { effect } from '../../../../app/signals';
 import {
@@ -22,13 +23,14 @@ import { createSlotCard } from '../../../components/slotCard';
 import { createUrlField } from '../../../components/urlField';
 import { entriesFromDataTransfer, entriesFromFileList } from './intake-dom';
 import { openIndexPickerModal } from './indexPickerModal';
+import type { ShellContext } from '../../../../app/shell';
 import './schemaSlot.css';
 
 function severityLabel(error: SchemaLoadError): string {
   return error.severity === 'fatal' ? 'Error' : error.severity === 'warning' ? 'Warning' : 'Note';
 }
 
-export function mountSchemaSlotCard(container: HTMLElement): void {
+export function mountSchemaSlotCard(container: HTMLElement, ctx: ShellContext): void {
   const card = createSlotCard('JSON Schema', { requirement: 'optional' });
 
   const load = (work: Promise<void>): void => {
@@ -92,8 +94,23 @@ export function mountSchemaSlotCard(container: HTMLElement): void {
     }
   });
 
+  // UIX-7 whole-slot clear (a schema set compiles as one unit — no per-file
+  // removal here). Never disabled: enabled during 'loading' IS the cancel for
+  // a hung fetch — resetSchemaSlot's loadToken discards the late completion.
+  const clearButton = document.createElement('button');
+  clearButton.type = 'button';
+  clearButton.className = 'q-btn q-btn--small q-slotcard-clear';
+  clearButton.textContent = 'Clear';
+  clearButton.setAttribute('aria-label', 'Clear JSON Schema');
+  clearButton.hidden = true;
+  clearButton.addEventListener('click', () => {
+    clearSchema(ctx);
+    // The button hid itself — keyboard focus must not strand on <body>.
+    dropZone.el.focus();
+  });
+
   card.bodyHost.append(dropZone.el, urlField.el);
-  card.actionsHost.append(browseDir, dirInput, chooseButton);
+  card.actionsHost.append(browseDir, dirInput, chooseButton, clearButton);
   container.append(card.el);
 
   /* ---------- rendering ---------- */
@@ -161,6 +178,13 @@ export function mountSchemaSlotCard(container: HTMLElement): void {
     const set = state.set;
     const pendingChoice = state.phase === 'ready' && set !== null && needsRootChoice(set);
     chooseButton.hidden = !pendingChoice;
+    const slot = summarizeSlot(state);
+    // Clear visibility BEFORE update() — it derives the actions-row
+    // visibility from its children's hidden state.
+    clearButton.hidden = slot.status === 'empty';
+    // A cleared slot forgets which set it auto-prompted for: an identical
+    // re-upload (same content-hash setId) must re-open the IndexPicker.
+    if (state.phase === 'empty') promptedSetId = null;
 
     // Fill the detail host BEFORE update() — it derives details visibility
     // from the host's child count.
@@ -170,7 +194,7 @@ export function mountSchemaSlotCard(container: HTMLElement): void {
       renderDetails(set);
       card.detailHost.replaceChildren(detailsBody);
     }
-    card.update(summarizeSlot(state));
+    card.update(slot);
 
     if (state.phase !== 'ready' || set === null) return;
     if (set.errors.some((e) => e.severity === 'fatal')) card.setDetailsOpen(true);

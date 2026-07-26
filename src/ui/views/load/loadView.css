@@ -76,6 +76,11 @@
   margin: 0;
 }
 
+/* UIX-7: the per-file remove ✕ keeps to the header's right edge. */
+.q-rulesfile-remove {
+  margin-left: auto;
+}
+
 .q-rulesfile-name {
   font-family: var(--q-font-mono);
   font-size: var(--q-text-sm);

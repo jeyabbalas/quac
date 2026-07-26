@@ -97,7 +97,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   grid.append(dataHost, schemaHost, rulesHost);
 
   const dataCard = mountDatasetCard(dataHost, ctx);
-  mountSchemaSlotCard(schemaHost);
+  mountSchemaSlotCard(schemaHost, ctx);
   mountRulesSlotCard(rulesHost, ctx);
 
   // P16: the boot flow drives the Dataset card's own URL loader (real progress).

@@ -175,10 +175,11 @@ function unsavedRuleWork(): string[] {
  * Refuses while an ingest owns the slot — `runIngest` would overwrite the
  * cleared slot on settle, and a mid-CTAS worker cannot be interrupted.
  */
-export async function clearDataset(ctx: ShellContext): Promise<void> {
+export async function clearDataset(ctx: ShellContext): Promise<boolean> {
   const done = await clearDatasetCore(ctx);
-  if (!done) return;
+  if (!done) return false;
   syncHashAfterClear(ctx);
+  return true;
 }
 
 /** Shared with clearAllInputs (which does its own hash sync + toast).

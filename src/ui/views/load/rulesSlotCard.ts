@@ -10,6 +10,7 @@
  * already-booted bridge — the no-dataset path NEVER touches getBridge(), so
  * dropping rules before data does not boot the 35 MB wasm.
  */
+import { clearRules, removeRulesFile } from '../../../app/clearInputs';
 import { effect } from '../../../app/signals';
 import {
   addRuleFiles,
@@ -68,13 +69,53 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
     },
   });
 
+  // UIX-7 whole-slot clear. Deliberately NOT behind the run() latch: the
+  // busy refusal would dead-button Clear during a hung URL fetch, and Clear
+  // while loading IS the cancel affordance — the store's loadToken discards
+  // the late completion, so bypassing the latch is race-safe.
+  const clearButton = document.createElement('button');
+  clearButton.type = 'button';
+  clearButton.className = 'q-btn q-btn--small q-slotcard-clear';
+  clearButton.textContent = 'Clear';
+  clearButton.setAttribute('aria-label', 'Clear QC rules');
+  clearButton.hidden = true;
+  clearButton.addEventListener('click', () => {
+    void clearRules(ctx).then(() => {
+      // Cleared (button hid itself) → hand focus to the drop zone; a
+      // cancelled confirm keeps the modal's native restore-to-opener.
+      if (rulesState.get().files.length === 0) dropZone.el.focus();
+    });
+  });
+
+  /** After a confirmed per-file remove: the ✕ now at the removed index (the
+   *  "next" row), else the last one, else out of rows — details vanished with
+   *  them, so the drop zone. Runs after renderDetails rebuilt the list. */
+  const focusAfterRemove = (removedIndex: number): void => {
+    const removes = card.detailHost.querySelectorAll<HTMLElement>('.q-rulesfile-remove');
+    const next = removes[Math.min(removedIndex, removes.length - 1)];
+    if (next !== undefined) next.focus();
+    else dropZone.el.focus();
+  };
+  const onRemoveFile = (name: string, index: number): void => {
+    void removeRulesFile(ctx, name).then(() => {
+      const still = rulesState.get().files.some((f) => f.file.name === name);
+      if (!still) focusAfterRemove(index);
+    });
+  };
+
   card.bodyHost.append(dropZone.el, urlField.el);
+  card.actionsHost.append(clearButton);
   container.append(card.el);
 
   effect(() => {
     const state = rulesState.get();
-    card.update(summarizeSlot(state));
-    renderDetails(card.detailHost, state);
+    const slot = summarizeSlot(state);
+    // Clear visibility BEFORE update() — update derives the actions-row
+    // visibility from its children's hidden state. Never disabled: enabled
+    // during 'loading' is the fetch/lint cancel.
+    clearButton.hidden = slot.status === 'empty';
+    card.update(slot);
+    renderDetails(card.detailHost, state, onRemoveFile);
   });
 
   // Dataset-driven re-lint (qc-rules-engine.md §7: "re-runs when the dataset
@@ -101,14 +142,20 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
   });
 }
 
-function renderDetails(host: HTMLElement, state: RulesSlotState): void {
+function renderDetails(
+  host: HTMLElement,
+  state: RulesSlotState,
+  onRemoveFile: (name: string, index: number) => void,
+): void {
   host.replaceChildren();
   if (state.files.length === 0 && state.fetchErrors.length === 0) return;
 
-  for (const parsed of state.files) {
+  for (const [index, parsed] of state.files.entries()) {
     const name = parsed.file.name;
     const result = state.results.find((r) => r.file === name);
-    host.append(renderFileBlock(name, parsed.file.rules.length, result));
+    host.append(renderFileBlock(name, parsed.file.rules.length, result, () => {
+      onRemoveFile(name, index);
+    }));
   }
 
   if (state.fetchErrors.length > 0) {
@@ -132,6 +179,7 @@ function renderFileBlock(
   name: string,
   ruleCount: number,
   result: RuleFileLintResult | undefined,
+  onRemove: () => void,
 ): HTMLElement {
   const block = document.createElement('div');
   block.className = 'q-rulesfile';
@@ -143,8 +191,16 @@ function renderFileBlock(
   fileName.textContent = name;
   header.append(fileName);
 
+  // UIX-7: per-file removal (rules only — a schema set compiles as one unit).
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'q-btn q-btn--ghost q-btn--small q-rulesfile-remove';
+  remove.textContent = '✕';
+  remove.setAttribute('aria-label', `Remove rules file ${name}`);
+  remove.addEventListener('click', onRemove);
+
   if (result === undefined) {
-    header.append(createBadge('Linting…', 'neutral'));
+    header.append(createBadge('Linting…', 'neutral'), remove);
     block.append(header);
     return block;
   }
@@ -161,7 +217,7 @@ function renderFileBlock(
   const counts = document.createElement('span');
   counts.className = 'q-rulesfile-counts';
   counts.textContent = ` ${String(ruleCount)} rules · ${String(result.executable)} executable`;
-  header.append(counts);
+  header.append(counts, remove);
   block.append(header);
 
   if (result.pertinence !== undefined) {

@@ -97,6 +97,9 @@ export function installTypedSync(ctx: ShellContext): void {
       await rulesStore.setLintContext({ runner: bridge, datasetColumns: dataset.columns });
     })().catch((err: unknown) => {
       lastKey = ''; // allow a retry on the next signal change
+      // A dataset cleared (tables dropped) or replaced mid-rebuild fails these
+      // statements by design — expected noise, not a user-facing error (R5).
+      if (ctx.store.dataset.get()?.generation !== generation) return;
       reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
     });
   });

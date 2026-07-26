@@ -8,9 +8,11 @@ import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { createBridge } from '../../src/core/bridge/bridge';
 import {
   DATA_VIEW,
+  QUAC_RAW,
   QUAC_TYPED,
   QUAC_WORK,
   ctas,
+  dropDatasetTables,
   refreshDataView,
   swapWorkTable,
 } from '../../src/core/bridge/tables';
@@ -80,4 +82,22 @@ test('tables.ts: ctas → view → self-referential swap, caches cleared interna
   // Identical SELECT string, no manual cache clear: helpers must have cleared it,
   // and the view must still resolve to the replaced table.
   expect(await b().query(sql)).toEqual([{ val: 'A' }, { val: 'B' }]);
+});
+
+test('dropDatasetTables: drops raw/typed/work + the data view, idempotently', async () => {
+  await ctas(b(), QUAC_RAW, "SELECT * FROM (VALUES (0, 'a'), (1, 'b')) AS t(__row__, val)");
+  await ctas(b(), QUAC_TYPED, `SELECT * FROM ${QUAC_RAW}`);
+  await ctas(b(), QUAC_WORK, `SELECT * FROM ${QUAC_TYPED}`);
+  await refreshDataView(b());
+
+  await dropDatasetTables(b());
+  // information_schema.tables lists views too — one probe covers all four.
+  const remaining = await b().query(
+    'SELECT table_name FROM information_schema.tables WHERE table_name IN ' +
+      `('${QUAC_RAW}', '${QUAC_TYPED}', '${QUAC_WORK}', '${DATA_VIEW}')`,
+  );
+  expect(remaining).toEqual([]);
+
+  // Idempotent: dropping over nothing succeeds (IF EXISTS throughout).
+  await expect(dropDatasetTables(b())).resolves.toBeUndefined();
 });

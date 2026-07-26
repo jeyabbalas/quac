@@ -89,6 +89,16 @@ export function getBridge(): Promise<WorkerBridge> {
   return singleton;
 }
 
+/**
+ * The memoized bridge promise WITHOUT creating one (UIX-7 clear paths): a
+ * dataset clear drops tables best-effort, and booting a 35 MB WASM instance
+ * just to have something to drop would be absurd. Null ⇒ no bridge ⇒ no
+ * tables to drop.
+ */
+export function peekBridge(): Promise<WorkerBridge> | null {
+  return singleton;
+}
+
 /** Terminate the shared bridge (teardown/tests). Safe to call when none exists. */
 export function terminateBridge(): void {
   const current = singleton;

@@ -88,3 +88,18 @@ export async function copyToParquetBytes(
 ): Promise<Uint8Array> {
   return bridge.exportToBuffer(selectSql, 'parquet');
 }
+
+/**
+ * Dataset clear (UIX-7): actually free the memory — drop the `data` view
+ * first (it reads quac_work), then the three canonical tables. IF EXISTS
+ * throughout makes it idempotent. quac_display/quac_studio_display are NOT
+ * ours to drop — they belong to the data-table instances and die with
+ * `table.destroy()`.
+ */
+export async function dropDatasetTables(bridge: WorkerBridge): Promise<void> {
+  await bridge.query(`DROP VIEW IF EXISTS ${quoteIdentifier(DATA_VIEW)}`);
+  await bridge.query(`DROP TABLE IF EXISTS ${quoteIdentifier(QUAC_WORK)}`);
+  await bridge.query(`DROP TABLE IF EXISTS ${quoteIdentifier(QUAC_TYPED)}`);
+  await bridge.query(`DROP TABLE IF EXISTS ${quoteIdentifier(QUAC_RAW)}`);
+  bridge.clearQueryCache();
+}

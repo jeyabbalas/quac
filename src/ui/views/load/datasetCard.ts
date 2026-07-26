@@ -4,7 +4,7 @@
  * work lives in ingestController.ts, which is imported lazily on the first
  * user action so the entry chunk stays free of bridge/data-table code.
  */
-import { clearDataset, registerDatasetClearUi } from '../../../app/clearInputs';
+import { clearDataset, noteDatasetBusy, registerDatasetClearUi } from '../../../app/clearInputs';
 import { effect } from '../../../app/signals';
 import { createCorsHelp } from '../../components/corsHelp';
 import { createDropZone } from '../../components/dropZone';
@@ -45,6 +45,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
     urlField.setBusy(value);
     progress.el.hidden = !value;
     syncClear();
+    noteDatasetBusy(value);
   };
 
   const controllerUi = {
@@ -117,6 +118,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
       dropZone.setDisabled(value);
       urlField.setDisabled(value);
       syncClear();
+      noteDatasetBusy(value);
     },
     clearLocalUi: () => {
       card.detailHost.replaceChildren();

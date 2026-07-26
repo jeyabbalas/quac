@@ -20,6 +20,7 @@ import { openModal } from './modal';
 import { formatHash, parseHash, readRawHash } from './router';
 import { invalidateRun } from './runInvalidation';
 import { peekRulesDraftFile } from './rulesDraftProbe';
+import { signal } from './signals';
 import { showToast } from './toast';
 import { clearRuleFiles, removeRuleFile, rulesState } from '../core/rules/rules-store';
 import { resetSchemaSlot, schemaState } from '../core/schema/schema-store';
@@ -47,10 +48,20 @@ export function registerDatasetClearUi(ui: DatasetClearUi): void {
   datasetClearUi = ui;
 }
 
+/** The latch as a SIGNAL: the release comes AFTER the last slot write, so a
+ *  plain closure read would leave run-bar effects stuck on the stale value. */
+const datasetBusy = signal(false);
+
+/** The dataset card reports every latch transition (ingest and clear paths). */
+export function noteDatasetBusy(value: boolean): void {
+  datasetBusy.set(value);
+}
+
 /** Run-bar gating: whether the dataset card's busy latch is held (an ingest
- *  or another clear owns the slot — clear-all would refuse the dataset leg). */
+ *  or another clear owns the slot — clear-all would refuse the dataset leg).
+ *  Reads the signal, so calling effects re-run on release. */
 export function isDatasetUiBusy(): boolean {
-  return datasetClearUi?.isBusy() ?? false;
+  return datasetBusy.get();
 }
 
 // ---- hash rewrite -----------------------------------------------------------

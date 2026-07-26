@@ -39,7 +39,10 @@ const BADGE_TEXT: Record<SlotStatus, string> = {
   error: 'Error',
 };
 
-export function createSlotCard(title: string): SlotCard {
+export function createSlotCard(
+  title: string,
+  opts?: { requirement?: 'required' | 'optional' },
+): SlotCard {
   const el = document.createElement('section');
   el.className = 'q-slotcard';
   el.setAttribute('aria-label', `${title} input`);
@@ -52,6 +55,15 @@ export function createSlotCard(title: string): SlotCard {
   const badgeHost = document.createElement('span');
   badgeHost.append(createBadge(BADGE_TEXT.empty, BADGE_TONE.empty));
   header.append(heading, badgeHost);
+  if (opts?.requirement !== undefined) {
+    // Visible text beside the title (UIX-6: the input contract lives on the
+    // cards, not in tooltips) — plain content, so AT reads it with no extra
+    // wiring; the badge keeps the right edge via its auto margin.
+    const req = document.createElement('span');
+    req.className = `q-slotcard-req q-slotcard-req--${opts.requirement}`;
+    req.textContent = opts.requirement === 'required' ? 'Required' : 'Optional';
+    heading.after(req);
+  }
 
   const summary = document.createElement('p');
   summary.className = 'q-slotcard-summary';

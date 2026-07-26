@@ -26,6 +26,22 @@
   font-weight: 700;
 }
 
+/* Requirement tag (UIX-6): quiet metadata beside the title — deliberately not
+   a .q-badge, so it never competes with the status pill on the right. The
+   auto margin keeps title+tag as a left cluster with the badge flush right. */
+.q-slotcard-req {
+  margin-right: auto;
+  font-size: var(--q-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--q-gray-600);
+}
+
+.q-slotcard-req--required {
+  color: var(--q-ink);
+}
+
 .q-slotcard-summary {
   margin: 0;
   min-height: 1.25em;

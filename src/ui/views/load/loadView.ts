@@ -79,6 +79,13 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   });
   example.append(exampleDuck, exampleBody, exampleButton);
 
+  // UIX-6: the input contract, stated once above the cards; the Required /
+  // Optional tags on the cards themselves carry the per-slot half.
+  const rubric = document.createElement('p');
+  rubric.className = 'q-load-rubric';
+  rubric.textContent =
+    'QuaC needs your dataset plus at least one source of checks — a JSON Schema, QC rules, or both.';
+
   const grid = document.createElement('div');
   grid.className = 'q-slotgrid';
   const dataHost = document.createElement('div');
@@ -138,7 +145,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   });
   runBar.append(reason, toggleLabel, runButton);
 
-  container.append(hint, example, grid, previewHost, runBar);
+  container.append(hint, example, rubric, grid, previewHost, runBar);
 
   const usable = (slot: SlotState): boolean =>
     slot.status === 'valid' || slot.status === 'warning';

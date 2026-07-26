@@ -121,7 +121,9 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |  | (duck)  New here? Take QuaC for a spin.         [ Load example files ]  | |  <- first-run hero
 |  |         One click loads the bundled HESP example…                       | |     (Tier 1 sticker)
 |  +==========================================================================+ |
-|  +== Dataset ======[Valid]=+  +== JSON Schema ==[Valid]=+  +== QC Rules ===+ |
+|  QuaC needs your dataset plus at least one source of checks — a JSON        | |  <- input rubric
+|  Schema, QC rules, or both.                                                  |     (muted, UIX-6)
+|  +== Dataset REQUIRED [Valid]+  +== JSON Schema OPTIONAL =+  +== QC Rules ==+ |
 |  | hesp_dirty.csv · 101x266|  | 14 files · root: core…  |  | 3 files · 22  | |
 |  |  .....................  |  |  .....................  |  |   businesses.. | |
 |  |  : drop file / browse:  |  |  : drop files/folder :  |  |  : drop CSVs: | |
@@ -229,7 +231,7 @@ Run QC — so it is one line in the Preview head (`json-schema-subsystem.md §E.
 AppShell, NavTabs, SlotCard, DropZone (button semantics), UrlField, Badge, SeverityPill, Toast, Modal, IndexPickerModal, SheetPickerModal, ShareModal, DuckProgress, PlainPreviewTable, DataDictionaryTable, StatCard, PanelTabs, MissingVarsList, DatasetFindingsList, OffendersTable, DownloadButton, EmptyState, PrivacyBanner, CodeEditor (CM6 wrapper), RuleForm, RuleList, RuleTestPanel.
 
 Conventions:
-- **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body).
+- **Unified slot primitives**: all three Load slots render through `createSlotCard` (header + badge, summary line, body, hidden-when-empty `actionsHost`, optional `<details>` with `setDetailsOpen`), `createDropZone` (a real `<button>`; options: `inputAriaLabel`, `dropTarget` to widen the drop surface, `onDropTransfer` for folder walks), and `createUrlField` (a real `<form>` with a Fetch submit button). Slot-specific code is detail-renderers only (e.g. `schemaSlotCard.ts`'s facts/ignored/findings body). `createSlotCard(title, { requirement })` renders a visible `Required` / `Optional` tag (`.q-slotcard-req`, uppercase text-xs) beside the title — plain text content, so AT reads it with no ARIA wiring; Dataset is `required`, JSON Schema and QC Rules are `optional` (UIX-6: at least one check source, enforced by `app/runReadiness.ts`).
 - **Modal sizes**: `openModal({ size: 'default' | 'wide' })` — 560px / 720px caps. Wide is for content-heavy dialogs; ShareModal is the only wide modal today.
 - **Modal footers**: every modal's action row is `.q-modal-actions` (right-aligned, gap-2) — SheetPicker and IndexPicker share it. One primary per modal at most.
 - **Severity labels**: the nav-tab count pill is `createSeverityPill()`; inline severity name chips (offenders table, findings list) are `createSeverityLabel(severity)` — both live in `severityPill.ts`; no bespoke pill markup elsewhere.

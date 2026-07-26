@@ -7,9 +7,10 @@
 
 ## What QuaC is (30 seconds)
 
-Users load three things — a tabular **dataset** (CSV/TSV/JSON/Excel/Parquet), **JSON Schema** file(s) (schema
-validation rules; possibly a multi-file `$ref` network), and **QC rules file(s)** (`*.quac.csv` — corrections,
-semantic checks, dataset integrity, longitudinal checks). QuaC applies corrections, validates everything, shows an
+Users load a tabular **dataset** (CSV/TSV/JSON/Excel/Parquet) plus at least one source of checks — **JSON Schema**
+file(s) (schema validation rules; possibly a multi-file `$ref` network) and/or **QC rules file(s)** (`*.quac.csv` —
+corrections, semantic checks, dataset integrity, longitudinal checks). Only the dataset is mandatory; every surface
+degrades gracefully when one check source is absent (UIX-6). QuaC applies corrections, validates everything, shows an
 annotated interactive grid (`@jeyabbalas/data-table` on DuckDB-WASM), and exports a multi-sheet Excel **QC report**.
 Configurations are shareable via URL hash params so data stewards can validate privately in their own browsers.
 Privacy is the headline feature: **data never leaves the browser**. A **Rule Studio** lets users compose/edit rules
@@ -19,7 +20,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V22) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V23) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -72,6 +73,19 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 ## Progress log
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+
+2026-07-26 · UIX-6 · **Only the dataset is mandatory; either check source alone runs** (contract for P20's README).
+The engine always worked this way — what shipped is the surface: `app/runReadiness.ts` is now the ONE gate the Run
+button and `startRun` both consume (a Warning dataset runs; a failed re-ingest with a stale `store.dataset` refuses;
+an index-pending schema blocks only when no rules can carry the run, else it rides as a non-blocking "won't be
+checked this run" note), the Load cards carry Required/Optional tags under a one-line rubric, and partial runs stop
+misleading: Summary dashes the three rules cards off `RunArtifacts.inputs` (+ scope notes), Missing-vars splits its
+no-schema/no-dataset empties, the Offenders hint renders only when a row is actually filterable, and Excel Sheet 2
+gains a "comparison was not performed" note row. Golden journey 8 (`partialRun.spec`) drives both modes; rules-only
+stays all-VARCHAR by design (docs-only caveat — see V23: the binder refuses implicit VARCHAR casts, so lint stage 4
+excludes such rules pre-run). Deferred niggle: a file whose every ROW is lint-errored still counts as an executable
+file (empty rule list) — the run gate says ready with nothing to run; inherited from `executableFiles()`, now noted.
+Unit 676 → 695, e2e 74 → 76, entry JS 43.0 → 44.4 KB gz.
 
 2026-07-25 · UIX-5 · **Pertinence is a line in the Preview head, not a strip with a modal.** The check compared
 Dataset↔Schema and Dataset↔Rules and never Schema↔Rules, so it could say some numbers disagreed but structurally

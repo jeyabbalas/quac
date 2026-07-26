@@ -74,6 +74,16 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · merge · UIX-6+UIX-7 merged to main (e5474d4, 0103daf). Zero conflicts — the two branches were a linear
+chain (uix7 branched off uix6's tip), so both `--no-ff` merges replayed clean and the integrated tree is
+byte-identical to uix7's; no cross-branch fixes needed. Integrated tree green: typecheck + lint clean, unit 718 +
+fixtures:check byte-clean + browser 45 + e2e 83 + build/size (entry 46.3 KB gz) — every count matches what the two
+entries below claim. Manual pass on the built preview: example set → full run (39 errors / 13 warnings / 10 info, 6
+corrections) → per-file ✕ 22→17 rules → rules clear → schema-only run carrying the "rules stage was skipped" note
+with em-dash (not zero) rule counts → clear all → reload stays cleared → dataset clear reverting the rules card to
+"data checks pending". Every clear rewrote the hash to the remaining live sources, and the app logged nothing to the
+console throughout. Branches removed.
+
 2026-07-26 · UIX-7 · **Every input is clearable; an explicit clear invalidates the run, the hash, and the tables.**
 Each slot card grows a `Clear` (rules also a per-file ✕; schema stays whole-slot — a set compiles as one unit) and
 the run bar a left-pinned `Clear all inputs` (always confirms; per-slot confirms only when unsaved Studio work would

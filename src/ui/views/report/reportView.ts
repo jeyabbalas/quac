@@ -164,11 +164,32 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     },
   });
 
+  // Tracks which dataset generation the grid currently shows. Declared here
+  // because BOTH the presenter (below) and the pre-run effect (further down)
+  // write it — a run's present is a render, and leaving it stale made the
+  // effect rebuild the whole grid a second time the moment the run finished.
+  let renderedGeneration = 0;
+  // The generation whose grid failure has already been announced. The run's
+  // present and the pre-run effect are two attempts at ONE build, and both
+  // report — which is why UX-01 counted two identical toasts per failure.
+  // The retry still happens; only its second announcement is suppressed.
+  let announcedFailureGeneration = 0;
+
   // The pipeline's annotate stage awaits this (registered before any run).
   setPresenter(async (payload) => {
     const generation = ctx.store.dataset.get()?.generation ?? 0;
     const mod = await loadGridModule();
-    await mod.presentPayload(gridHost, generation, payload, severity);
+    try {
+      await mod.presentPayload(gridHost, generation, payload, severity);
+    } catch (err) {
+      // runController toasts this as the annotate stage error; the effect
+      // below must not say the same thing again after its retry.
+      announcedFailureGeneration = generation;
+      throw err;
+    }
+    // Only on success: a failed present must leave this stale, so the effect
+    // below gets its one automatic rebuild attempt when the run ends.
+    renderedGeneration = generation;
     if (payload.annotations.capped) {
       capBanner.textContent =
         `Painting ${payload.annotations.cellPainted.toLocaleString('en-US')} of ` +
@@ -183,7 +204,6 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   // Initial (pre-run) grid: render the ingested dataset while the view is the
   // active route (data-table mis-measures in hidden containers). Skipped when
   // a run is in flight — its presenter builds the grid with fresh bytes.
-  let renderedGeneration = 0;
   let rendering = false;
   effect(() => {
     const dataset = ctx.store.dataset.get();
@@ -194,6 +214,7 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       empty.hidden = false;
       layout.hidden = true;
       renderedGeneration = 0;
+      announcedFailureGeneration = 0;
       // Dataset cleared (UIX-7): the grid's data is gone — dispose the
       // instance (never force-loading the chunk) and drop run-paint leftovers
       // so a later session cannot inherit them.
@@ -215,6 +236,13 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     })()
       .catch((err: unknown) => {
         renderedGeneration = 0; // allow a retry on the next route visit
+        // Already announced for this dataset by the run that just failed —
+        // this attempt WAS the retry. Reset, so a later independent failure
+        // on the same dataset still speaks.
+        if (announcedFailureGeneration === dataset.generation) {
+          announcedFailureGeneration = 0;
+          return;
+        }
         reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
       })
       .finally(() => {

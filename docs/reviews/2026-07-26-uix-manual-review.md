@@ -227,6 +227,15 @@ Console: **clean**.
 
 ### UX-03 — "Focus matching grid rows" empties the grid for a rule the same panel says has 1 violation
 
+- **Status:** **Fixed** (2026-07-26, UIX-11 — see the master-plan progress log). The "likely cause" below is confirmed, and
+  the divergence sits one layer lower than "the run evaluated VARCHAR": QuaC never casts to DATE at all. `data` — the view
+  the rules ran against AND the source of the display export — types `interview_date` `VARCHAR` (read off the Load preview's
+  type row); data-table's own loaded copy of those exported bytes types it `DATE`, so `2026-02-30` is already null there and
+  `TRY_CAST(interview_date AS DATE) IS NULL` can never fire. Measured through data-table's own Validate button on the live
+  grid: `typeof(interview_date) = 'DATE'` → **101 rows match**, H004's exact condition → **valid, 0 rows match**. That count
+  was already in `validateSQLFilter`'s reply and QuaC was throwing it away. Now a zero-match focus is a failed best effort —
+  no filter applied, any previous rule's chip removed, and its own toast. Guarded by `offenderFocus.browser.test.ts` and
+  `offenderFocus.spec.ts`; the Studio's twin affordance got the same guard.
 - **Severity:** Bug
 - **Where:** QC Report · Offenders panel · row-click `addRawSQLFilter` path
 - **Repro:**

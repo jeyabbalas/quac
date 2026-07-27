@@ -74,6 +74,35 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-11 · **A focus filter that matches nothing is a failed best effort, not an empty grid — UX-03.**
+Reproduced first in the real browser, exactly as filed: example set → Run QC (39/13/10/6, 101×266) → Offenders →
+`H004` (`error · interview_date · Count 1 · 1.0%`) → `Active filters: SQL H004` over **`0 / 101 rows`**, no toast, on
+the one click whose whole purpose is "show me the rows behind this number". Root cause, and the open question the
+review left: the two surfaces really are filtering different typings of one column, but **QuaC never casts to DATE
+at all** — `data`, which is both what the rules ran against and the source of the display export, types
+`interview_date` `VARCHAR` (read off the Load preview's type row), while data-table's own loaded copy of those
+exported bytes types it `DATE`, so `2026-02-30` is already null there and `TRY_CAST(… AS DATE) IS NULL` can never
+fire. Measured through data-table's own Validate button on the live grid: `typeof(interview_date) = 'DATE'` → 101
+rows match; H004's exact condition → **valid, 0 rows match**. That count was already in the reply QuaC was reading —
+`validateSQLFilter` returns `{valid, matchCount}` and only `valid` was consulted, so a filter that parsed, ran and
+returned nothing counted as success. `tryFilterByCondition` now returns `OffenderFocusOutcome`
+(`applied` | `unfilterable` | `no-match`) and **both** failures clear the previous rule's filter before returning —
+today a refused focus left the earlier `SQL <id>` chip applied, naming a rule the user did not click. `reportView`
+switches on the outcome: the window-function string is unchanged, and `no-match` gets its own message plus a
+`showToast` hint that deliberately names no cause the repro cannot show ("The grid shows the data as it stands after
+the run — this rule's flagged cells are still annotated."). The Studio's twin (`previewPane.offerPreviewFilter`) got
+the same guard in the same commit, per the UIX-8 precedent: **Filter preview to matches** is simply not offered when
+it would empty the preview. `reportPanels`' `Promise<boolean>` hook is untouched (`outcome === 'applied'`); the
+panel discards it anyway. Considered and not taken: filtering by `__rowid__ IN (…)` from the run's own flags — exact
+for every rule, but `OffenderRow` carries no row list, flag emission is cap-truncated at 20k while the counts are
+not, and it changes what the spec promises rather than making the promise hold. Verified live on the rebuilt
+preview: H004 leaves 101 rows with the new toast, `Q002` still gets the window-function toast, `Q003` still focuses
+to `4 / 101`, `Clear focus` still works, and `Q003` → `H004` leaves no stale chip; console QuaC-silent (only the
+extension's own `chrome-extension://…` lines). Both new files pin-checked against the un-fixed code — the e2e got
+all the way to the H004 click and failed on the missing toast — and the "clear the stale chip" assertions
+re-checked against a variant that clears only on success. Browser 46 → 49 tests (10 files), e2e 91 → 92, unit
+727 unchanged, entry JS 46.4 → 46.5 KB gz.
+
 2026-07-26 · UIX-10 · **The address bar tracks the live inputs, not just the link you arrived on — UX-02.**
 Reproduced first in the real browser, exactly as filed: boot `#/load?data=…/hesp_dirty_100.csv`, fetch
 `…hesp_dirty_100.parquet` in the Dataset URL field — the card, the preview and the Share modal all switched to the

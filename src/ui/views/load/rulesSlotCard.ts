@@ -37,12 +37,22 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
     dropZone.setDisabled(value);
     urlField.setBusy(value);
   };
+  let runSeq = 0;
   const run = (task: () => Promise<void>): void => {
     if (busy) return;
+    const seq = ++runSeq;
     setBusy(true);
     void task().finally(() => {
-      setBusy(false);
+      if (seq === runSeq) setBusy(false); // a cancelled task no longer owns it
     });
+  };
+  /** UX-04: Clear IS the cancel, so it must release a latch whose task may
+   *  never settle — a hung fetch's finally() never runs, and the field would
+   *  stay dead at `Fetching…` over an Empty card. Bumping the seq also stops
+   *  that late settle from unlatching a NEWER fetch started after the clear. */
+  const cancelRun = (): void => {
+    runSeq += 1;
+    setBusy(false);
   };
 
   const dropZone = createDropZone({
@@ -81,9 +91,13 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
   clearButton.hidden = true;
   clearButton.addEventListener('click', () => {
     void clearRules(ctx).then(() => {
-      // Cleared (button hid itself) → hand focus to the drop zone; a
-      // cancelled confirm keeps the modal's native restore-to-opener.
-      if (rulesState.get().files.length === 0) dropZone.el.focus();
+      // Cleared (button hid itself) → release any in-flight load's claim on
+      // the busy latch, then hand focus to the drop zone; a cancelled confirm
+      // keeps the modal's native restore-to-opener.
+      if (rulesState.get().files.length === 0) {
+        cancelRun();
+        dropZone.el.focus();
+      }
     });
   });
 

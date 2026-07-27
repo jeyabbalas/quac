@@ -182,6 +182,10 @@ export function mountSchemaSlotCard(container: HTMLElement, ctx: ShellContext): 
     // Clear visibility BEFORE update() — it derives the actions-row
     // visibility from its children's hidden state.
     clearButton.hidden = slot.status === 'empty';
+    // UX-04: the `Fetching…` latch the rules card already had. Derived from
+    // the phase rather than latched around the call, so Clear (phase →
+    // 'empty') releases it even when the fetch it belonged to never settles.
+    urlField.setBusy(state.phase === 'loading');
     // A cleared slot forgets which set it auto-prompted for: an identical
     // re-upload (same content-hash setId) must re-open the IndexPicker.
     if (state.phase === 'empty') promptedSetId = null;

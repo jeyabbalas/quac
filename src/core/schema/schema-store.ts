@@ -130,8 +130,12 @@ export function resetSchemaSlot(): void {
 
 /** Pure SlotState projection — the slot card and the P14 bridge share it. */
 export function summarizeSlot(state: SchemaSlotState): SlotState {
-  if (state.phase === 'empty' || state.set === null) return { status: 'empty', detail: '' };
+  // 'loading' FIRST (UX-04). Both loaders publish `set: null` alongside
+  // `phase: 'loading'` (lines 50/75), so an emptiness guard above this one
+  // swallows the whole fetch+crawl window — and with it the Clear that is the
+  // cancel for a hung no-timeout fetch (`ingestion.md` §1, `ui-design.md` §5).
   if (state.phase === 'loading') return { status: 'loading', detail: 'Loading schema files…' };
+  if (state.phase === 'empty' || state.set === null) return { status: 'empty', detail: '' };
   const set = state.set;
   const count = set.schemas.length;
   const filesLabel = count === 1 ? '1 file' : `${String(count)} files`;

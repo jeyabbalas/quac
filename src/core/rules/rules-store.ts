@@ -122,6 +122,11 @@ export async function addRuleUrls(urls: readonly string[]): Promise<void> {
   const targets = urls.map((u) => u.trim()).filter((u) => u !== '');
   if (targets.length === 0) return;
   const token = loadToken;
+  // UX-04: the FETCH window is part of loading. Enter the phase before the
+  // first await — `loadSchemaUrls`' and `ingestController`'s pattern — or a
+  // hung host holds the response open with the card still reading `Empty` and
+  // its Clear (the only way out) hidden. Stale fetchErrors drop with it.
+  rulesState.set({ ...rulesState.get(), phase: 'loading', fetchErrors: [] });
   const entries: { name: string; text: string; sourceUrl?: string }[] = [];
   const fetchErrors: string[] = [];
   for (const url of targets) {
@@ -139,6 +144,24 @@ export async function addRuleUrls(urls: readonly string[]): Promise<void> {
     }
   }
   if (token !== loadToken) return; // a clear landed during the fetch window
+  if (entries.length === 0) {
+    // Nothing to hand on: addRuleFiles returns at its own empty guard without
+    // ever moving the phase, which would strand the badge at `Loading…`. Settle
+    // it here instead, to exactly the state this path produced before UX-04
+    // (summarizeSlot still reads `error` — its empty guard needs BOTH lists
+    // empty, and fetchErrors is not).
+    const current = rulesState.get();
+    rulesState.set({
+      ...current,
+      phase: current.files.length === 0 ? 'empty' : 'ready',
+      fetchErrors,
+    });
+    return;
+  }
+  // Deliberately keeps `phase: 'loading'` — the badge stays up continuously
+  // through fetch → parse → lint, and `relint` publishes 'ready' at the end.
+  // Settling to 'ready' here would flicker it and re-hide Clear in the gap
+  // before addRuleFiles' `loadCodecs()` resolves.
   rulesState.set({ ...rulesState.get(), fetchErrors });
   await addRuleFiles(entries);
 }
@@ -387,10 +410,15 @@ function hasStructuralError(result: RuleFileLintResult): boolean {
 
 /** Pure SlotState projection — the slot card and the P14 bridge share it. */
 export function summarizeSlot(state: RulesSlotState): SlotState {
+  // 'loading' FIRST (UX-04). A first load has no files yet, so an emptiness
+  // guard above this one swallows the whole fetch+lint window — and with it
+  // the Clear that is the cancel for a hung no-timeout fetch (`ingestion.md`
+  // §1, `ui-design.md` §5). `addRuleUrls` enters the phase before its fetch
+  // for the same reason; the two changes are only useful together.
+  if (state.phase === 'loading') return { status: 'loading', detail: 'Loading rules files…' };
   if (state.files.length === 0 && state.fetchErrors.length === 0) {
     return { status: 'empty', detail: '' };
   }
-  if (state.phase === 'loading') return { status: 'loading', detail: 'Loading rules files…' };
 
   const fileCount = state.files.length;
   const ruleCount = state.results.reduce((sum, r) => sum + r.ruleCount, 0);

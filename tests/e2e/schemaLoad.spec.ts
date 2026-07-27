@@ -6,6 +6,7 @@ import type { Locator, Page } from '@playwright/test';
 
 const HESP_DIR = fileURLToPath(new URL('../fixtures/hesp/json_schema', import.meta.url));
 const SYNTHETIC_DIR = fileURLToPath(new URL('../fixtures/synthetic', import.meta.url));
+const CORS = 'http://localhost:4199';
 
 /** The 14 schema files, as absolute paths (flat multi-select simulation). */
 function hespSchemaPaths(): string[] {
@@ -122,4 +123,19 @@ test('malformed JSON → Error badge with the E_PARSE copy', async ({ page }) =>
   await expect(card(page).locator('.q-schemaslot-findings')).toContainText(
     '`broken.json` is not valid JSON',
   );
+});
+
+test('a non-JSON URL names a pasteable URL, once (UX-10)', async ({ page }) => {
+  const url = `${CORS}/synthetic/mixed/notes.txt`;
+  await page.getByLabel('Schema URL').fill(url);
+  await card(page).getByRole('button', { name: 'Fetch' }).click();
+
+  await expect(badge(page)).toHaveText('Error');
+  const finding = card(page).locator('.q-schemaslot-findings li').first();
+  // The scheme survives (it was eaten by the upload-only common-root strip),
+  // and the sentence does not close with the clause it opened with.
+  await expect(finding).toHaveText(`Error: \`${url}\` is not valid JSON: Unexpected token 'T'.`);
+
+  // The one file, named the same way on both lines of the same card.
+  await expect(card(page).locator('.q-schemaslot-ignored li')).toHaveText(`${url} (not json)`);
 });

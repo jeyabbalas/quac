@@ -121,6 +121,18 @@ describe('intakeFiles', () => {
     }
   });
 
+  it('keeps a URL entry whole — the strip is a webkitRelativePath tool (UX-10)', () => {
+    // Its first `/`-delimited segment is the scheme, so stripping ate `http:`.
+    const url = 'http://localhost:4199/synthetic/mixed/notes.txt';
+    const result = intakeFiles(
+      [{ relativePath: url, retrievalUri: url, raw: 'This file is not JSON.\n' }],
+      'url',
+    );
+    expect(result.files[0]?.relativePath).toBe(url);
+    expect(result.errors[0]?.code).toBe('E_PARSE');
+    expect(result.errors[0]?.message).toBe(`\`${url}\` is not valid JSON: Unexpected token 'T'.`);
+  });
+
   it('extracts declaredId resolved against retrievalUri, fragment stripped', () => {
     const result = intakeFiles(
       [
@@ -244,6 +256,21 @@ describe('buildSchemaSet', () => {
     expect(set.ignored).toEqual(expect.arrayContaining([{ fileId: 'broken.json', reason: 'not-json' }]));
     expect(set.errors.map((e) => e.code)).toContain('E_PARSE');
     expect(set.root.rootFileId).toBe('good.json');
+  });
+
+  it('names one URL file one way in Findings and in Ignored files (UX-10)', async () => {
+    const url = 'http://localhost:4199/synthetic/mixed/notes.txt';
+    const set = await buildSchemaSet(
+      [{ relativePath: url, retrievalUri: url, raw: 'This file is not JSON.\n' }],
+      { origin: 'url' },
+    );
+    // The card renders `error.message` and `ignored[].fileId` two lines apart;
+    // they must be the same string, which is the invariant UX-10 broke.
+    const ignoredId = set.ignored.find((i) => i.reason === 'not-json')?.fileId;
+    expect(ignoredId).toBe(url);
+    const parse = set.errors.find((e) => e.code === 'E_PARSE');
+    expect(parse?.message).toContain(`\`${ignoredId ?? ''}\``);
+    expect(parse?.fileId).toBe(url);
   });
 });
 

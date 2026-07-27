@@ -74,6 +74,36 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-10 · **The address bar tracks the live inputs, not just the link you arrived on — UX-02.**
+Reproduced first in the real browser, exactly as filed: boot `#/load?data=…/hesp_dirty_100.csv`, fetch
+`…hesp_dirty_100.parquet` in the Dataset URL field — the card, the preview and the Share modal all switched to the
+Parquet while the bar still read `.csv`, and a reload silently handed back the CSV; the mirror case (clear-all →
+bare `#/load` → fetch a dataset URL) left the bar bare, so a reload **lost** an input that had been loaded by URL.
+Root cause: the only writer of artifact params was UIX-7's clear path, so the fragment was one-directional. New
+`src/app/hashSync.ts` is now the single writer for both directions — `buildSyncedConfig` is UIX-7's
+`buildClearedConfig` moved verbatim except that `index=` is **derived** from the live root
+(`set.root.indexFileId`, `buildShareModel`'s own rule) instead of copied out of the stale hash, which retires
+`bootConfig`'s `installIndexSync` (also the one writer that used `window.location.hash` and so pushed a history
+entry). Because the writer is store-driven it covers every path without touching the cards: drop / browse / URL /
+CORS retry, the `Load example files` hero, `chooseRoot`, rules drop/URL, per-file ✕ and all five clears; an upload
+over a URL-loaded slot correctly drops the param, contributing no source URL. The arming gate is the subtle part —
+`signals.ts` re-tracks deps every run and unlinks branches not read, so a flag-guarded early return would deafen the
+effect permanently; instead `applyBootConfig` awaits all three legs (`datasetCard.run()` now returns its promise
+chain, `fetchUrl: Promise<void>`) and installs the effect last on every exit path, its initial run being the first
+sync. Otherwise an effect armed at t0 fires when the schema resolves and drops the still-in-flight `rules=`/`data=`
+from the link the user just opened. **One deliberate deviation from the plan:** `syncHashFromStores` owns the QUERY,
+not the path — it carries the raw path through verbatim (defaulting to `#/load` only when there is no fragment at
+all) rather than re-formatting `parseHash`'s route, because the plan's verbatim version silently canonicalized
+`#/nope?keep=1` → `#/load?keep=1` and broke router.ts's read-only-unknown-route contract pinned by `nav.spec`.
+Accepted consequences, both owner-confirmed: the example hero leaves a ~2000-char URL and a reload restores the
+example instead of first-run; and params now ride the current route, so `download.spec.ts:35` relaxes from
+`/#\/report$/` to `/#\/report/`, matching three sibling specs. Verified live on the rebuilt preview — the bar flips
+to `.parquet` with `history.length` unchanged (replaceState), the reload keeps it, the mirror case regains `data=`
+and survives a reload, console QuaC-silent. Every new assertion pin-checked against the un-fixed code: all 3 e2e
+cases and the loadExample extension failed with the reviewed symptom, and the two `index=` unit cases failed against
+the old copy-forward rule. `clearInputs.test.ts` → `hashSync.test.ts`. Unit 723 → 727, e2e 87 → 91, entry JS
+46.3 → 46.4 KB gz.
+
 2026-07-26 · UIX-9 · **A schema that describes none of the dataset's columns is a finding, not a parser error.**
 The zero-overlap bug UIX-8 filed. `selected` — the column list handed to the QC worker — is empty exactly when the
 schema's property universe is closed and not one of its variables appears in the dataset, and the row loop

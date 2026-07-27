@@ -6,8 +6,9 @@
 ## 1. Principles
 
 - All configuration lives in the **hash fragment** — nothing after `#` is ever sent to any server (no server logs, no Referer leakage) and it survives reloads. This is the app's only persistence.
+- The fragment is **bidirectional** (UIX-10): it is not just read at boot but rewritten from the live session on every load, replace, upload-over and clear, so a reload always restores what is on screen. One writer owns this — `app/hashSync.ts` — and it computes the same live-provenance rule the Share modal does (`buildShareModel`), so the address bar and the Share link can never disagree.
 - Loading from params NEVER auto-runs QC (user consent to compute). Partial configs are first-class: a rules-only link leaves the Dataset slot highlighted: "Rules are pre-loaded. Add your dataset to run QC."
-- Only URL-loaded artifacts are shareable; uploads cannot travel in a link (UX in §4).
+- Only URL-loaded artifacts are shareable; uploads cannot travel in a link (UX in §4) — and an upload **over** a URL-loaded slot drops that slot's param, for the same reason.
 
 ## 2. Grammar
 
@@ -19,12 +20,19 @@ https://jeyabbalas.github.io/quac/#/load?schema=<enc>&schema=<enc>&rules=<enc>&r
 
 - Everything after the first `?` inside the fragment parses with `URLSearchParams`. Repeated `schema=`/`rules=` keys (`getAll`) preserve order — **order matters** (rules cross-file execution order; schema crawl bases).
 - Values are `encodeURIComponent`-encoded **absolute `https:` URLs**.
-- `index=<indexFileId>` — the disambiguated root schema; resolution order (exact `$id` → exact URL → relativePath → unique basename → modal + warning) per `json-schema-subsystem.md §A.4`. Written automatically once the user resolves the IndexPickerModal, so recipients never see the modal.
+- `index=<indexFileId>` — the disambiguated root schema; resolution order (exact `$id` → exact URL → relativePath → unique basename → modal + warning) per `json-schema-subsystem.md §A.4`. **Derived** from the live resolved root (`schemaState.set.root.indexFileId`), never copied forward from the current fragment, so it appears automatically once a root resolves (auto-detected or IndexPickerModal-chosen — recipients never see the modal) and a schema swap can never leave the previous set's index behind. Only emitted while `schema=` params remain.
 - `data=<url>` — allowed (a dataset already hosted at a URL leaks nothing new by being linked); listed plainly in the Share modal.
 - **`config=<url>` escape hatch** for >2,000-char cases: JSON manifest `{ "schema": [...], "rules": [...], "index"?: "...", "data"?: "..." }`. Precedence: `config` loads first; any inline `schema`/`rules`/`index`/`data` params **override that key wholesale** (toast notes the override).
 - Keep assembled links ≤ **2,000 chars** (portability); beyond that, push users to `config=`.
 
-Boot flow (`main.ts`): parse fragment → slots auto-load with progress → statuses land → if complete, "Run QC" is primed but idle.
+Boot flow (`main.ts`): parse fragment → slots auto-load with progress → statuses land → if complete, "Run QC" is primed but idle. `applyBootConfig` then **arms** the address-bar sync, and only then: the three legs load concurrently, so an effect armed at t0 would fire when the first one resolves and drop the params of the ones still in flight. Every exit path arms, including the empty-config and manifest-failure paths.
+
+Writing back (UIX-10, `app/hashSync.ts` — the single writer):
+
+- Every slot is rebuilt **wholly from the live stores**; nothing is copied forward from the current fragment except `passthrough` params, which are preserved verbatim. That is what makes a *replacement* (not just a clear) land in the bar.
+- `config=` always drops on the first change — the manifest still names the artifact that just changed — with the remaining slots materialized inline.
+- Writes go through `history.replaceState`: no history entry (Back is never "undo my last load") and no `hashchange`. Guarded by an equality check, so it is idempotent and cannot loop.
+- The writer owns the **query, not the path**: the raw path travels through verbatim (an unknown route keeps rendering Load without being canonicalized, per the router's read-only contract), defaulting to `#/load` only when there is no fragment at all. A consequence: params ride the current route, so a run started from a URL-loaded session lands on `#/report?schema=…&data=…`.
 
 ## 3. `share/` modules
 

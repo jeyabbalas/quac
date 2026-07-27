@@ -189,6 +189,14 @@ Console: **clean**.
 
 ### UX-02 — Replacing a URL-loaded input never updates the address bar, so a reload silently restores the old one
 
+- **Status:** **Fixed** (2026-07-26, UIX-10 — see the master-plan progress log). Implemented as suggested: the new
+  `src/app/hashSync.ts` is the single writer both directions go through, driven by an effect over the three
+  provenance signals, so every load/replace/upload-over/clear rebuilds the fragment from the live stores. Two
+  refinements beyond the suggestion — `index=` is now *derived* from the live resolved root (which retires
+  `bootConfig`'s `installIndexSync`, the only writer that pushed a history entry), and the effect is armed only once
+  `applyBootConfig` has awaited all three boot legs, since an effect armed at t0 would drop still-in-flight params
+  from the very link being opened. Guarded by `hashSync.spec.ts` (3 cases), the extended `loadExample.spec.ts`, and
+  the load-direction half of `hashSync.test.ts`.
 - **Severity:** Bug
 - **Where:** Load view · hash sync · `src/app/clearInputs.ts` (only writer) / `src/app/bootConfig.ts`
 - **Repro:**

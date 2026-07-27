@@ -431,6 +431,28 @@ Console: **clean**.
 
 ### UX-08 — Clearing the JSON Schema silently disables 12 rules, explained only by raw DuckDB binder errors
 
+- **Status:** **Fixed** (2026-07-27, UIX-16 — see the master-plan progress log). Reproduced exactly as filed, `12`
+  included, and the constraint the finding sets is met to the number: after the fix the badge, the summary
+  `3 files · 22 rules · 12 lint errors` and a subsequent run's `9 Rules run` are all unchanged — only the account
+  changes. The fix is one branch in stage 4's `dryRun` (`lint.ts`), so it reaches the slot card and BOTH Studio
+  surfaces at once (verified live in the Studio) with no renderer touched and no entry-bundle delta. It **fails
+  closed**, which is the part worth naming: the class needs `Binder Error` + a `VARCHAR` token + one of four
+  phrase families **and** at least one implicated VARCHAR column, or the engine's words stand — so a typo still
+  reads `Referenced column "x" not found`, and the suggested generic sentence for the un-nameable case was
+  deliberately NOT taken, since it would have thrown away the one useful thing left. Two departures from the
+  suggested copy, both driven by the live strings. The message says a column is "**stored as** text" rather than
+  needs typing, because with no schema *every* column is VARCHAR and the sentence must stay true of `household_id`
+  (Q008) and `record_id` (Q003), which are text on purpose. And `TRY_CAST` names a real column only when exactly
+  one is implicated (4 of the 12); with several the binder never says which it choked on, so naming the first
+  would be a guess — Q003 would have advised casting `record_id` when only `wave` wants it. A third thing driving
+  it turned up: the columns cannot come from `target_variables` alone. A column-scope assertion's text
+  (`in_range(0, 120)`) names none, and Q038 targets only `monthly_rent` while failing on `wave` — so each wrapper
+  passes what it was actually built from, unioned with a word-bounded scan of the rule text. The report's
+  phrase-family list is now recorded in V23 from the live run (3 `No function matches`, 4 `Cannot compare values
+  of type`, 5 `Cannot mix values of type` — one of those a **CASE** form the desk analysis did not predict).
+  Guarded by 10 new `lint.test.ts` cases (4 of them fail-closed guards), a `draftLint.test.ts` case for the Studio,
+  and two e2e passes — `partialRun.spec.ts` as the duckdb-wasm-binder pin and a new `clearInputs.spec.ts` pass that
+  is this repro end to end.
 - **Severity:** Friction
 - **Where:** Load view · QC Rules card → Details · lint stage 4 messages
 - **Repro:**

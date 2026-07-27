@@ -74,6 +74,46 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-27 · UIX-16 · **A rule disabled by an untyped column says so in plain language — UX-08.**
+Reproduced first in the real browser, exactly as filed and to the number: `Load example files` → `Valid · 3 files ·
+22 rules`, one click on the JSON Schema card's `Clear` → `Warning · 3 files · 22 rules · **12 lint errors**`, every
+one of the 12 a raw binder error. The finding's constraint — the *exclusion* is correct (V23) and must not change —
+is what the after-state is measured against, and it holds to the number: same badge, same summary, same 12, and a
+subsequent run still reports **9 Rules run** (down from 20), exactly as the report recorded. Only the account
+changes. The whole fix is one branch inside stage 4's `dryRun` (`lint.ts`), which is why it costs no renderer and
+no bundle: `RuleLintIssue` already splits `message` from `detail`, and all three consumers — the slot card,
+`ruleForm` and `codeEditor` — already render `message` as text and `detail` as the `title`, so rewriting one string
+fixed the card AND both Studio surfaces (confirmed live in the Studio: all 12 read the new sentence there too).
+It **fails closed**, which is the design decision worth naming. The class needs `Binder Error` + a `VARCHAR` token
++ one of four phrase families **and** at least one implicated VARCHAR column, or the engine's own words stand
+untouched — so `Referenced column "x" not found` (no VARCHAR token) and `'+(INTEGER, VARCHAR)'` from a user's own
+cast literal both stay raw, and so does everything after a failed `DESCRIBE`. The suggested generic sentence for
+the un-nameable case was deliberately NOT taken: it is exactly the branch a misclassification lands in, and it
+would trade the one useful thing left for a sentence naming nothing. The probe is memoized across the pass and
+wrapped, because `relint` (`rules-store.ts:67`) has no try/catch and a rejection escaping here would strand the
+card at `phase: 'loading'` with its badge stuck — a diagnosis is never worth that. Three things driving it
+corrected the desk design. `target_variables` alone cannot name the columns: a column-scope assertion's text
+(`in_range(0, 120)`) contains none, and Q038 targets only `monthly_rent` while failing on the `wave` in its
+`PARTITION BY` — so each of the five wrappers passes what it actually built its SQL from, unioned with a
+word-bounded scan of the rule text, and the live card now names `monthly_rent, wave` for Q038. The copy says a
+column is "**stored as** text" rather than that it needs a numeric type, because with no schema *every* column is
+VARCHAR and the sentence has to stay true of `household_id` and `record_id`, which are text on purpose. And
+`TRY_CAST` names a real column only where exactly one is implicated (4 of the 12 — `TRY_CAST(monthly_rent AS
+DOUBLE)`); with several the binder never says which it choked on, so the example falls back to V23's own `col`
+placeholder rather than advising Q003 to cast `record_id` when only `wave` wants it. `qc-rules-engine.md` §7
+stage 4 said binder errors are "surfaced **verbatim**", which forbade this outright; it now pins verbatim as
+`detail`'s job and spells out the one exception, its gate and its fail-closed rule. V23 gains the live numbers,
+including a `Cannot mix … in CASE expression` form the desk analysis did not predict — the four-phrase gate
+already covered it, and the 12 fall into exactly three families (3 / 4 / 5). Console QuaC-silent throughout (only
+the extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 6 of the 10 new
+`lint.test` cases, the `draftLint` case and BOTH e2e passes fail, while all four fail-closed guards and the two
+existing stage-4 cases pass either way. Left standing, deliberately: `sql-error` stays one code (the taxonomy is
+by stage, not by cause, and `rulesExec.browser.test` filters on it); `recordBrokenRule` (`engine.ts:382`) keeps
+its raw text, since lint excludes these rules before a run can reach it — not *never*, per the race
+`phase-17-studio-editor.md:43` documents, but not this finding; and the P20 README limitation is still owed, which
+is the point — a README cannot help someone reading `'+(VARCHAR, VARCHAR)'` inside the card.
+Unit 739 → 750, e2e 98 → 99, browser 60 unchanged, entry JS 46.8 KB gz unchanged.
+
 2026-07-27 · UIX-15 · **An over-length share link keeps its link and its Copy button — UX-07.**
 Reproduced first in the real browser, exactly as filed, and the report's *computed* production number was
 confirmed from the page's own link rather than re-derived: `Load example files` → `Share` read **1965

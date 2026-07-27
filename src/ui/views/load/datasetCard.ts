@@ -14,8 +14,10 @@ import { createUrlField } from '../../components/urlField';
 import type { ShellContext } from '../../../app/shell';
 
 export interface DatasetCardHandle {
-  /** Programmatic URL ingest — the "Load example files" path (P14). */
-  fetchUrl: (url: string) => void;
+  /** Programmatic URL ingest — the "Load example files" and boot paths (P14).
+   *  Resolves when the ingest settles, so boot can await this leg before it
+   *  arms the address-bar sync (UIX-10). */
+  fetchUrl: (url: string) => Promise<void>;
   /** Focus the drop-zone browse control (post-clear-all focus home, UIX-7). */
   focusBrowse: () => void;
 }
@@ -57,7 +59,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
       corsHost.replaceChildren(
         createCorsHelp({
           onRetry: () => {
-            run('url', url);
+            void run('url', url);
           },
         }),
       );
@@ -65,11 +67,14 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
   };
 
   // Hoisted so controllerUi.onCorsError can re-invoke it (mutual reference).
-  function run(action: 'file' | 'url', payload: File | string): void {
-    if (busy) return;
+  // Returns the ingest's promise chain (never rejects — ingestController
+  // reports its own errors) so boot can await this leg; a refused call (busy
+  // latch held) resolves immediately, having done nothing.
+  function run(action: 'file' | 'url', payload: File | string): Promise<void> {
+    if (busy) return Promise.resolve();
     setBusy(true);
     corsHost.replaceChildren(); // clear stale CORS guidance on a fresh attempt
-    void (async () => {
+    return (async () => {
       const controller = await import('./ingestController');
       if (action === 'file') await controller.ingestFromFile(ctx, payload as File, controllerUi);
       else await controller.ingestFromUrl(ctx, payload as string, controllerUi);
@@ -84,14 +89,14 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
     dropTarget: card.el, // whole card accepts drops
     onFiles: (files) => {
       const file = files[0];
-      if (file) run('file', file);
+      if (file) void run('file', file);
     },
   });
 
   const urlField = createUrlField({
     label: 'Dataset URL',
     onFetch: (url) => {
-      run('url', url);
+      void run('url', url);
     },
   });
 
@@ -140,9 +145,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
   });
 
   return {
-    fetchUrl: (url) => {
-      run('url', url);
-    },
+    fetchUrl: (url) => run('url', url),
     focusBrowse: () => {
       dropZone.el.focus();
     },

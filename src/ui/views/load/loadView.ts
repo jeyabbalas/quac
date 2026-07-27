@@ -65,7 +65,7 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
       const response = await fetch(abs('index.json'));
       if (!response.ok) throw new Error(`example manifest HTTP ${String(response.status)}`);
       const manifest = (await response.json()) as ExampleIndex;
-      dataCard.fetchUrl(abs(manifest.dataset)); // dataset card owns its own progress UI
+      void dataCard.fetchUrl(abs(manifest.dataset)); // dataset card owns its own progress UI
       await Promise.all([
         loadSchemaUrls(manifest.schema.map(abs)),
         addRuleUrls(manifest.rules.map(abs)),

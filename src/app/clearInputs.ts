@@ -6,27 +6,30 @@
  *   2. invalidate the previous run (`invalidateRun` — pill dark, panels
  *      empty, in-flight run cancelled),
  *   3. clear the slot's store,
- *   4. rewrite the `#/load` hash from the REMAINING live sources via
- *      `history.replaceState` (a reload must not resurrect a cleared input;
- *      Back must not become "un-clear"),
+ *   4. re-sync the address bar from the REMAINING live sources through the one
+ *      shared writer (`hashSync`), which rebuilds the fragment from whatever
+ *      the stores now hold — so a reload restores exactly what is on screen,
+ *      and Back never becomes "un-clear",
  *   5. announce with one polite toast — the only announcement path AT users
  *      get, badges are not live regions.
  *
+ * Step 4 is also driven by `installHashSync`'s store effect (UIX-10); these
+ * explicit calls are kept anyway — they are idempotent, and they cover a clear
+ * that lands during the boot window, before that effect is armed.
+ *
  * Entry-chunk discipline: bridge/tables stay behind dynamic imports; the
- * static imports here are stores, signals-adjacent app modules, and the pure
- * share codec — all already entry-resident.
+ * static imports here are stores and signals-adjacent app modules — all
+ * already entry-resident.
  */
+import { syncHashFromStores } from './hashSync';
 import { openModal } from './modal';
-import { formatHash, parseHash, readRawHash } from './router';
 import { invalidateRun } from './runInvalidation';
 import { peekRulesDraftFile } from './rulesDraftProbe';
 import { signal } from './signals';
 import { showToast } from './toast';
 import { clearRuleFiles, removeRuleFile, rulesState } from '../core/rules/rules-store';
-import { resetSchemaSlot, schemaState } from '../core/schema/schema-store';
-import { decodeConfig, encodeConfig } from '../core/share/urlConfig';
+import { resetSchemaSlot } from '../core/schema/schema-store';
 import type { ShellContext } from './shell';
-import type { UrlConfig } from '../core/share/urlConfig';
 
 // ---- dataset-card UI hooks --------------------------------------------------
 
@@ -62,49 +65,6 @@ export function noteDatasetBusy(value: boolean): void {
  *  Reads the signal, so calling effects re-run on release. */
 export function isDatasetUiBusy(): boolean {
   return datasetBusy.get();
-}
-
-// ---- hash rewrite -----------------------------------------------------------
-
-export interface LiveSources {
-  /** `schemaState.sourceUrls` — `[]` for uploads. */
-  schemaUrls: readonly string[];
-  /** Non-null `rulesState.sources` — uploads contribute nothing. */
-  rulesUrls: readonly string[];
-  /** `dataset.sourceUrl` — null for uploads / no dataset. */
-  dataUrl: string | null;
-}
-
-/**
- * Pure: rebuild the share config from the LIVE stores after a clear.
- * Passthrough params are contractually preserved; `config=` always drops (the
- * manifest still names the cleared artifact) with the remaining slots
- * materialized inline; `index=` only means something while `schema=` params
- * remain (installIndexSync also only re-adds it alongside schema params, so
- * the two writers cannot fight or resurrect anything).
- */
-export function buildClearedConfig(current: UrlConfig, live: LiveSources): UrlConfig {
-  const next: UrlConfig = {
-    schema: [...live.schemaUrls],
-    rules: [...live.rulesUrls],
-    passthrough: current.passthrough,
-  };
-  if (current.index !== undefined && next.schema.length > 0) next.index = current.index;
-  if (live.dataUrl !== null) next.data = live.dataUrl;
-  return next;
-}
-
-/** Rewrite the address bar from the post-clear stores. `replaceState`: no
- *  history entry, no hashchange (the route is unchanged). */
-function syncHashAfterClear(ctx: ShellContext): void {
-  const { route, query } = parseHash(readRawHash());
-  const next = buildClearedConfig(decodeConfig(query), {
-    schemaUrls: schemaState.get().sourceUrls,
-    rulesUrls: rulesState.get().sources.filter((s): s is string => s !== null),
-    dataUrl: ctx.store.dataset.get()?.sourceUrl ?? null,
-  });
-  const target = formatHash(route, encodeConfig(next));
-  if (readRawHash() !== target) history.replaceState(null, '', target);
 }
 
 // ---- feedback ---------------------------------------------------------------
@@ -195,7 +155,7 @@ function unsavedRuleWork(): string[] {
 export async function clearDataset(ctx: ShellContext): Promise<boolean> {
   const done = await clearDatasetCore(ctx);
   if (!done) return false;
-  syncHashAfterClear(ctx);
+  syncHashFromStores(ctx.store);
   return true;
 }
 
@@ -244,7 +204,7 @@ export function clearSchema(ctx: ShellContext): void {
   const hadRun = ctx.store.run.get() !== null;
   resetSchemaSlot();
   invalidateRun(ctx.store);
-  syncHashAfterClear(ctx);
+  syncHashFromStores(ctx.store);
   announceClear('JSON Schema cleared.', hadRun);
 }
 
@@ -264,7 +224,7 @@ export async function clearRules(ctx: ShellContext): Promise<void> {
   const hadRun = ctx.store.run.get() !== null;
   invalidateRun(ctx.store);
   clearRuleFiles();
-  syncHashAfterClear(ctx);
+  syncHashFromStores(ctx.store);
   announceClear('QC rules cleared.', hadRun);
 }
 
@@ -287,7 +247,7 @@ export async function removeRulesFile(ctx: ShellContext, name: string): Promise<
   invalidateRun(ctx.store);
   const removed = await removeRuleFile(name);
   if (!removed) return; // vanished while the dialog was open
-  syncHashAfterClear(ctx);
+  syncHashFromStores(ctx.store);
   announceClear(`Removed ${name}.`, hadRun);
 }
 
@@ -316,6 +276,6 @@ export async function clearAllInputs(ctx: ShellContext): Promise<void> {
   clearRuleFiles();
   resetSchemaSlot();
   await clearDatasetCore(ctx, false);
-  syncHashAfterClear(ctx);
+  syncHashFromStores(ctx.store);
   announceClear('All inputs cleared.', hadRun);
 }

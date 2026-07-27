@@ -527,6 +527,24 @@ Console: **clean**.
 
 ### UX-10 — The schema parse error names a path that does not exist, and repeats itself
 
+- **Status:** **Fixed** (2026-07-27, UIX-18 — see the master-plan progress log). Both halves of the suggested fix were
+  taken, the second one layer below where the finding points. The stutter: the V8 form the report quotes carries no
+  position *and* closes with this template's own clause, so `{reason}` now drops that tail — but gated ON the tail
+  rather than cutting at the first comma unconditionally, so a message that merely contains a comma is never
+  truncated. The path: `stripCommonRoot` is a `webkitRelativePath` helper (`schema-set.ts:66`, and §A.2.1 scopes it to
+  uploads) that `intakeFiles` was applying to every origin — a URL's first `/`-delimited segment is its scheme, so it
+  ate `http:` off every URL entry. It is now uploads-only, which is why the fix is one line rather than a special case
+  for "no meaningful common root": the degenerate single-URL set was not a separate branch, it was the same bug the
+  14-file set survives only because `relativizeUrlPaths` (`:341`, off `fileId`) repairs the *stored* path afterwards —
+  too late for messages, which are frozen at intake. That freeze is why `E_DUP_ID` and every `ref-graph` message had
+  the same defect unreported; they are fixed by the same line. `E_PARSE` also now names the file by `fileId` rather
+  than `relativePath`: identical for uploads, and for URL sets it is the exact string *Ignored files* prints, so the
+  card's two lines agree by construction rather than by coincidence — that is now the unit invariant. Measured live:
+  the finding falls 126 → 97 characters, `is not valid JSON` goes 2 → 1, and the HESP set is byte-identical
+  (`14 files · root: core/core.schema.json`, `set id: 636a370031d8ef6f`). Guarded by a new `messages.test.ts` (the
+  first direct test of that module — the two existing E_PARSE cases were upload-only, matched `.+\.`, and the
+  positional one self-neutralises on modern V8, which is how this got in), two `schema-set.test.ts` cases, and a
+  `schemaLoad.spec.ts` pass that is this repro end to end.
 - **Severity:** Friction
 - **Where:** Load view · JSON Schema card → Findings · `src/core/schema/messages.ts:26-32`,
   `src/core/schema/schema-set.ts:198`

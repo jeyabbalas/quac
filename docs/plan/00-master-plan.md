@@ -74,6 +74,39 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-27 · UIX-18 · **A schema parse error names a file you can paste, and says it once — UX-10.**
+Reproduced first in the real browser, exactly as filed and confirmed at the character level: the finding read
+`` Error: `/localhost:4199/synthetic/mixed/notes.txt` is not valid JSON: Unexpected token 'T', "This file "... is not
+valid JSON. `` — 126 characters, `is not valid JSON` twice, and code point 47 (`/`) directly after the opening
+backtick where `http:` should have been, while the *Ignored files* line two rows above held the URL in full. Both
+halves are one line each, and the second sits a layer below where the finding points. The stutter is exactly as
+diagnosed — current V8 has a second, position-free form that quotes the file back and closes with this template's own
+clause — but the suggested "cut at the first `,`" is taken **gated on that tail**, not unconditionally: a message
+merely containing a comma must survive whole, which is its own fail-closed unit case. The path is not a
+degenerate-common-root problem at all. `stripCommonRoot` is a `webkitRelativePath` helper (its own header says so, and
+§A.2.1 scopes it to uploads) that `intakeFiles` was handing every origin; a URL's first `/`-delimited segment is its
+scheme, so `'http://…'.indexOf('/') === 5` and the strip ate `http:` off **every** URL entry, not just lonely ones.
+The 14-file set survives only because `relativizeUrlPaths` (`schema-set.ts:341`) rebuilds `relativePath` off `fileId`
+afterwards — and "afterwards" is the whole finding: messages are frozen at intake, before that repair. So the same
+line silently fixes `E_DUP_ID` (`:231`) and all four `ref-graph` messages (`:277,303,340,360`), which have been
+printing `//host/…` in URL sets with nobody filing it, and it costs no special case. Second half of the fix, one
+token: `E_PARSE` names the file by `fileId`, not `relativePath` — provably identical for uploads (`:190` assigns one
+from the other) and, for URL sets, the exact string `ignored[].fileId` renders one list above it, so the card cannot
+name one file two ways. That is the unit invariant now, rather than a coincidence of two code paths. Deliberately NOT
+taken: re-rendering `E_PARSE` after `relativizeUrlPaths` so URL sets get short display paths. It would need the engine
+reason stashed on `meta`, and it answers the wrong half — the finding asks for a path that can be pasted, and the line
+above already prints the full URL. Measured live after: 126 → **97** characters, `is not valid JSON` 2 → 1, the
+pasteable `http://localhost:4199/synthetic/mixed/notes.txt` inside the backticks, zero horizontal overflow, and the
+regression this could only have broken re-measured on the same build — `Load example files` still reads `14 files ·
+root: core/core.schema.json` with `set id: 636a370031d8ef6f`, byte-identical to the pre-fix capture (`setId` hashes
+post-relativization paths, so it is a real pin, not a tautology). Console QuaC-silent throughout (only the extension's
+own `chrome-extension://…` lines). Pin-checked against the un-fixed code: all 4 new unit cases and the new e2e pass
+fail, while the 26 other cases in those two files and the other 6 `schemaLoad` passes pass either way. Left standing,
+deliberately: `stripCommonRoot` itself — its contract and its two unit cases are untouched, since it was never wrong,
+only mis-aimed; `relativizeUrlPaths`, which owns the short display paths and keeps them; and the upload E_PARSE copy,
+unchanged to the byte.
+Unit 755 → 762, e2e 100 → 101, browser 60 unchanged, entry JS 46.8 → 46.9 KB gz.
+
 2026-07-27 · UIX-17 · **The Findings list leads with its message, not a 106-character machine id — UX-09.**
 Reproduced first in the real browser, and the filed prefix lengths reconcile exactly once you know what they counted: the
 report's 38, 10, 36, 106, 111, 96, 90, 9, 9 are the *rendered row* prefixes, i.e. the id plus the severity chip's own word

@@ -82,7 +82,7 @@ interface RootCandidate { fileId: string; declaredId?: string; title?: string; a
 
 ### A.2 Intake & classification algorithm
 
-1. **Collect.** Uploads: accept `.json` (case-insensitive); everything else → `ignored: unsupported-extension` (drops README.md, .DS_Store silently). Strip the single common leading directory from `webkitRelativePath`. URLs: fetch (`Accept: application/schema+json, application/json`), record post-redirect URL as `retrievalUri`.
+1. **Collect.** Uploads: accept `.json` (case-insensitive); everything else → `ignored: unsupported-extension` (drops README.md, .DS_Store silently). Strip the single common leading directory from `webkitRelativePath` — **uploads only**: a URL's first `/`-delimited segment is its scheme, and stripping it ate `http:` out of every message built at intake, which §A.1 relativization (later, and off `fileId`) could no longer repair (UX-10). URLs: fetch (`Accept: application/schema+json, application/json`), record post-redirect URL as `retrievalUri`.
 2. **Parse.** `JSON.parse` after UTF-8 BOM strip. Failure → `invalid-json`, error `E_PARSE`.
 3. **Classify.** Object with ≥1 own key of {`$schema`, `$id`, `type`, `properties`, `items`, `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `$defs`, `definitions`, `$ref`, `enum`, `required`, `const`} ⇒ schema. HESP `manifest.json` matches none ⇒ non-schema, ignored with info notice. Bare `true`/`false` ⇒ non-schema (cannot be a tabular root; noted). **Referenced-file override:** any ref target is promoted to `schemas`.
    - *Manifest as hint only:* if exactly one non-schema file has an `entrypoints` object whose values match loaded `relativePath`s, remember those fileIds as `manifestHints` — used **only** to order modal candidates, never to auto-select (HESP's manifest names a file that does not exist; hints must tolerate dangling entries).
@@ -119,7 +119,7 @@ Run all; report all at once (never stop at first). Fatal set-level errors block 
 
 | Code | Check | Severity | Copy template |
 |---|---|---|---|
-| `E_PARSE` | JSON.parse fails | fatal (file) | "`{path}` is not valid JSON: {reason} (near position {n})." |
+| `E_PARSE` | JSON.parse fails | fatal (file) | "`{path}` is not valid JSON: {reason} (near position {n})." — `{path}` is the `fileId` (upload display path / retrieval URL), i.e. the same string the card's *Ignored files* line prints, so one file is never named two ways; "(near position {n})" only when the engine gives one; `{reason}` drops V8's own "…, \"snippet\"… is not valid JSON" tail, which would otherwise close the sentence with the clause it opened with (UX-10) |
 | `E_DUP_ID` | two files share `$id` | fatal (set) | "Two files declare the same `$id` `{id}`: `{a}` and `{b}`. Each schema file needs a unique `$id`." |
 | `E_UNRESOLVED_REF` | ref matches no file post-crawl | fatal (set) | "`{path}` references `{ref}` (at {pointer}), but no loaded file matches. Upload the folder containing `{expectedName}`, or check the reference." |
 | `E_BAD_FRAGMENT` | pointer/anchor missing in target | fatal (set) | "`{path}` references `{ref}`, but `{fragment}` does not exist in `{target}`." |

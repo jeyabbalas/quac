@@ -90,3 +90,48 @@ test('the one click also fills the address bar, and a reload restores all three 
     '3 files · 22 rules',
   );
 });
+
+/**
+ * UIX-17 / golden journey 15 — UX-09. This is the only path that produces the
+ * long ids: `Load example files` fetches by URL, so `fileId` is the retrieval
+ * URL and `schema:advisory:<fileId>` runs to 106 characters. (runQc.spec
+ * UPLOADS the 14 schema files, where `fileId` is the short relativePath, so it
+ * cannot reach this case.) The advisory message already names the file in
+ * short form, so the prefix printed it twice and pushed the sentence down.
+ */
+test('Findings: a URL-loaded schema id does not open the row (UX-09)', async ({ page }) => {
+  await page.goto('/quac/');
+  await page.locator('.q-example-load').click();
+  await expect(page.locator('.q-runbar-button')).toBeEnabled({ timeout: INGEST_TIMEOUT });
+
+  await page.locator('.q-runbar-button').click();
+  await expect(page.locator('.q-run-progress')).toBeHidden({ timeout: INGEST_TIMEOUT });
+  await page.locator('.q-report-panels .q-paneltab', { hasText: 'Findings' }).click();
+
+  const advisory = page
+    .locator('.q-findings-list li')
+    .filter({ has: page.locator('.q-finding-id', { hasText: 'schema:advisory:http' }) })
+    .first();
+  await expect(advisory).toBeVisible();
+
+  // The sentence leads, and names the file ONCE — in its own short form.
+  const message = advisory.locator('.q-finding-message');
+  await expect(message).toHaveText(/^Schema note \(/);
+  expect(await message.innerText()).not.toContain('http');
+  // The full id survives, on its own line, still selectable.
+  await expect(advisory.locator('.q-finding-id')).toHaveText(/^schema:advisory:https?:\/\//);
+
+  // Pass E guard: the long id must not reintroduce horizontal overflow.
+  for (const width of [1440, 1280, 1024, 768]) {
+    await page.setViewportSize({ width, height: 800 });
+    const overflow = await page.evaluate(() => {
+      const list = document.querySelector('.q-findings-list');
+      return {
+        list: list === null ? -1 : list.scrollWidth - list.clientWidth,
+        page: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(overflow.list, `findings list @${String(width)}`).toBeLessThanOrEqual(1);
+    expect(overflow.page, `page @${String(width)}`).toBeLessThanOrEqual(1);
+  }
+});

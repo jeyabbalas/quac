@@ -7,6 +7,7 @@ import {
   EXCEL_MAX_CELL_CHARS,
   buildReportModel,
   reportFilename,
+  ruleStatusMessage,
 } from '../../../src/core/report/reportModel';
 import { createFlagStore } from '../../../src/core/flags/flagStore';
 import { EXCEL_MAX_ROWS } from '../../../src/core/ingest/guardrails';
@@ -232,6 +233,35 @@ describe('buildReportModel — Sheet 3 dataset findings', () => {
     expect(findings[0]?.severity).toBe('error');
     const severities = findings.map((f) => f.severity);
     expect(severities).toEqual([...severities].sort((a, b) => ({ error: 0, warning: 1, info: 2 })[a] - ({ error: 0, warning: 1, info: 2 })[b]));
+  });
+});
+
+// UX-09: the Findings panel used to compose the broken-rule string itself.
+// Both surfaces now read it here, and neither carries the ruleId in it.
+describe('ruleStatusMessage', () => {
+  const stat = (overrides: Partial<RuleRunStat>): RuleRunStat => ({
+    ruleId: 'Q099',
+    status: 'broken',
+    violationCount: 0,
+    flagsEmitted: 0,
+    truncated: false,
+    durationMs: 0,
+    ...overrides,
+  });
+
+  it('gives one wording per non-ok status, with no ruleId prefix', () => {
+    expect(ruleStatusMessage(stat({ error: 'boom' }))).toBe('Rule failed to execute: boom');
+    expect(ruleStatusMessage(stat({}))).toBe('Rule failed to execute: unknown error');
+    expect(ruleStatusMessage(stat({ status: 'skipped-disabled' }))).toBe('skipped — disabled');
+    expect(ruleStatusMessage(stat({ status: 'skipped-external' }))).toBe(
+      'not evaluated — requires external reference data',
+    );
+    expect(ruleStatusMessage(stat({ status: 'skipped-inapplicable' }))).toBe(
+      'skipped — target variables not in this dataset',
+    );
+    for (const s of ['broken', 'skipped-disabled', 'skipped-external'] as const) {
+      expect(ruleStatusMessage(stat({ status: s, error: 'boom' }))).not.toContain('Q099');
+    }
   });
 });
 

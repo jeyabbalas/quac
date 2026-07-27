@@ -118,7 +118,7 @@ test('full run: progress → annotated grid + popover → counts → panels → 
   // The report-tab pill lights up.
   await expect(page.locator('.q-tab', { hasText: 'QC Report' }).locator('.q-pill')).toBeVisible();
 
-  // ---- Annotated cells + popover "{ruleId}: …" ----
+  // ---- Annotated cells + popover: message, id on its own meta line ----
   const annotated = page.locator('.dt-cell--annotated');
   await expect(annotated.first()).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(500); // let the virtual scroller settle post-paint
@@ -126,7 +126,15 @@ test('full run: progress → annotated grid + popover → counts → panels → 
   await annotated.first().hover();
   const popover = page.locator('.dt-annotation-popover'); // role="tooltip" portal
   await expect(popover.first()).toBeVisible({ timeout: 10_000 });
-  await expect(popover.first()).toContainText(/[\w:.-]+: .+/);
+  // UX-09: data-table prints `code · source` under every entry, so the message
+  // must not repeat the id — it used to print it twice, one row apart.
+  const entry = popover.locator('.dt-annotation-entry').first();
+  const entryMessage = (await entry.locator('.dt-annotation-message').innerText()).trim();
+  const entryMeta = (await entry.locator('.dt-annotation-meta').innerText()).trim();
+  const entryCode = (entryMeta.split('·')[0] ?? '').trim();
+  expect(entryCode.length).toBeGreaterThan(0);
+  expect(entryMessage.length).toBeGreaterThan(0);
+  expect(entryMessage).not.toContain(entryCode);
   await page.keyboard.press('Escape'); // popover dismisses on Esc
 
   // ---- Severity toggle drives the annotation filter ----
@@ -148,6 +156,16 @@ test('full run: progress → annotated grid + popover → counts → panels → 
   await expect(page.getByText('identical records', { exact: false }).first()).toBeVisible();
   await expect(page.getByText("Column 'notes'", { exact: false }).first()).toBeVisible();
   await expect(page.getByText('external reference data', { exact: false }).first()).toBeVisible();
+  // UX-09: every row leads with its sentence; the id rides its own muted line.
+  const findings = page.locator('.q-findings-list li');
+  await expect(findings.first()).toBeVisible();
+  for (const li of await findings.all()) {
+    const id = (await li.locator('.q-finding-id').innerText()).trim();
+    const msg = (await li.locator('.q-finding-message').innerText()).trim();
+    expect(id.length).toBeGreaterThan(0);
+    expect(msg.length).toBeGreaterThan(0);
+    expect(msg).not.toContain(id);
+  }
 
   await panelTab(page, 'Offenders').click();
   const offenders = page.locator('.q-offenders tbody tr');

@@ -1,5 +1,6 @@
 // Annotation plan (qc-report-spec.md §2): errors-first cell cap, row/column
-// always painted, dataset excluded, renderFlag messages, dedupe-once.
+// always painted, dataset excluded, id-free (renderFlagMessage) messages,
+// dedupe-once.
 import { describe, expect, it } from 'vitest';
 import { createFlagStore } from '../../../src/core/flags/flagStore';
 import {
@@ -53,7 +54,7 @@ describe('buildAnnotationPlan', () => {
     });
   });
 
-  it('renders messages via renderFlag, correction suffix included; metadata carries the correction', () => {
+  it('renders the id-free message, correction suffix included; metadata carries the correction', () => {
     const store = createFlagStore();
     store.add([
       flag({
@@ -67,13 +68,36 @@ describe('buildAnnotationPlan', () => {
     const plan = buildAnnotationPlan(store);
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]?.message).toBe(
-      'Q050: Rent looks cents-scaled; rescaled to dollars. (corrected: 150000 → 1500)',
+      'Rent looks cents-scaled; rescaled to dollars. (corrected: 150000 → 1500)',
     );
+    expect(plan.items[0]?.code).toBe('Q050');
     expect(plan.items[0]?.metadata).toEqual({
       scope: 'cell',
       correction: { before: 150000, after: 1500 },
     });
     expect(plan.capped).toBe(false);
+  });
+
+  // UX-09: data-table renders `code · source` beneath every popover entry, so a
+  // prefixed message printed the id twice, one row apart.
+  it('the ruleId appears once, on `code`, and never inside the message', () => {
+    const ruleId = 'schema:prop:reference_year:value';
+    const store = createFlagStore();
+    store.add([
+      flag({
+        source: 'schema',
+        ruleId,
+        message: '2150 exceeds the maximum 2,100 — expected an integer 2,000–2,100.',
+      }),
+    ]);
+
+    const annotation = buildAnnotationPlan(store).items[0];
+    expect(annotation?.message).toBe(
+      '2150 exceeds the maximum 2,100 — expected an integer 2,000–2,100.',
+    );
+    expect(annotation?.message).not.toContain(ruleId);
+    expect(annotation?.code).toBe(ruleId);
+    expect(annotation?.source).toBe('schema');
   });
 
   it('deduped repeats paint once; default cap is 20k', () => {

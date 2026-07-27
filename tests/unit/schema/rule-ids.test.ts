@@ -25,6 +25,7 @@ describe('§D.5 ruleId builders', () => {
     expect(SCHEMA_DATASET_RULE_IDS.minItems).toBe('schema:dataset:min-items');
     expect(SCHEMA_DATASET_RULE_IDS.empty).toBe('schema:dataset:empty');
     expect(SCHEMA_DATASET_RULE_IDS.pertinence).toBe('schema:dataset:pertinence');
+    expect(SCHEMA_DATASET_RULE_IDS.noOverlap).toBe('schema:dataset:no-overlap');
   });
 
   it('cover every schema ruleId pinned by the P02 fixture manifests', () => {

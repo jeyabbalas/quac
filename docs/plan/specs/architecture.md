@@ -78,8 +78,10 @@ Import rule: nothing under `src/core/` imports from `src/app/` or `src/ui/`.
 | `quac_typed` | engine | ingest (+ after schema load) | schema-driven `TRY_CAST` ladder (`json-schema-subsystem.md §C`); copy of raw when no schema. Durable per (dataset, schema) pair; never mutated |
 | `quac_work` | engine | each run | `CREATE OR REPLACE TABLE quac_work AS SELECT * FROM quac_typed`; corrections CTAS-swap it (atomic) |
 | view **`data`** | engine | each run + after every swap | `CREATE OR REPLACE VIEW data AS SELECT * FROM quac_work`. **All rule SQL targets `data`** |
-| `quac_display` | data-table | `loadData(bytes)` | Report-view grid (library-owned; never touched via DML) |
-| `quac_studio_display` | data-table | `loadData(sample)` | Studio live preview (sampled) |
+| `quac_display_<n>` | data-table | `loadData(bytes)` | Report-view grid (library-owned; never touched via DML) |
+| `quac_studio_display_<n>` | data-table | `loadData(sample)` | Studio live preview (sampled) |
+
+The two display tables carry a **per-build suffix** from `nextDisplayTableName()` (UX-01): data-table's parquet loader names its duckdb-wasm virtual file `<tableName>.parquet`, and DuckDB carries per-path state across the loader's register/drop cycle — so a fixed name made the second build of a differently shaped export fail with `No magic bytes found at end of file`, until the page reloaded. `QUAC_DISPLAY` / `QUAC_STUDIO_DISPLAY` remain the base names; nothing queries either table by a literal name.
 
 Every helper in `tables.ts` that mutates state ends with `bridge.clearQueryCache()` (✅ author-confirmed necessity).
 

@@ -74,6 +74,29 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-8 · **A display grid never reuses another build's parquet path — UX-01 from the manual review.**
+Reproduced first, exactly as filed: example set → Run QC → replace the dataset with `hesp_valid_100.csv` (one column
+fewer) → Run QC, and the grid sat on data-table's "Load data to see the table" while the panels read correctly, with
+two toasts of raw engine text (`No magic bytes found at end of file 'quac_display.parquet'`); `Re-run QC` reproduced
+it verbatim, only a reload cleared it. The review's suggested fix ("dispose and re-create when the column set
+differs") was already the behaviour — `ensureTable` rebuilds on every generation change. The real cause is one layer
+down: data-table names its duckdb-wasm virtual file `<tableName>.parquet` and drops it in a `finally`, but DuckDB
+keeps per-path state across that cycle, so the second `createDataTable({tableName: 'quac_display'})` read the new,
+smaller export against the old file's extent. Fix is `nextDisplayTableName()` in `core/bridge/tables.ts` — a
+monotonic per-build suffix — at both `createDataTable` call sites. The same-generation refresh (`loadData` with no
+options) is left alone and now carries a comment saying why: data-table already generates a unique name there, which
+is precisely why same-dataset re-runs never broke. **The Studio's sample grid had the same latent bug** and was
+measured failing the same way (`TProtocolException … quac_studio_display.parquet`) before being fixed with it.
+Secondary: a failed build no longer leaves the library's half-built instance lying about an empty table — `catch`
+resets `tableGeneration`, swaps in a `.q-panel-note` ("The report grid could not be built for this dataset. Re-run QC
+to rebuild it.") and rethrows a typed `QuacError`, so no DuckDB text reaches a toast; and the presenter now writes
+`renderedGeneration`, which both removes a redundant second full grid build after every reshaped run and (with an
+`announcedFailureGeneration` latch) collapses the review's two identical toasts into one while keeping the retry.
+Deferred, filed not fixed: running a schema against a dataset it shares **no** columns with toasts
+`Parser Error: SELECT clause without selection list` from `schema/validation-run.ts:350` (empty `selectList`) — it
+reproduces on a cold boot with no reshape, so it is a separate bug, not UX-01's third toast.
+Unit 718 → 721, browser 45 → 46, e2e 83 → 85, entry JS 46.3 KB gz (unchanged).
+
 2026-07-26 · merge · UIX-6+UIX-7 merged to main (e5474d4, 0103daf). Zero conflicts — the two branches were a linear
 chain (uix7 branched off uix6's tip), so both `--no-ff` merges replayed clean and the integrated tree is
 byte-identical to uix7's; no cross-branch fixes needed. Integrated tree green: typecheck + lint clean, unit 718 +

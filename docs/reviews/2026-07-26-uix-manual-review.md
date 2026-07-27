@@ -142,6 +142,11 @@ Console: **clean**.
 
 ### UX-01 — After a run, swapping in a dataset with different columns breaks the report grid
 
+- **Status:** **Fixed** (2026-07-26, UIX-8 — see the master-plan progress log). Root cause was one layer below the
+  memo this finding points at: data-table's parquet handle is `<tableName>.parquet`, so the fixed `quac_display`
+  name made every rebuild reuse one duckdb-wasm path. Guarded by `displayGridReshape.browser.test.ts` and
+  `reshapeRerun.spec.ts`. The people.csv variant's third toast (`SELECT clause without selection list`) turned out
+  to be an unrelated bug — it reproduces cold, with no reshape — and is **not** fixed here.
 - **Severity:** Bug
 - **Where:** QC Report · report grid display feed · `src/ui/views/report/` (`reportGrid`), engine export
   to `quac_display.parquet`

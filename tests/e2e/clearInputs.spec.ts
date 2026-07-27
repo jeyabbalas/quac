@@ -1,12 +1,14 @@
 /**
  * UIX-7 golden journey 9: every input is clearable, and an explicit clear
- * invalidates the run, the hash, and the tables. Six passes over the tiny/
+ * invalidates the run, the hash, and the tables. Seven passes over the tiny/
  * fixtures: (1) rules clear after a run strips run paint but keeps the data
  * grid; (2) dataset clear → same-file re-upload builds a FRESH grid (the
  * monotonic-generation regression); (3) per-file ✕ keeps the lint context;
- * (4) unsaved Studio work gates the rules clear behind a confirm; (5) clear
- * all resets the session to first-run; (6) a cleared share link stays cleared
- * across reload (history.replaceState rewrite from live sources).
+ * (4) emptying the rules slot takes its `Details` disclosure with it (UX-05 —
+ * the card used to keep a childless one); (5) unsaved Studio work gates the
+ * rules clear behind a confirm; (6) clear all resets the session to first-run;
+ * (7) a cleared share link stays cleared across reload (history.replaceState
+ * rewrite from live sources).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -33,6 +35,9 @@ const rulesBadge = (page: Page): Locator =>
   page.locator('[data-slot="rules"] .q-slotcard-header .q-badge');
 const rulesSummary = (page: Page): Locator =>
   page.locator('[data-slot="rules"] .q-slotcard-summary');
+/** UX-05: an emptied slot must not advertise detail it does not have. */
+const slotDetails = (page: Page, slot: string): Locator =>
+  page.locator(`[data-slot="${slot}"] .q-slotcard-details`);
 const schemaBadge = (page: Page): Locator =>
   page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first();
 const runButton = (page: Page): Locator => page.locator('.q-runbar-button');
@@ -164,6 +169,36 @@ test('per-file ✕ removes one rules file and keeps the lint context', async ({ 
   await expect(rulesSummary(page)).not.toContainText('data checks pending');
 });
 
+test('emptying the rules slot takes its Details disclosure with it', async ({ page }) => {
+  await page.goto('/quac/');
+  await rulesInput(page).setInputFiles(RULES);
+  await expect(rulesSummary(page)).toContainText('6 rules', { timeout: INGEST_TIMEOUT });
+  await expect(slotDetails(page, 'rules')).toBeVisible();
+
+  // Expanded, which is how the report photographed it.
+  await page.locator('[data-slot="rules"] .q-slotcard-details > summary').click();
+  await expect(page.locator('.q-rulesfile')).toHaveCount(1);
+
+  // Path 1: ✕ on the LAST file. Before the fix the card kept an open,
+  // childless `Details` over an `Empty` badge.
+  await page.getByRole('button', { name: `Remove rules file people_rules.quac.csv` }).click();
+  await expect(rulesBadge(page)).toHaveText('Empty');
+  await expect(slotDetails(page, 'rules')).toBeHidden();
+
+  // Re-loading brings it back POPULATED and COLLAPSED — a cleared card must
+  // not remember an expansion the emptied slot could not honour.
+  await rulesInput(page).setInputFiles(RULES);
+  await expect(rulesSummary(page)).toContainText('6 rules', { timeout: INGEST_TIMEOUT });
+  await expect(slotDetails(page, 'rules')).toBeVisible();
+  await expect(page.locator('.q-rulesfile')).toBeHidden();
+
+  // Path 2: the whole-slot Clear.
+  await clearRulesButton(page).click();
+  await expect(page.getByText('QC rules cleared.')).toBeVisible();
+  await expect(rulesBadge(page)).toHaveText('Empty');
+  await expect(slotDetails(page, 'rules')).toBeHidden();
+});
+
 test('unsaved Studio work gates the rules clear behind a confirm', async ({ page }) => {
   await page.goto('/quac/');
   await loadDatasetAndRules(page);
@@ -205,6 +240,10 @@ test('clear all inputs resets the session to first-run', async ({ page }) => {
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await page.getByLabel('Browse schema files').setInputFiles(SCHEMA);
   await expect(schemaBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  // All three filled, so all three have detail to shed (the UX-05 repro).
+  await rulesInput(page).setInputFiles(RULES);
+  await expect(rulesSummary(page)).toContainText('6 rules', { timeout: INGEST_TIMEOUT });
+  await expect(slotDetails(page, 'rules')).toBeVisible();
   await expect(page.locator('.q-preview')).toBeVisible();
 
   await clearAllButton(page).click();
@@ -224,6 +263,11 @@ test('clear all inputs resets the session to first-run', async ({ page }) => {
   await expect(datasetBadge(page)).toHaveText('Empty');
   await expect(schemaBadge(page)).toHaveText('Empty');
   await expect(rulesBadge(page)).toHaveText('Empty');
+  // UX-05: and no card keeps a disclosure onto nothing. The rules card was
+  // the one that did — its effect updated the frame before emptying the host.
+  for (const slot of ['data', 'schema', 'rules']) {
+    await expect(slotDetails(page, slot)).toBeHidden();
+  }
   // First-run state returns: hero back, preview gone, Share dark, button gone.
   await expect(page.locator('.q-example')).toBeVisible();
   await expect(page.locator('.q-preview')).toBeHidden();

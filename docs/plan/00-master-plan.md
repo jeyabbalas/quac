@@ -74,6 +74,46 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-14 · **A cleared slot forgets the URL it was fetched from — UX-06.**
+Reproduced first in the real browser, exactly as filed, on both halves and in one probe: after clearing the rules
+slot, then the schema slot, then the dataset slot, all three badges read `Empty` while the two check-source fields
+still held `…/hesp_consistency.quac.csv` and `…/core/core.schema.json` and only the dataset's was `''` — the
+asymmetry the finding names, measured in a single call. The SheetPicker half reproduced too: fetching
+`tiny/two_sheets.xlsx` over a loaded `people.csv` and cancelling left the slot reading `people.csv · 12 rows ×
+5 cols` under a field reading `two_sheets.xlsx`. Root cause is exactly the one the report pins.
+`ui-design.md` §5 specifies `createUrlField.clear()` as "empties the typed URL on slot clear" and
+`urlField.ts:17` calls a stale URL something that "must not survive it", but the helper had ONE call site in all
+of `src/` — `datasetCard.ts:131`, inside `registerDatasetClearUi({ clearLocalUi })`. `clearSchema` and
+`clearRules` (`clearInputs.ts:203,213`) are store-only; the two check-source cards have no hook, which is the
+structural reason the bug is theirs alone. The fix gives each of them one, registered on mount and driven from
+`clearInputs.ts` via `clearSchemaSlot()` / `clearRulesSlot()`, so the store reset and the card wipe are a single
+step no path can half-do. Deliberately NOT the shape UIX-13 used one line earlier in that very card:
+`if (status === 'empty') …` is unsound here because `empty` is not a synonym for "the user cleared" — the schema
+store lands on `phase: 'empty'` when a load THROWS (`schema-store.ts:57,110`), and a failed load must keep what
+was typed, since that text is what a typo gets fixed in and what the CORS help's Retry sits beside. Driving it
+from the explicit clears separates the two by construction, and a browser case pins it: a bare
+`clearRuleFiles()` / `resetSchemaSlot()` must leave both fields standing. Two things the report did not have.
+The rules card's `cancelRun()` moves out of its Clear handler into the hook, closing a latent UX-04-class defect
+measured live before the fix — `Clear all inputs` during a hung rules fetch left the field DISABLED at
+`Fetching…` under an `Empty` badge with the dead URL in it, because only the card's OWN Clear released the latch
+that `ui-design.md` §5 already says the cancel owns. And the finding's parenthetical half is fixed on its narrow
+reading: `runIngest` already carries `sourceUrl`, set only by `ingestFromUrl`, so `IngestUi.onUrlAbandoned` fires
+on the SheetPicker's Cancel for the URL leg only — a cancelled picker on a DROPPED file must not wipe a field
+that still describes the loaded dataset, and the error paths stay untouched for the same reason. The rule that
+falls out, now pinned in both specs: the field empties on an explicit slot clear or an abandoned URL load, never
+on a failed one — it holds the user's typing, not a mirror of the slot, which a share-link boot proves by filling
+three slots with three empty fields. Verified live on the rebuilt preview across every path: both per-slot
+clears, `Clear all inputs`, `✕` on a non-last file (field kept, focus on the next row's `✕`) versus the last one
+(field emptied, `Details` hidden and collapsed), a 404 rules fetch and a `notes.txt` schema fetch (both `Error`,
+both fields kept, then cleared), a two-root schema dismissed into `Warning · 15 files · choose the index schema`
+whose whitespace-separated multi-URL string went wholesale, `Clear all inputs` mid-hung-fetch (now `Empty`,
+enabled, `Fetch`, `''`), and the SheetPicker cancel on both legs — console QuaC-silent throughout (only the
+extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 3 of 4 new browser cases
+and 6 e2e tests fail, while every guard — the store-reset case, the non-last `✕`, the failed fetch, the cancelled
+confirm, the file-leg picker — passes either way. Left standing, deliberately: nothing here changes what a
+*replacement* does to the field, which the review does not raise and which keeps the URL by the same rule.
+Browser 52 → 56 (12 files), e2e 95 → 97, unit 734 unchanged, entry JS 46.6 → 46.7 KB gz.
+
 2026-07-26 · UIX-13 · **An emptied slot advertises no detail it does not have — UX-05.**
 Reproduced first in the real browser, exactly as filed, and on all three paths rather than the one the report
 walks: `Load example files` → `Clear all inputs` left the QC Rules card at badge `Empty` with its `<details>`

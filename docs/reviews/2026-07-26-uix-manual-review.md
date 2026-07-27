@@ -350,6 +350,18 @@ Console: **clean**.
 
 ### UX-06 — A cleared slot still shows the URL of the file it no longer holds
 
+- **Status:** **Fixed** (2026-07-26, UIX-14 — see the master-plan progress log). The diagnosis is exactly right,
+  including the one-call-site count; the structural reason it is the two check-source cards is that only the
+  Dataset card has a hook `clearInputs.ts` can reach, so the fix gives the other two the same one rather than
+  calling `urlField.clear()` from their click handlers — which would miss `Clear all inputs` and the `✕` that
+  empties the slot. The suggestion's parenthetical is answered by splitting it: an **abandoned** URL load empties
+  the field (the SheetPicker's Cancel, URL leg only — the file leg must not wipe a field describing the *loaded*
+  dataset), a **failed** one does not, because that text is what a typo gets fixed in and what the CORS Retry
+  sits beside. Reproducing it turned up a third defect of the UX-04 class the report does not have:
+  `Clear all inputs` during a hung rules fetch left the field DISABLED at `Fetching…` under an `Empty` badge,
+  since only the card's own Clear released the latch `ui-design.md` §5 says the cancel owns; that release now
+  lives in the shared hook. Guarded by `slotClearUrlField.browser.test.ts`, a new pass in `clearInputs.spec.ts`
+  plus additions to two of its others, and additions to `hungFetch.spec.ts` and `ingest.spec.ts`.
 - **Severity:** Bug
 - **Where:** Load view · JSON Schema and QC Rules slot cards · `src/ui/views/load/`
 - **Repro:**

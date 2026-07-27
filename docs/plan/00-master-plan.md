@@ -74,6 +74,42 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-12 · **A slow fetch is visible, and the way out is on screen — UX-04.**
+Reproduced first in the real browser, exactly as filed, against a throwaway host on `:4201` that accepts the request
+and never ends the response (its log confirms both requests left the browser). Sampling anchored to each card's own
+form `submit` — an interval armed before the click races it — at 300 ms / 1.5 s / 4 s: badge `Empty`, summary blank,
+Clear `hidden`, on **both** check-source slots, with the JSON Schema card visually indistinguishable from cold (the
+hero still up). One correction to the filing, which called the two identical: the rules card *does* swap its button
+to `Fetching…`; the schema card, which has no busy latch at all, shows **nothing**. Three defects, not one. (1) The
+schema projection's loading branch was dead code: both loaders publish `{ phase: 'loading', set: null }`
+(`schema-store.ts:50/75`) and the emptiness guard above it matched `set === null` first. (2) The rules projection had
+the same inversion — but the review's suggested reorder **fixes only the schema half**, because `addRuleUrls`
+published *nothing* until the bytes were in hand: its first `phase: 'loading'` came from `addRuleFiles`, downstream of
+the fetch. It now enters the phase before the loop, `loadSchemaUrls`' and `ingestController.ts:51`'s pattern, and
+holds it through fetch → parse → lint rather than settling and re-entering (which would flicker the badge and re-hide
+Clear in the gap before `loadCodecs()` resolves). That opened one new hazard, guarded explicitly: when every URL
+fails, `addRuleFiles` returns at its own empty guard and moves nothing, so `addRuleUrls` settles the phase itself —
+back to `empty`/`ready` by file count, reproducing the pre-UX-04 state exactly (`summarizeSlot` still reads `error`,
+its empty guard needing BOTH lists empty). (3) The rules `Clear` cancelled the store but not the card: `run()`
+releases `busy` in `.finally()`, which for a hung fetch never runs, so a successful clear left the field dead at
+`Fetching…` over an `Empty` badge — two surfaces disagreeing again. `run()` is now generation-counted and the Clear
+handler calls `cancelRun()`, which also stops the late settle from unlatching a *newer* fetch. The schema card gains
+the `Fetching…` affordance it never had, derived from the phase rather than latched around the call, so Clear
+releases it for free. **Knock-on, intended:** `slots.{schema,rules}` now genuinely report `loading`, so
+`loadView`'s `anyFilled` turns true the moment a check-source fetch starts — the hero recedes and `Clear all inputs`
+appears for the duration, which is the honest reading. `runReadiness` is untouched (it reads the raw stores for those
+two legs). This discharges the deferred UIX-7 niggle recorded at line 207 below; the schema half was recorded
+nowhere. Verified live on the rebuilt preview: both slots read `Loading…` / "Loading schema files…" / "Loading rules
+files…" with Clear **visible and enabled** and `Fetching…` up at all three samples; Clear returns each to `Empty`
+with its toast, drops the param from the bar, and leaves the field typeable; a real 14-file HESP crawl off `:4199`
+resolves `Valid · 14 files · root: core/core.schema.json`; a 404 rules URL lands `Error · 0 files · 0 rules · 1 fetch
+error` with no stuck badge; and `Load example files` → `Run QC` still gives 39 / 13 / 10 / 6, `101 rows · 266 columns
+· 20 rules run · 2 skipped`, pill 62, zero toasts — console QuaC-silent throughout (only the extension's own
+`chrome-extension://…` lines). Pin-checked against the un-fixed code: both e2e cases sat at `Empty` for the full 30 s
+timeout, and 4 of the 5 new unit cases failed on `expected 'empty' to be 'loading'`. The fifth (all-URLs-failed
+settles) passes either way by construction — it guards the stranding hazard this change introduces, not the original
+bug, and is kept for that. Unit 727 → 734, e2e 92 → 94, browser 49 unchanged, entry JS 46.5 → 46.6 KB gz.
+
 2026-07-26 · UIX-11 · **A focus filter that matches nothing is a failed best effort, not an empty grid — UX-03.**
 Reproduced first in the real browser, exactly as filed: example set → Run QC (39/13/10/6, 101×266) → Offenders →
 `H004` (`error · interview_date · Count 1 · 1.0%`) → `Active filters: SQL H004` over **`0 / 101 rows`**, no toast, on

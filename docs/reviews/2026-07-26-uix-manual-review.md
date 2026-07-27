@@ -266,6 +266,19 @@ Console: **clean**.
 
 ### UX-04 — A URL fetch never shows `Loading`, so the Clear that is meant to cancel a hung fetch is hidden
 
+- **Status:** **Fixed** (2026-07-26, UIX-12 — see the master-plan progress log). Reproduced exactly as filed, with the
+  sampling anchored to each card's own form `submit`. The suggested reorder is right and was necessary, but it is
+  **sufficient only for the schema half**: `addRuleUrls` published *nothing* until the bytes were in hand — its first
+  `phase: 'loading'` came from `addRuleFiles`, downstream of the fetch — so no guard order could have surfaced the
+  rules fetch window. It now enters the phase before the loop and holds it through fetch → parse → lint, with an
+  explicit settle for the all-URLs-failed path (`addRuleFiles` returns at its own empty guard and would otherwise
+  strand the badge at `Loading…`). A third defect this repro turned up: the rules `Clear` cancelled the *store* but
+  not the *card* — `run()` releases `busy` in a `.finally()` that a hung request never reaches, so a successful clear
+  left the field disabled at `Fetching…` over an `Empty` badge; `run()` is now generation-counted and Clear releases
+  the latch. One correction to the report above: the two slots do **not** behave identically — the rules card does
+  swap its button to `Fetching…`; the schema card, which had no busy latch at all, showed nothing. It has one now,
+  derived from the phase so Clear releases it. Guarded by `hungFetch.spec.ts` (golden journey 12) and new
+  `summarizeSlot` cases in `schemaStore.test.ts` / `rulesStore.test.ts`.
 - **Severity:** Bug
 - **Where:** Load view · JSON Schema and QC Rules slot cards · `src/core/schema/schema-store.ts:133-134`,
   `src/core/rules/rules-store.ts:390-393`

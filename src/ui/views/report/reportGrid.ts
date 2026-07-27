@@ -16,11 +16,13 @@
 import { createDataTable } from '@jeyabbalas/data-table';
 import type { DataTable, NewAnnotation } from '@jeyabbalas/data-table';
 import '@jeyabbalas/data-table/styles';
+import { QuacError } from '../../../app/errors';
 import { getBridge } from '../../../core/bridge/bridge';
 import {
   DISPLAY_EXPORT_SQL,
   QUAC_DISPLAY,
   copyToParquetBytes,
+  nextDisplayTableName,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import type { PresentPayload } from '../../../core/pipeline';
@@ -33,6 +35,15 @@ export interface SeverityToggles {
 }
 
 const ADD_MANY_CHUNK = 2000;
+
+/**
+ * The one thing said about a grid build that failed. Engine text (DuckDB
+ * binder/parquet errors) is NOT a user message — it rides along as `cause`
+ * and never reaches the toast (UX-01).
+ */
+const GRID_FAILED_MESSAGE = 'The report grid could not be built for this dataset.';
+const GRID_FAILED_HINT = 'Re-run QC to rebuild it.';
+const GRID_FAILED_NOTE = `${GRID_FAILED_MESSAGE} ${GRID_FAILED_HINT}`;
 
 let table: DataTable | undefined;
 let tableGeneration = 0;
@@ -71,6 +82,11 @@ async function ensureTable(
   showLocalProgress: boolean,
 ): Promise<DataTable> {
   if (table !== undefined && tableGeneration === generation) {
+    // Deliberately option-less: with no tableName, data-table mints a fresh
+    // generated one (and so a fresh virtual parquet path) for every refresh.
+    // Do NOT "fix" this by passing a stable name — reusing one path across
+    // loads of different sizes is exactly the UX-01 failure (see
+    // nextDisplayTableName). This is why same-dataset re-runs never broke.
     if (bytes !== null) await table.loadData(bytes.slice().buffer);
     return table;
   }
@@ -98,7 +114,9 @@ async function ensureTable(
       container: gridHost,
       source: source.slice().buffer,
       sourceFormat: 'parquet',
-      tableName: QUAC_DISPLAY,
+      // A FRESH name per build (UX-01) — never the bare constant. See
+      // nextDisplayTableName: the name is also the duckdb-wasm parquet path.
+      tableName: nextDisplayTableName(QUAC_DISPLAY),
       bridge,
       persistence: false,
       // NOT the library default ('auto'), which flips the whole grid dark under
@@ -115,6 +133,21 @@ async function ensureTable(
       pendingTooltips = null;
     }
     return t;
+  } catch (err) {
+    // createDataTable rejected: the half-built instance is already mounted in
+    // gridHost showing the library's "Load data to see the table" — a lie, on
+    // a dataset that IS loaded. Replace it with our own note, and clear the
+    // memo so the next attempt rebuilds instead of being blocked by a stale
+    // generation (previewPane.ts does the same).
+    tableGeneration = 0;
+    const note = document.createElement('p');
+    note.className = 'q-panel-note';
+    note.textContent = GRID_FAILED_NOTE;
+    host.replaceChildren(note);
+    throw new QuacError('BRIDGE_FAILED', GRID_FAILED_MESSAGE, {
+      hint: GRID_FAILED_HINT,
+      cause: err,
+    });
   } finally {
     if (progress !== null) {
       progress.dispose();

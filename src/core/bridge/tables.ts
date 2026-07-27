@@ -14,6 +14,25 @@ export const QUAC_DISPLAY = 'quac_display';
 export const QUAC_STUDIO_DISPLAY = 'quac_studio_display';
 
 /**
+ * Base names for the two data-table grids, suffixed per instance (UX-01).
+ * data-table's parquet loader derives its duckdb-wasm virtual file from the
+ * table name — `registerFileBuffer('<tableName>.parquet', bytes)` … `finally
+ * { dropFile(...) }` — so a FIXED name means every grid build registers and
+ * drops the same path with different-sized content. DuckDB keeps per-path
+ * state across that cycle: the second build of a differently shaped dataset
+ * reads the new bytes against the old file's extent and fails with
+ * "No magic bytes found at end of file", unrecoverably (only a reload frees
+ * the path). A fresh name per build gives a fresh path, so nothing is
+ * inherited. Monotonic like ingestController's generation counter: never
+ * reused within a session, even after a table is dropped.
+ */
+let displayTableSeq = 0;
+export function nextDisplayTableName(base: string): string {
+  displayTableSeq += 1;
+  return `${base}_${String(displayTableSeq)}`;
+}
+
+/**
  * Display-bytes export SQL (architecture.md §9): data-table assigns __rowid__
  * in insertion order, so exporting ORDER BY __row__ with __row__ excluded
  * makes __rowid__ === __row__ after loadData (Verified facts V7).

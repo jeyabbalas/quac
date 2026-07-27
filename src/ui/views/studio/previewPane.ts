@@ -22,6 +22,7 @@ import {
   STUDIO_SAMPLE_ROW_CAP,
   STUDIO_SAMPLE_SQL,
   copyToParquetBytes,
+  nextDisplayTableName,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
@@ -107,6 +108,8 @@ export function createPreviewPane(): PreviewPane {
     if (table !== undefined && tableGeneration === generation) {
       if (!refresh) return;
       const bytes = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);
+      // Option-less on purpose — see reportGrid.ts: a generated table name per
+      // refresh means a fresh parquet path, which is what keeps this safe.
       await table.loadData(bytes.slice().buffer);
       return;
     }
@@ -133,7 +136,10 @@ export function createPreviewPane(): PreviewPane {
         container: gridHost,
         source: source.slice().buffer,
         sourceFormat: 'parquet',
-        tableName: QUAC_STUDIO_DISPLAY,
+        // Fresh per build, like the report grid (UX-01): the table name is
+        // also data-table's duckdb-wasm parquet path, and reusing one path
+        // across differently shaped samples breaks the rebuild.
+        tableName: nextDisplayTableName(QUAC_STUDIO_DISPLAY),
         bridge,
         persistence: false,
         // See reportGrid.ts: the default 'auto' would turn this grid dark on a

@@ -14,7 +14,7 @@
 
 | Column | Required | Type / allowed values | Default | Notes |
 |---|---|---|---|---|
-| `rule_id` | yes | `[A-Za-z][A-Za-z0-9_-]*`, unique across ALL loaded files | — | Provenance in annotations/report (rendered `{ruleId}: {message}`) |
+| `rule_id` | yes | `[A-Za-z][A-Za-z0-9_-]*`, unique across ALL loaded files | — | Provenance in annotations/report (`{ruleId}: {message}` in `__review` cells; carried separately by the popover's `code` and the Findings panel's id line) |
 | `rule_type` | yes | `validate` \| `correct` \| `external` (case-insensitive) | — | Broad processing category ONLY: flag / mutate / not-executable. Exhaustive — see §3 |
 | `rule_scope` | yes | `row` \| `column` \| `dataset` \| `longitudinal` | — | Drives how `condition` is interpreted (§4). `longitudinal` executes identically to `row` (uniform SELECT-wrapping makes window functions legal); it is documentation + lint hint |
 | `target_variables` | yes for `row`/`column`/`longitudinal`; optional for `dataset` | **Pipe-separated** column names: `adult_count|child_count|household_size` (whitespace trimmed) | empty | Determines which `<col>__review` sister columns receive the comment, pertinence, and header-tooltip aggregation. Pipe never collides with comma/semicolon CSV delimiters (German-locale Excel saves `;`-delimited) |

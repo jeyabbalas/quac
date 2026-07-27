@@ -38,7 +38,7 @@ src/
     flags/
       flag.ts                 # canonical QCFlag type (§5)
       flagStore.ts            # dedupe, indexes, aggregates, caps
-      messages.ts             # rendering: "{ruleId}: {message}" (+ correction suffix)
+      messages.ts             # rendering: renderFlag "{ruleId}: {message}" / renderFlagMessage "{message}" (+ correction suffix)
     pertinence.ts             # shared data↔schema/rules coverage check (thresholds in json-schema-subsystem.md §E.5)
     pipeline.ts               # run orchestration: stages, progress, cancel token
     report/
@@ -102,7 +102,7 @@ interface QCFlag {
 }
 ```
 
-Rendering rule (annotations, `<col>__review` cells, dataset-findings lists): **`"{ruleId}: {message}"`**; when `correction` is present append **`" (corrected: {before} → {after})"`**. Implemented once in `core/flags/messages.ts`; no other module formats flag text.
+Rendering rule: `renderFlag` → **`"{ruleId}: {message}"`** for `<col>__review` cells, which have one cell and one string; `renderFlagMessage` → **`"{message}"`** for the grid annotations/popover (data-table prints `code · source` itself) and the dataset-findings list (its own muted id line), so neither prints the id twice (UX-09). Both append **`" (corrected: {before} → {after})"`** when `correction` is present, from one shared helper. Implemented once in `core/flags/messages.ts`; no other module formats flag text.
 
 ## 6. QC run pipeline (`core/pipeline.ts`)
 

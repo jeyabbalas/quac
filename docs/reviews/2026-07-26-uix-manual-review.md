@@ -483,6 +483,19 @@ Console: **clean**.
 
 ### UX-09 — The Findings list buries each message behind a machine id up to 111 characters long
 
+- **Status:** **Fixed** (2026-07-27, UIX-17 — see the master-plan progress log). The suggested fix was taken as filed: the
+  findings list and the grid popover now take a bare `renderFlagMessage`, and `renderFlag` (unchanged in name, signature and
+  output) is a composition of it, so the `__review` cells this finding exempts are untouched by construction. Two
+  clarifications from driving it. The measured prefixes are the *rendered row* lengths — id plus the severity chip's own word
+  (`error ` = 6, `info ` = 5); the ids themselves are 32, 4, 30, 101, 106, 91, 85, 4, 4, so the longest is **106**, not 111.
+  And the popover was the easy half but the panel was not: the finding says to "let the existing id/source line carry the
+  identifier", and the popover does already have one (data-table prints `code · source` itself) — the **findings list had
+  none**, so the id needed a home rather than a deletion. It now sits on a muted mono second line, the same split Sheet 3 and
+  the Offenders panel already make. The id scheme is untouched, which retires the `relativePath` change
+  `phase-14-run-report.md:117-119` had deferred to P19/P20 as a spec deviation. Guarded by 6 new unit cases across
+  `messages.test.ts` / `annotations.test.ts` / `reportModel.test.ts`, a new `loadExample.spec.ts` pass (the only path that
+  produces URL ids — `runQc.spec` uploads its schema files and gets short ones) carrying a 1440/1280/1024/768 overflow sweep,
+  and two invariants added to `runQc.spec.ts`.
 - **Severity:** Friction
 - **Where:** QC Report · Findings panel · `src/core/flags/messages.ts` rendering
 - **Repro:**

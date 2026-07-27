@@ -74,6 +74,38 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-27 · UIX-17 · **The Findings list leads with its message, not a 106-character machine id — UX-09.**
+Reproduced first in the real browser, and the filed prefix lengths reconcile exactly once you know what they counted: the
+report's 38, 10, 36, 106, 111, 96, 90, 9, 9 are the *rendered row* prefixes, i.e. the id plus the severity chip's own word
+(`error ` = 6, `info ` = 5); the ids themselves measure 32, 4, 30, 101, 106, 91, 85, 4, 4 — same nine rows, same order, and
+the longest is 106. The doubling the finding names is verbatim in the DOM: row 5 reads
+`schema:advisory:http://…/core/categories/household_composition.json: Schema note (core/categories/household_composition.json): …`,
+the file named twice fifteen characters apart. The fix is display-composition only, and that is the point worth naming: P14
+had already recorded this exact tension as **Deferred** (`phase-14-run-report.md:117-119` — "`relativePath` would read far
+better, but §D.5 pins the id on `fileId`, so changing it is a spec deviation for P19/P20 to weigh"). Giving the two
+id-carrying surfaces the bare message answers it without spending that deviation: `schema:advisory:<fileId>` is untouched, so
+`seeded-violations.json` and `mini_expected_flags.json` never move. `renderFlag` keeps its name, signature and output and is
+now a composition of the new `renderFlagMessage` over a shared `correctionSuffix`, so the Excel `<col>__review` cells — the
+one surface with nowhere else to put the id — are unchanged BY CONSTRUCTION, and `renderFlag(f) === \`${f.ruleId}: ${renderFlagMessage(f)}\``
+is itself a unit test. The popover needed one line: `annotations.ts` already set `code`/`source`, and data-table renders
+`code · source` beneath every entry, so prefixing the message was printing `schema:prop:reference_year:value` twice, one row
+apart; it now appears once, in `.dt-annotation-meta`. Two things the desk design did not have. The panel was carrying its own
+copy of the broken-rule string (`reportPanels.ts:382` vs `reportModel.ts:381-383`) despite reportModel's header promising the
+two "can never disagree about a rule's status wording" — that is now `ruleStatusMessage()`, shared, and Sheet 3's bytes are
+identical. And the CSS rule that stopped URL ids overflowing (`li > span:not(.q-pill)`) targeted the very span the markup
+change removes, so it had to be re-expressed on `.q-finding-body`/`.q-finding-message`/`.q-finding-id` rather than left
+behind — dropping it silently would have handed back exactly the overflow Pass E cleared. Measured after: same 9 rows in the
+same order, every message id-free and every id intact on its own line, counts unchanged (39/13/10/6, 101 · 266 · 20 · 2,
+pill 62), and the panel now shows four complete findings where two and a half fit before. Overflow re-measured by shrinking
+the panel to 420/340/280/220/180 px — zero at every step, down to a 144 px list, far below any real viewport. Console
+QuaC-silent throughout (only the extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 6 of
+the new unit cases fail and both new e2e assertions fail on the UX-09 line, while the three `renderFlag` cases,
+`download.spec`'s `Q047:` + corrected-suffix workbook assertions and `zeroOverlapSchema`'s findings text pass either way.
+Left standing, deliberately: the Offenders panel and Sheets 3/4 (already id-in-its-own-column — the review says they read
+fine), the `__review` prefix, and `qc-report-spec.md` §1's "no other module formats flag text" invariant, which still holds
+with two renderers because both live in that one module.
+Unit 750 → 755, e2e 99 → 100, browser 60 unchanged, entry JS 46.8 KB gz unchanged.
+
 2026-07-27 · UIX-16 · **A rule disabled by an untyped column says so in plain language — UX-08.**
 Reproduced first in the real browser, exactly as filed and to the number: `Load example files` → `Valid · 3 files ·
 22 rules`, one click on the JSON Schema card's `Clear` → `Warning · 3 files · 22 rules · **12 lint errors**`, every

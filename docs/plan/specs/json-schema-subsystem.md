@@ -325,6 +325,8 @@ schema:advisory:<fileId>          category/root-level $comment soft checks (info
 
 Stable for an unchanged schema set (allOf index is positional — acceptable: ids are within-report provenance, not cross-version keys).
 
+`schema:advisory:<fileId>` repeats the file that its own message already names in short form (`"Schema note ({file}): {text}"`, §D.6), and for URL-loaded sets `fileId` is the retrieval URL — 106 characters in the bundled example. That duplication is resolved **display-side** (`qc-report-spec.md` §1): the Findings panel and the grid popover print the message and carry the id separately. **`fileId` stays the id's basis** — the `relativePath` swap deferred in `phase-14-run-report.md:117-119` is not needed and was not taken, so no spec deviation is spent here and the ids pinned in `tests/fixtures/hesp/data/seeded-violations.json` and `tests/fixtures/synthetic/mini/mini_expected_flags.json` are untouched.
+
 ### D.6 Keyword coverage (exactly the HESP inventory + fallback — every row needs a golden test)
 
 | Keyword (≈count in HESP) | Handling | Scope | Template / behavior |

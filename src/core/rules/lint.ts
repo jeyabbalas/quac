@@ -2,7 +2,9 @@
 // ParsedRuleFile; `lintRuleFiles` adds stage 2 (row structural checks) and
 // stage 3 (assertion grammar / SELECT-in-row-scope) — static, synchronous.
 // `lintRuleFilesWithDataset` (P12) layers the dataset-dependent stages on top:
-// stage 4 (EXPLAIN dry-run of the EXACT engine wrappers → `sql-error`),
+// stage 4 (EXPLAIN dry-run of the EXACT engine wrappers → `sql-error`;
+// binder errors are surfaced verbatim EXCEPT the untyped-column class of V23,
+// which gets a plain-language message and keeps the engine text in `detail`),
 // stage 5 (P13: QuickJS `compileCheck` of js correction expressions →
 // `js-error`; dataset-INdependent, so it runs in the no-dataset branch too —
 // the sandbox loads lazily, at most once, and only when a js correction rule
@@ -72,6 +74,78 @@ const RULE_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SMART_QUOTES_RE = /[‘’“”]/;
 const VALID_TYPES = ['validate', 'correct', 'external'];
 const VALID_SCOPES = ['row', 'column', 'dataset', 'longitudinal'];
+
+/**
+ * UX-08 — the binder-error shapes that mean "this column is stored as text"
+ * rather than "you wrote something wrong". V23: duckdb-wasm does not implicitly
+ * cast VARCHAR, so on a schema-less (or un-schema'd-column) dataset every
+ * arithmetic and comparison rule fails to bind. All three families were read
+ * off the live app with the HESP example after clearing the schema — 3 × "No
+ * function matches", 4 × "Cannot compare values of type", 5 × "Cannot mix
+ * values of type" (BETWEEN and CASE). "Could not choose a best candidate"
+ * covers the overload-ambiguity form (e.g. `strftime(VARCHAR, …)`).
+ *
+ * The typo class is separated by construction: `Referenced column "x" not
+ * found in FROM clause!` carries no VARCHAR token. The phrase gate is what
+ * additionally rejects binder errors that merely MENTION VARCHAR for reasons a
+ * schema would not fix (`UNNEST() can only be applied to lists … not VARCHAR`,
+ * `array_extract(INTEGER[], VARCHAR)`).
+ */
+const UNTYPED_BINDER_PHRASES = [
+  'No function matches',
+  'Could not choose a best candidate',
+  'Cannot compare values of type',
+  'Cannot mix values of type',
+];
+const VARCHAR_TOKEN_RE = /\bVARCHAR\b/;
+/** Named columns beyond this are summarised as "and N more". */
+const UNTYPED_COLUMN_CAP = 3;
+
+/**
+ * Tested against the FIRST LINE only, never the full `detail`: DuckDB appends
+ * a `LINE 1:` echo of the offending SQL, and a rule may legitimately contain
+ * the word VARCHAR — `expandAssertion`'s match_regex branch even generates
+ * `CAST({c} AS VARCHAR)`. Matching the echo would reclassify unrelated errors.
+ */
+function isUntypedColumnBinderError(firstLine: string): boolean {
+  if (!firstLine.includes('Binder Error')) return false;
+  if (!VARCHAR_TOKEN_RE.test(firstLine)) return false;
+  return UNTYPED_BINDER_PHRASES.some((phrase) => firstLine.includes(phrase));
+}
+
+/** Word-bounded, case-insensitive mention of `column` anywhere in `text`. */
+function mentionsColumn(text: string, column: string): boolean {
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+}
+
+/**
+ * The UX-08 replacement for the raw binder text. `TRY_CAST` names the real
+ * column only when exactly one is implicated, because that is the only case
+ * where it is provably the right one: with several, the binder does not say
+ * which it choked on, and the HESP set is full of rules whose targets mix a
+ * numeric column with legitimately textual identifiers (Q003 is
+ * `record_id | household_id | wave` — only `wave` wants a cast). "Stored as
+ * text" for the same reason: it is a storage fact, true even of a column whose
+ * content is words. The placeholder spelling `col` matches V23's own prose.
+ */
+function untypedColumnMessage(columns: readonly string[]): string {
+  const shown = columns.slice(0, UNTYPED_COLUMN_CAP);
+  const extra = columns.length - shown.length;
+  const list = extra > 0 ? `${shown.join(', ')} and ${String(extra)} more` : shown.join(', ');
+  if (columns.length === 1) {
+    return (
+      `${list} is stored as text in this dataset, so DuckDB cannot compare or calculate ` +
+      `with it. Load a JSON Schema to type it, or cast it in the rule — ` +
+      `TRY_CAST(${list} AS DOUBLE).`
+    );
+  }
+  return (
+    `${list} are stored as text in this dataset, so DuckDB cannot compare or calculate ` +
+    `with them. Load a JSON Schema to type them, or cast them in the rule — ` +
+    `e.g. TRY_CAST(col AS DOUBLE).`
+  );
+}
 
 /** Deterministic order: file-level first, then by row, then code, then column. */
 function sortIssues(issues: RuleLintIssue[]): RuleLintIssue[] {
@@ -358,6 +432,29 @@ export interface DatasetLintContext {
 const sqlLikeRule = (rule: QCRule): boolean =>
   rule.ruleType === 'validate' || rule.ruleType === 'correct';
 
+/**
+ * Column → DuckDB storage type for the canonical `data` view, as the EXPLAINs
+ * above just saw it. Deliberately a local six-liner rather than an import of
+ * `core/schema/casting`'s `describeColumns`: `engine.ts` already reads types
+ * this way at three call sites, `sql.ts` hard-codes the same bare `data`
+ * literal in every wrapper, and casting.ts:24-34 keeps its runner interface
+ * separate from the rules engine's on purpose. Importing it would also pull
+ * the schema-translation graph into the rules-lint lazy chunk.
+ *
+ * No caching hazard: both paths that re-point the view (`ctas` and
+ * `refreshDataView`, tables.ts:78,96) clear the bridge's SELECT cache, and
+ * `rulesSlotCard` clears it again before installing a context.
+ */
+async function describeDataTypes(runner: SQLRunner): Promise<Map<string, string>> {
+  const rows = await runner.query<{ column_name: string; column_type: string }>('DESCRIBE data');
+  const types = new Map<string, string>();
+  for (const row of rows) {
+    if (row.column_name === '__row__') continue;
+    types.set(row.column_name, row.column_type.replace(/\(.*$/, '').toUpperCase());
+  }
+  return types;
+}
+
 export interface JsLintOptions {
   /**
    * Lazy sandbox source (the app passes `loadJSSandbox` from sandbox-loader).
@@ -436,6 +533,25 @@ export async function lintRuleFilesWithDataset(
 ): Promise<RuleFileLintResult[]> {
   const collected = collectStaticIssues(files);
   const results: RuleFileLintResult[] = [];
+
+  // UX-08 column-type probe, memoized across every file in this pass (`dryRun`
+  // is rebuilt per rule inside the per-file loop below, so a nested memo would
+  // re-DESCRIBE once per file). `undefined` = not probed yet, `null` = the
+  // probe failed. Failing is non-fatal BY DESIGN: `relint` (rules-store.ts:67)
+  // has no try/catch of its own, so a rejection escaping here would strand the
+  // card at `phase: 'loading'` with its badge stuck — a diagnosis is never
+  // worth that, and without it stage 4 simply reports what it always did.
+  let dataTypes: Map<string, string> | null | undefined;
+  const columnTypes = async (runner: SQLRunner): Promise<Map<string, string> | null> => {
+    if (dataTypes === undefined) {
+      try {
+        dataTypes = await describeDataTypes(runner);
+      } catch {
+        dataTypes = null;
+      }
+    }
+    return dataTypes;
+  };
 
   // ---- stage 5: QuickJS compile checks (before stage 4, so a compile-broken
   // rule skips its dry-run exactly like any other error-severity rule) ----
@@ -534,13 +650,43 @@ export async function lintRuleFilesWithDataset(
       if (rule.condition === '') continue;
       const targets = [...new Set(rule.targetVariables)];
 
-      const dryRun = async (sql: string, csvColumn: string, text: string): Promise<boolean> => {
+      /**
+       * `hintColumns` are the columns this SQL was actually built from — passed
+       * in rather than derived from `rule.targetVariables`, because the two
+       * diverge exactly where it matters: a column-scope assertion's condition
+       * text (`in_range(0, 120)`) names no column at all, and a correct rule's
+       * dry-run covers only `pairs[0]` with `__value__` still unsubstituted.
+       */
+      const dryRun = async (
+        sql: string,
+        csvColumn: string,
+        text: string,
+        hintColumns: readonly string[],
+      ): Promise<boolean> => {
         try {
           await ctx.runner.query(`EXPLAIN ${sql}`);
           return true;
         } catch (err) {
           const detail = err instanceof Error ? err.message : String(err);
           const firstLine = detail.split('\n', 1)[0] ?? detail;
+          // UX-08: a binder error the user cannot act on becomes one they can.
+          // Fails CLOSED — unless the class is recognised AND at least one text
+          // column can be named, the engine's own words stand exactly as before.
+          let explanation = firstLine;
+          if (isUntypedColumnBinderError(firstLine)) {
+            const types = await columnTypes(ctx.runner);
+            if (types !== null) {
+              const named = hintColumns.filter((c) => types.get(c) === 'VARCHAR');
+              // The scan is what reaches a column the rule uses but does not
+              // target — a schema is loaded, one un-schema'd column stays text.
+              for (const column of ctx.datasetColumns) {
+                if (types.get(column) !== 'VARCHAR') continue;
+                if (named.includes(column)) continue;
+                if (mentionsColumn(text, column)) named.push(column);
+              }
+              if (named.length > 0) explanation = untypedColumnMessage(named);
+            }
+          }
           issues.push({
             severity: 'error',
             code: 'sql-error',
@@ -549,7 +695,7 @@ export async function lintRuleFilesWithDataset(
             rowNumber: rule.rowNumber,
             csvColumn,
             message:
-              `${csvColumn} failed the SQL dry-run: ${firstLine}` +
+              `${csvColumn} failed the SQL dry-run: ${explanation}` +
               (SMART_QUOTES_RE.test(text)
                 ? ' (the SQL contains smart quotes — did you paste from a word processor?)'
                 : ''),
@@ -561,7 +707,13 @@ export async function lintRuleFilesWithDataset(
 
       if (rule.ruleScope === 'dataset') {
         if (rule.ruleType === 'validate') {
-          await dryRun(datasetFetchSQL(rule.condition, datasetCap + 1), 'condition', rule.condition);
+          // Dataset scope has no targets — the text scan carries the diagnosis.
+          await dryRun(
+            datasetFetchSQL(rule.condition, datasetCap + 1),
+            'condition',
+            rule.condition,
+            [],
+          );
         }
         continue;
       }
@@ -572,13 +724,19 @@ export async function lintRuleFilesWithDataset(
           const exp = expandAssertion(assertion.assertion, target);
           const sql =
             exp.kind === 'row-condition' ? violFetchSQL(exp.sql, [target], rowCap) : exp.countSql;
-          if (!(await dryRun(sql, 'condition', rule.condition))) break;
+          // The assertion's own text names no column — only the hint can.
+          if (!(await dryRun(sql, 'condition', rule.condition, [target]))) break;
         }
         continue;
       }
       // row / longitudinal
       if (rule.ruleType === 'validate') {
-        await dryRun(violFetchSQL(rule.condition, targets, rowCap), 'condition', rule.condition);
+        await dryRun(
+          violFetchSQL(rule.condition, targets, rowCap),
+          'condition',
+          rule.condition,
+          targets,
+        );
         continue;
       }
       // correct: condition first (attribution), then the exact rebuild SELECT.
@@ -586,14 +744,25 @@ export async function lintRuleFilesWithDataset(
       // FIRST expanded pair's condition (pairs differ only in the substituted
       // identifier, and every target is present here — stage 6 gated).
       const pairs = expandValueToken(rule);
+      const firstPair = pairs[0];
       const conditionOk = await dryRun(
-        violCountSQL(pairs[0]?.condition ?? rule.condition),
+        violCountSQL(firstPair?.condition ?? rule.condition),
         'condition',
         rule.condition,
+        // Only pairs[0] is dry-run, so only its target is implicated; with no
+        // __value__ there is one pair over every target and this IS `targets`.
+        firstPair === undefined ? targets : [firstPair.target],
       );
       if (rule.updateLanguage === 'js') continue; // stage 5 owns the expression
       if (conditionOk && rule.updateExpression !== '') {
-        await dryRun(rebuildSelectSQL(pairs), 'update_expression', rule.updateExpression);
+        // The rebuild SELECT covers every pair, and `text` here still carries
+        // an unsubstituted __value__ — the hint is the only source of columns.
+        await dryRun(
+          rebuildSelectSQL(pairs),
+          'update_expression',
+          rule.updateExpression,
+          pairs.map((p) => p.target),
+        );
       }
     }
 

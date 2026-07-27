@@ -385,6 +385,19 @@ Console: **clean**.
 
 ### UX-07 — On the deployed site, the bundled example's own share link is over the limit, and the Copy button disappears
 
+- **Status:** **Fixed** (2026-07-27, UIX-15 — see the master-plan progress log). Both halves of the suggested fix
+  were taken. The modal half is exactly as filed: the early `return` at `shareModal.ts:209` was the whole defect,
+  and the link row, char count and `index=` callout now render unconditionally with the advice + manifest button
+  appended below. The report's computed 2062 was confirmed live, from the page's own link. The headroom half was
+  answered better than by shortening paths: every one of the other 13 schema files is `$ref`-reachable from
+  `core/core.schema.json`, so `index.json` now lists the **root only** as a crawl base and the crawl still resolves
+  the same 14 files — the deployed link falls **2062 → 591**, and the fixture paths, their `$ref`s and every pinned
+  ground-truth string stay untouched. One correction to the report: the over-limit modal's focus lands on `×`, not
+  on the Download button — `openModal` focuses the dialog's own close control, which precedes body content, so what
+  the bug cost a keyboard user was the first control *after* it. Guarded by `shareModal.browser.test.ts`,
+  `exampleLink.test.ts` (which measures at the **deployed** origin — pinning it locally would have reproduced the
+  blind spot rather than closed it), a second `shareLink.spec.ts` pass, and a one-`schema=` assertion in
+  `loadExample.spec.ts`.
 - **Severity:** Friction
 - **Where:** ShareModal · `src/core/share/shareModel.ts` / `components/shareModal.ts`
 - **Repro:**

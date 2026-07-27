@@ -74,6 +74,44 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-27 · UIX-15 · **An over-length share link keeps its link and its Copy button — UX-07.**
+Reproduced first in the real browser, exactly as filed, and the report's *computed* production number was
+confirmed from the page's own link rather than re-derived: `Load example files` → `Share` read **1965
+characters** with `Copy` present, and substituting the deployed origin into that live string — 18 encoded
+occurrences of the base — gave **2062**, over by 62. Fetching a fourth rules file then crossed the line locally
+and produced the filed state at **2032 characters**: no readonly input, no `Copy`, no char count, no `index=`
+callout, the modal's only two controls `×` and `Download config manifest (JSON)`. Root cause is the early
+`return section;` at `shareModal.ts:209` — everything below it, the whole link row, was unreachable past the
+threshold. The spec reading in the finding is right and is now pinned both ways: `url-params.md` §4 conditions
+only the manifest on the limit ("**offer**"), and `ui-design.md`'s ShareModal line said "…index callout, **or**
+the `config=` manifest path", which is the sentence that licensed *replace*; both now say the offer is additive.
+The link row, count and callout render unconditionally; the advice + manifest button + hosting note append below
+them, `Copy` stays the modal's one primary and the manifest stays a plain `q-btn`. The threshold moved out of the
+view into `buildShareLink` (`shareModel.ts`) so it is node-testable — `MAX_URL_CHARS` had no consumer outside the
+modal — and the boundary is pinned as `>`, not `>=`. One correction to the report: focus in the broken state
+landed on `×`, not on the Download button, because `openModal` focuses the dialog's own close control ahead of
+body content; what the bug cost a keyboard user was the first control *after* it, which is why the browser guard
+asserts the link is the first control in the **body** rather than asserting `document.activeElement`. The second
+half of the suggested fix — "check the example's link length against the production origin" — was taken, but not
+by shortening the fixture paths, which would have rippled into every `$ref`, the golden digests and pinned
+strings like `root: core/core.schema.json` for 62 chars of need. Sweeping every `$ref` target under
+`tests/fixtures/hesp/json_schema/` shows all 13 non-root files are reachable from `core/core.schema.json` (12
+`categories/*.json` plus `../../common/defs.json`), so `index.json` now lists the **root only** as a crawl base
+while still staging all 14 files; `loadView.ts` needed no change, since `manifest.schema.map(abs)` simply passes
+one URL. Measured live after the fix: the deployed link falls **2062 → 591** (1409 chars of headroom, local 1965
+→ 559), the schema card still reads `14 files · root: core/core.schema.json`, the Share modal's grouped row is
+unchanged with its `<details>` now reading `1 source URL in the link`, and a full run still returns
+**39 / 13 / 10 / 6** with pill 62. The over-limit state was then re-driven to 2055 chars: input present and
+readOnly, `Copy` primary, `2055 characters`, the advice, the manifest button and the callout all in the spec'd
+order, and the real `Copy` click put all **2055** characters on the clipboard with the input left selected — so
+the ⌘/Ctrl-C fallback, which had nothing to select before, works too. Console QuaC-silent throughout (only the
+extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 2 of 4 new browser cases
+and the new e2e pass fail, 2 of 3 `exampleLink` cases fail against the 14-base manifest, while every guard — the
+under-limit case, the exactly-at-limit case, the localhost-stays-under case and journey 4 — passes either way.
+Left standing, deliberately: `MAX_URL_CHARS` stays 2,000. The limit was never wrong; treating it as a hard
+ceiling instead of a portability caution was.
+Browser 56 → 60 (13 files), e2e 97 → 98, unit 734 → 739, entry JS 46.7 → 46.8 KB gz.
+
 2026-07-26 · UIX-14 · **A cleared slot forgets the URL it was fetched from — UX-06.**
 Reproduced first in the real browser, exactly as filed, on both halves and in one probe: after clearing the rules
 slot, then the schema slot, then the dataset slot, all three badges read `Empty` while the two check-source fields

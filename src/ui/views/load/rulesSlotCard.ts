@@ -124,12 +124,21 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
   effect(() => {
     const state = rulesState.get();
     const slot = summarizeSlot(state);
-    // Clear visibility BEFORE update() — update derives the actions-row
-    // visibility from its children's hidden state. Never disabled: enabled
-    // during 'loading' is the fetch/lint cancel.
+    // Clear visibility AND the detail host BEFORE update() — update derives
+    // the actions-row visibility from its children's hidden state and the
+    // <details> visibility from the host's child count, so both must be
+    // settled first (UX-05: update() ran ahead of renderDetails and counted
+    // the PREVIOUS load's file blocks, leaving an empty `Details` disclosure
+    // over a cleared card). Clear is never disabled: enabled during 'loading'
+    // is the fetch/lint cancel.
     clearButton.hidden = slot.status === 'empty';
-    card.update(slot);
     renderDetails(card.detailHost, state, onRemoveFile);
+    card.update(slot);
+    // An emptied card must match a cold one, which is collapsed. 'empty' is
+    // exactly "no files AND no fetch errors" (rules-store.ts summarizeSlot) —
+    // precisely when renderDetails rendered nothing — so this can never
+    // collapse content the user can still read.
+    if (slot.status === 'empty') card.setDetailsOpen(false);
   });
 
   // Dataset-driven re-lint (qc-rules-engine.md §7: "re-runs when the dataset

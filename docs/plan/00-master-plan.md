@@ -74,6 +74,42 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-13 · **An emptied slot advertises no detail it does not have — UX-05.**
+Reproduced first in the real browser, exactly as filed, and on all three paths rather than the one the report
+walks: `Load example files` → `Clear all inputs` left the QC Rules card at badge `Empty` with its `<details>`
+`hidden === false` over a host of **0** children, while Dataset and JSON Schema — probed in the same call —
+correctly read `hidden === true`, the asymmetry the finding names. The per-slot `Clear` and `✕` on the last
+file reproduce it too, and both land in a **worse** state than the filed one: `open === true` as well, because
+nothing ever resets the disclosure a user expanded, so the card sits visibly unfolded onto nothing. Root cause
+is exactly the ordering slip the review names. `createSlotCard.update()` derives two things from live DOM —
+`actionsHost.hidden` from its children's hidden state and `details.hidden` from `detailHost.childElementCount`
+— so a card must settle **both** before calling it. The rules effect settled only the first: it called
+`update()` and then `renderDetails()`, so `update` counted the previous load's file blocks.
+`schemaSlotCard.ts:193` ("Fill the detail host BEFORE update()") and `datasetCard.ts` (via `clearLocalUi`,
+which `clearInputs.ts:171` deliberately runs ahead of the slot write) already do it the right way round; the
+rules card was the sole violator of an invariant the codebase states twice, which is why one line of the
+comment above it already warned about the *other* derivation. The swap is the whole fix — `renderDetails`
+wipes its host **before** its early return, so no extra clear is needed. One addition beyond the review's
+suggestion: the effect now collapses the disclosure when the slot goes empty. Without it the stale `open`
+survives into the next load and a re-filled card comes back pre-expanded, unlike a cold one — measured live,
+`open: true` after the clear and still `true` on the re-load. It cannot hide readable content, because
+`summarizeSlot` returns `'empty'` on precisely "no files AND no fetch errors", which is precisely when
+`renderDetails` rendered nothing; a card holding only fetch errors reads `error`, not `empty`, and keeps its
+list. `focusAfterRemove` is unaffected — it reads the host from a `.then()` downstream of the synchronous
+effect — and that was checked live, not just argued: removing a non-last file still lands focus on the next
+row's `✕`, and a whole-slot Clear still lands it on the drop zone. Verified on the rebuilt preview: all three
+paths now return the card to a state identical to the cold-load probe (`hidden: true`, `open: false`, 0
+children), a re-load brings `Details` back populated **and collapsed**, and removing a non-last file still
+leaves it open over the survivor — console QuaC-silent throughout (only the extension's own
+`chrome-extension://…` lines). Left standing, deliberately: `schemaSlotCard.ts:204`'s `setDetailsOpen(true)`
+on a fatal error has no paired `false`, so that card's disclosure is stickily expanded after a clear — same
+class, different finding, and not in UX-05's scope. `rulesSlotDetails.browser.test.ts` is the first slot-card
+test in the browser tier; it mounts the production card against the production store (the layer all three
+paths converge on) and needs no DuckDB, since a card with no dataset never boots the bridge. Pin-checked
+against the un-fixed code: 2 of 3 new browser cases and both new e2e assertions fail on `details.hidden`,
+while the loaded-state controls pass either way. Browser 49 → 52 (11 files), e2e 94 → 95, unit 734 unchanged,
+entry JS 46.6 KB gz unchanged.
+
 2026-07-26 · UIX-12 · **A slow fetch is visible, and the way out is on screen — UX-04.**
 Reproduced first in the real browser, exactly as filed, against a throwaway host on `:4201` that accepts the request
 and never ends the response (its log confirms both requests left the browser). Sampling anchored to each card's own

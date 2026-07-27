@@ -312,6 +312,16 @@ Console: **clean**.
 
 ### UX-05 — Clearing the QC rules leaves an empty `Details` disclosure behind
 
+- **Status:** **Fixed** (2026-07-26, UIX-13 — see the master-plan progress log). The diagnosis above is exactly
+  right and the suggested swap is the whole fix: `renderDetails` wipes its host *before* its early return, so
+  nothing more was needed. Two notes from driving it. The two sibling clear paths the repro mentions in passing
+  land in a **worse** state than `Clear all inputs` does — `open === true` as well, since nothing resets a
+  disclosure the user expanded, so the card sits visibly unfolded onto nothing and a later re-load comes back
+  pre-expanded, unlike a cold card. The effect now collapses on `empty` too; that is safe because
+  `summarizeSlot` returns `empty` on precisely "no files AND no fetch errors" — exactly when `renderDetails`
+  renders nothing (a card holding only fetch errors reads `error` and keeps its list). `focusAfterRemove` is
+  untouched and was re-checked live in both directions. Guarded by `rulesSlotDetails.browser.test.ts` (the
+  first slot-card test in the browser tier) and two additions to `clearInputs.spec.ts`.
 - **Severity:** Bug
 - **Where:** Load view · QC Rules slot card · `src/ui/views/load/rulesSlotCard.ts:117-118`
 - **Repro:**

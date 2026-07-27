@@ -74,6 +74,26 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-26 · UIX-9 · **A schema that describes none of the dataset's columns is a finding, not a parser error.**
+The zero-overlap bug UIX-8 filed. `selected` — the column list handed to the QC worker — is empty exactly when the
+schema's property universe is closed and not one of its variables appears in the dataset, and the row loop
+interpolated it into `SELECT ${selectList} FROM …`, so DuckDB answered `Parser Error: SELECT clause without
+selection list` and the run died on a raw-engine toast with no report at all. On inputs §E.5 had already flagged
+`Mismatch` — and deliberately does not gate. The row loop now doesn't run: there is nothing to validate (every row
+shapes to `{}`, and each `required` error it would raise is already suppressed by `missingColumns` in favour of the
+one column-scope flag), so no worker is even constructed, and one new dataset-scope flag
+`schema:dataset:no-overlap` says why in a sentence — "None of the schema's 265 variables are present among the
+dataset's 5 columns, so no records could be validated — check that the schema and the dataset describe the same
+table." The dataset-level SQL checks were hoisted OUT of the worker's `try/finally` so they still run on this path:
+`minItems` counts rows and `uniqueItems` groups by the dataset's own columns, neither of which needs a schema match.
+The sibling empty-list site (`uniqueItems`' `dataCols`) was checked and left alone — it is built from ALL dataset
+columns, so it is empty only for a zero-column dataset, which returns at the `rowsTotal === 0` guard first.
+Verified live on a cold preconfigured boot (`tiny/people.csv` + the HESP schema): 271 errors / 0 warnings / 4 info
+where 271 = 265 missing + 5 unexpected + 1 no-overlap, grid populated, findings list led by the new sentence, zero
+toasts, console QuaC-silent; then 5 → 266 → 5 cols by URL replacement and a Re-run, all identical. Both new tests
+pin-checked against the guard disabled — the unit test fails with the exact production `Parser Error`, the e2e with
+the toast the user saw. Unit 721 → 723, e2e 85 → 87, entry JS 46.3 KB gz (unchanged).
+
 2026-07-26 · UIX-8 · **A display grid never reuses another build's parquet path — UX-01 from the manual review.**
 Reproduced first, exactly as filed: example set → Run QC → replace the dataset with `hesp_valid_100.csv` (one column
 fewer) → Run QC, and the grid sat on data-table's "Load data to see the table" while the panels read correctly, with
@@ -92,9 +112,9 @@ resets `tableGeneration`, swaps in a `.q-panel-note` ("The report grid could not
 to rebuild it.") and rethrows a typed `QuacError`, so no DuckDB text reaches a toast; and the presenter now writes
 `renderedGeneration`, which both removes a redundant second full grid build after every reshaped run and (with an
 `announcedFailureGeneration` latch) collapses the review's two identical toasts into one while keeping the retry.
-Deferred, filed not fixed: running a schema against a dataset it shares **no** columns with toasts
-`Parser Error: SELECT clause without selection list` from `schema/validation-run.ts:350` (empty `selectList`) — it
-reproduces on a cold boot with no reshape, so it is a separate bug, not UX-01's third toast.
+Found while verifying, filed separately and fixed in UIX-9 below: running a schema against a dataset it shares **no**
+columns with toasts `Parser Error: SELECT clause without selection list` from `schema/validation-run.ts` (empty
+`selectList`) — it reproduces on a cold boot with no reshape, so it is a separate bug, not UX-01's third toast.
 Unit 718 → 721, browser 45 → 46, e2e 83 → 85, entry JS 46.3 KB gz (unchanged).
 
 2026-07-26 · merge · UIX-6+UIX-7 merged to main (e5474d4, 0103daf). Zero conflicts — the two branches were a linear

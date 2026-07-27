@@ -146,7 +146,9 @@ Console: **clean**.
   memo this finding points at: data-table's parquet handle is `<tableName>.parquet`, so the fixed `quac_display`
   name made every rebuild reuse one duckdb-wasm path. Guarded by `displayGridReshape.browser.test.ts` and
   `reshapeRerun.spec.ts`. The people.csv variant's third toast (`SELECT clause without selection list`) turned out
-  to be an unrelated bug — it reproduces cold, with no reshape — and is **not** fixed here.
+  to be an unrelated bug — it reproduces cold, with no reshape — filed separately and fixed in UIX-9: a schema
+  sharing no column with the dataset now reports `schema:dataset:no-overlap` instead of running an empty `SELECT`
+  (`validation-no-overlap.test.ts`, `zeroOverlapSchema.spec.ts`).
 - **Severity:** Bug
 - **Where:** QC Report · report grid display feed · `src/ui/views/report/` (`reportGrid`), engine export
   to `quac_display.parquet`

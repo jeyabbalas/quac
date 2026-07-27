@@ -32,7 +32,9 @@ async function loadRunAndOpenSummary(page: import('@playwright/test').Page): Pro
 
   await expect(page.locator('.q-runbar-button')).toBeEnabled();
   await page.locator('.q-runbar-button').click();
-  await expect(page).toHaveURL(/#\/report$/);
+  // UIX-10: params now ride the current route, so a run started from the
+  // example (a URL-loaded session) lands on `#/report?schema=…&data=…`.
+  await expect(page).toHaveURL(/#\/report/);
   await expect(page.locator('.q-statcard', { hasText: 'Errors' })).toBeVisible({
     timeout: RUN_TIMEOUT,
   });

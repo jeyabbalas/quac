@@ -24,6 +24,7 @@ import {
   duplicateRecordsMessage,
   minItemsMessage,
   missingColumnMessage,
+  noOverlapMessage,
   unexpectedColumnMessage,
 } from './translator';
 import {
@@ -319,46 +320,48 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     };
   }
 
-  // ---- Worker init (§F) ----
-  emitProgress('compiling', 0, true);
   const includeExtras = hasOpenPropertyUniverse(set, root.fileId);
   const selected = plan.columns
     .filter((c) => c.inSchema || includeExtras)
     .map((c) => c.column);
-  const worker = (deps.createWorker ?? defaultCreateWorker)();
-  try {
-    const channel = createChannel(worker);
-    const post = (msg: MainToWorker): void => {
-      worker.postMessage(msg);
-    };
-    post({
-      type: 'init',
-      files: set.schemas.map((f) => ({ uri: f.retrievalUri, json: f.json })),
-      rootBase: root.declaredId ?? root.retrievalUri,
-      draft: root.draft,
-      columnMeta: serializeColumnMeta(meta),
-      conditionals: digest.conditionals,
-      missingColumns,
-      castFailures: [...scan.castFailures],
-      config: { flagCap },
-    });
-    await channel.expect('ready');
 
-    // ---- Single-slot batch pipeline (§B.4/§F) ----
-    validateStartedAt = performance.now();
-    emitProgress('validating', 0, true);
-    const selectList = selected.map((c) => quoteIdentifier(c)).join(', ');
-    const fetchBatch = async (start: number): Promise<unknown[][]> => {
-      const end = Math.min(start + batchRows, rowsTotal);
-      const rows = await runner.query(
-        `SELECT ${selectList} FROM ${st} ` +
-          `WHERE __row__ >= ${String(start)} AND __row__ < ${String(end)} ORDER BY __row__`,
-        signal,
-      );
-      return rows.map((r) => selected.map((name) => r[name]));
-    };
+  /** §F: worker init, then the single-slot batch pipeline over `selected`. */
+  const runRowLoop = async (): Promise<ValidationSummary> => {
+    // ---- Worker init (§F) ----
+    emitProgress('compiling', 0, true);
+    const worker = (deps.createWorker ?? defaultCreateWorker)();
+    try {
+      const channel = createChannel(worker);
+      const post = (msg: MainToWorker): void => {
+        worker.postMessage(msg);
+      };
+      post({
+        type: 'init',
+        files: set.schemas.map((f) => ({ uri: f.retrievalUri, json: f.json })),
+        rootBase: root.declaredId ?? root.retrievalUri,
+        draft: root.draft,
+        columnMeta: serializeColumnMeta(meta),
+        conditionals: digest.conditionals,
+        missingColumns,
+        castFailures: [...scan.castFailures],
+        config: { flagCap },
+      });
+      await channel.expect('ready');
 
-    const summary = await (async (): Promise<ValidationSummary> => {
+      // ---- Single-slot batch pipeline (§B.4/§F) ----
+      validateStartedAt = performance.now();
+      emitProgress('validating', 0, true);
+      const selectList = selected.map((c) => quoteIdentifier(c)).join(', ');
+      const fetchBatch = async (start: number): Promise<unknown[][]> => {
+        const end = Math.min(start + batchRows, rowsTotal);
+        const rows = await runner.query(
+          `SELECT ${selectList} FROM ${st} ` +
+            `WHERE __row__ >= ${String(start)} AND __row__ < ${String(end)} ORDER BY __row__`,
+          signal,
+        );
+        return rows.map((r) => selected.map((name) => r[name]));
+      };
+
       let rowsDone = 0;
       let aborted = false;
       let pending: Promise<unknown[][]> = Promise.resolve([]);
@@ -398,49 +401,82 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       post({ type: aborted ? 'abort' : 'flush' });
       const done = await channel.expect('done');
       return done.summary;
-    })();
+    } finally {
+      worker.terminate();
+    }
+  };
 
-    // ---- Dataset-level SQL checks (§D.6, aggregating) ----
-    emitProgress('aggregating', rowsTotal, true);
-    if (!summary.aborted) {
-      const flags: QCFlag[] = [];
-      if (rootJson.uniqueItems === true) {
-        const dataCols = plan.columns.map((c) => quoteIdentifier(c.column)).join(', ');
-        const groups = await runner.query<{ rows: string }>(
-          `SELECT string_agg(CAST(__row__ AS VARCHAR), ',' ORDER BY __row__) AS rows ` +
-            `FROM ${st} GROUP BY ${dataCols} HAVING count(*) > 1 ORDER BY min(__row__)`,
-          signal,
-        );
-        for (const group of groups) {
-          const ids = group.rows.split(',').map(Number);
-          const first = ids[0];
-          if (first === undefined) continue;
-          for (const other of ids.slice(1)) {
-            flags.push(
-              datasetFlag(
-                SCHEMA_DATASET_RULE_IDS.duplicateRecords,
-                'error',
-                duplicateRecordsMessage(first, other),
-              ),
-            );
-          }
+  /**
+   * §H edge 20 — zero overlap: the schema names none of this dataset's columns
+   * and its property universe is closed, so `selected` is empty. There is
+   * nothing to validate row by row — every row would shape to `{}`, and each
+   * `required` error that would raise is already suppressed by `missingColumns`
+   * in favour of the one column-scope flag emitted above. Running the loop
+   * anyway built `SELECT  FROM …` and died on DuckDB's `SELECT clause without
+   * selection list`, which reached the user as raw engine text on a toast.
+   * The dataset-level SQL checks below still apply: they count rows and group
+   * by the dataset's own columns, neither of which needs a schema match.
+   */
+  const noOverlapSummary = (): ValidationSummary => {
+    addFlags([
+      datasetFlag(
+        SCHEMA_DATASET_RULE_IDS.noOverlap,
+        'error',
+        noOverlapMessage(meta.length, datasetColumns.length),
+      ),
+    ]);
+    emitProgress('validating', rowsTotal, true);
+    return {
+      rowsTotal,
+      rowsWithErrors: 0,
+      flagsEmitted: 0,
+      flagsTruncated: false,
+      countsByRuleId: {},
+      elapsedMs: Math.round(performance.now() - startedAt),
+      aborted: false,
+    };
+  };
+
+  const summary = selected.length === 0 ? noOverlapSummary() : await runRowLoop();
+
+  // ---- Dataset-level SQL checks (§D.6, aggregating) ----
+  emitProgress('aggregating', rowsTotal, true);
+  if (!summary.aborted) {
+    const flags: QCFlag[] = [];
+    if (rootJson.uniqueItems === true) {
+      const dataCols = plan.columns.map((c) => quoteIdentifier(c.column)).join(', ');
+      const groups = await runner.query<{ rows: string }>(
+        `SELECT string_agg(CAST(__row__ AS VARCHAR), ',' ORDER BY __row__) AS rows ` +
+          `FROM ${st} GROUP BY ${dataCols} HAVING count(*) > 1 ORDER BY min(__row__)`,
+        signal,
+      );
+      for (const group of groups) {
+        const ids = group.rows.split(',').map(Number);
+        const first = ids[0];
+        if (first === undefined) continue;
+        for (const other of ids.slice(1)) {
+          flags.push(
+            datasetFlag(
+              SCHEMA_DATASET_RULE_IDS.duplicateRecords,
+              'error',
+              duplicateRecordsMessage(first, other),
+            ),
+          );
         }
       }
-      if (minItems !== undefined && rowsTotal < minItems) {
-        flags.push(
-          datasetFlag(
-            SCHEMA_DATASET_RULE_IDS.minItems,
-            'error',
-            minItemsMessage(rowsTotal, minItems),
-          ),
-        );
-      }
-      addFlags(flags);
     }
-    emitProgress('aggregating', rowsTotal, true);
-
-    return { ...summary, rowsTotal };
-  } finally {
-    worker.terminate();
+    if (minItems !== undefined && rowsTotal < minItems) {
+      flags.push(
+        datasetFlag(
+          SCHEMA_DATASET_RULE_IDS.minItems,
+          'error',
+          minItemsMessage(rowsTotal, minItems),
+        ),
+      );
+    }
+    addFlags(flags);
   }
+  emitProgress('aggregating', rowsTotal, true);
+
+  return { ...summary, rowsTotal };
 }

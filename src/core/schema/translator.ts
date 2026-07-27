@@ -190,6 +190,19 @@ export function duplicateRecordsMessage(rowA: number, rowB: number): string {
   return `Rows ${String(rowA)} and ${String(rowB)} are identical records — the schema requires all records to be unique.`;
 }
 
+/**
+ * §H edge 20 — the schema and the dataset share no column at all (P09). Every
+ * variable is separately reported missing at column scope; this is the one
+ * dataset-scope sentence saying why no record was validated.
+ */
+export function noOverlapMessage(schemaVariables: number, datasetColumns: number): string {
+  return (
+    `None of the schema's ${formatBound(schemaVariables)} variables are present among the ` +
+    `dataset's ${formatBound(datasetColumns)} columns, so no records could be validated — ` +
+    `check that the schema and the dataset describe the same table.`
+  );
+}
+
 /** §D.6 minItems (SQL count, P09). */
 export function minItemsMessage(rows: number, minimum: number): string {
   return `The dataset has ${formatBound(rows)} records; the schema requires at least ${formatBound(minimum)}.`;

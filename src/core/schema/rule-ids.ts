@@ -36,4 +36,5 @@ export const SCHEMA_DATASET_RULE_IDS = {
   minItems: 'schema:dataset:min-items',
   empty: 'schema:dataset:empty',
   pertinence: 'schema:dataset:pertinence',
+  noOverlap: 'schema:dataset:no-overlap',
 } as const;

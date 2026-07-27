@@ -19,6 +19,7 @@ import {
   resetRulesSlot,
   rulesState,
   setLintContext,
+  summarizeSlot,
   updateRule,
 } from '../../../src/core/rules/rules-store';
 import type { QCRule } from '../../../src/core/rules/types';
@@ -346,6 +347,68 @@ describe('clearRuleFiles', () => {
   });
 });
 
+// UX-04: the slot card reads `summarizeSlot(...).status` for BOTH the badge and
+// whether Clear is on screen, so a fetch window that projects as 'empty' hides
+// the one control that can abandon a hung no-timeout fetch. Two things had to
+// change together here: the projection's guard order, and addRuleUrls entering
+// `phase: 'loading'` BEFORE its fetch (it used to publish nothing until the
+// bytes were already in hand).
+describe('summarizeSlot during the load window (UX-04)', () => {
+  const gatedFetch = (): { gate: Promise<void>; release: () => void } => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    globalThis.fetch = (() =>
+      gate.then(() => ({
+        ok: true,
+        text: () => Promise.resolve(THREE_RULES),
+      }))) as unknown as typeof fetch;
+    return { gate, release: () => release?.() };
+  };
+
+  it('a URL fetch in flight projects as loading, not empty', async () => {
+    const originalFetch = globalThis.fetch;
+    const { release } = gatedFetch();
+    try {
+      const pending = addRuleUrls(['https://slow.test/rules.quac.csv']);
+      // Mid-fetch, first load: no files yet — the state the old emptiness
+      // guard matched, leaving the card blank with its Clear hidden.
+      expect(summarizeSlot(rulesState.get())).toEqual({
+        status: 'loading',
+        detail: 'Loading rules files…',
+      });
+      release();
+      await pending;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(summarizeSlot(rulesState.get()).status).toBe('valid');
+  });
+
+  it('stays loading across the fetch → parse → lint seam', async () => {
+    const originalFetch = globalThis.fetch;
+    const { release } = gatedFetch();
+    try {
+      const pending = addRuleUrls(['https://slow.test/rules.quac.csv']);
+      release();
+      // The bytes have landed but the codec import and lint have not run: the
+      // badge must not flicker back through a non-loading state here.
+      await Promise.resolve();
+      expect(summarizeSlot(rulesState.get()).status).toBe('loading');
+      await pending;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(summarizeSlot(rulesState.get()).status).toBe('valid');
+  });
+
+  it('an untouched slot is still empty', () => {
+    clearRuleFiles();
+    expect(summarizeSlot(rulesState.get())).toEqual({ status: 'empty', detail: '' });
+  });
+});
+
 describe('load-token races', () => {
   it('a clear landing while addRuleFiles awaits its codecs wins', async () => {
     const pending = load(); // parks on the codec import before any publish
@@ -377,6 +440,24 @@ describe('load-token races', () => {
     expect(rulesState.get().phase).toBe('empty');
     expect(rulesState.get().files).toEqual([]);
     expect(rulesState.get().fetchErrors).toEqual([]);
+  });
+
+  it('a fetch that fails for every URL settles instead of stranding at loading', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve({ ok: false, status: 404 })) as unknown as typeof fetch;
+    try {
+      await addRuleUrls(['https://nope.test/rules.quac.csv']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // addRuleFiles returns at its own empty guard, so nothing downstream moves
+    // the phase — addRuleUrls has to settle it or the badge sticks at Loading…
+    expect(rulesState.get().phase).toBe('empty');
+    expect(summarizeSlot(rulesState.get())).toEqual({
+      status: 'error',
+      detail: '0 files · 0 rules · 1 fetch error',
+    });
   });
 
   it('a remove landing while a sibling add is parked discards the stale add', async () => {

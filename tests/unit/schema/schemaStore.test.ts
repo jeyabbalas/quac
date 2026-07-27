@@ -8,6 +8,7 @@ import {
   loadSchemaUrls,
   resetSchemaSlot,
   schemaState,
+  summarizeSlot,
 } from '../../../src/core/schema/schema-store';
 import type { FetchJson } from '../../../src/core/schema/types';
 import { entry } from './helpers';
@@ -58,6 +59,44 @@ describe('resetSchemaSlot vs in-flight loads', () => {
     const state = schemaState.get();
     expect(state.phase).toBe('ready');
     expect(state.sourceUrls).toEqual(['https://fast.test/b.json']);
+  });
+});
+
+// UX-04: the slot card reads `summarizeSlot(...).status` for BOTH the badge and
+// whether Clear is on screen, so a loading window that projects as 'empty' hides
+// the one control that can abandon a hung no-timeout fetch. Every loader
+// publishes `set: null` while loading, which is exactly what the emptiness guard
+// used to match first.
+describe('summarizeSlot during the load window (UX-04)', () => {
+  it('a URL crawl in flight projects as loading, not empty', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slowFetch: FetchJson = async (url) => {
+      await gate;
+      return { finalUrl: url, text: JSON.stringify(ARRAY_SCHEMA) };
+    };
+    const pending = loadSchemaUrls(['https://slow.test/a.json'], slowFetch);
+    // Mid-fetch: the host has not answered and may never.
+    expect(summarizeSlot(schemaState.get())).toEqual({
+      status: 'loading',
+      detail: 'Loading schema files…',
+    });
+    release?.();
+    await pending;
+    expect(summarizeSlot(schemaState.get()).status).toBe('valid');
+  });
+
+  it('an upload being compiled projects as loading too', async () => {
+    const pending = loadSchemaEntries([entry('schema.json', ARRAY_SCHEMA)]);
+    expect(summarizeSlot(schemaState.get()).status).toBe('loading');
+    await pending;
+    expect(summarizeSlot(schemaState.get()).status).toBe('valid');
+  });
+
+  it('an untouched slot is still empty', () => {
+    expect(summarizeSlot(schemaState.get())).toEqual({ status: 'empty', detail: '' });
   });
 });
 

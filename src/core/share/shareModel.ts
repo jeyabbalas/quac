@@ -4,6 +4,7 @@
  * §1/§4); uploads are listed as excluded. Schema contributes its user-provided
  * crawl bases (in order) as `schema=` and its resolved root as `index=`.
  */
+import { MAX_URL_CHARS, assembleFragment } from './urlConfig';
 import type { UrlConfig } from './urlConfig';
 
 export type ShareSlot = 'data' | 'schema' | 'rules';
@@ -51,6 +52,24 @@ export interface ShareModel {
   empty: boolean;
   /** True when at least one artifact can travel in a link. */
   hasShareable: boolean;
+}
+
+/** The assembled link plus the portability verdict the modal renders around it. */
+export interface ShareLink {
+  url: string;
+  length: number;
+  /** Past MAX_URL_CHARS the manifest is offered ALONGSIDE the link, never instead of it. */
+  overLimit: boolean;
+}
+
+/**
+ * Assemble the link and measure it (UX-07). Lives here rather than in the modal
+ * so the threshold is node-testable — `> MAX_URL_CHARS`, so a link measuring
+ * exactly the limit is still within it.
+ */
+export function buildShareLink(shareBase: string, config: UrlConfig): ShareLink {
+  const url = `${shareBase}${assembleFragment(config)}`;
+  return { url, length: url.length, overLimit: url.length > MAX_URL_CHARS };
 }
 
 function basename(url: string): string {

@@ -167,3 +167,9 @@
   color: var(--q-warning-ink);
   font-size: var(--q-text-sm);
 }
+
+/* UX-07: advice under a link that stays copyable, not a replacement for it.
+   Keeps the warning tint; the class is the selector hook the tests anchor on. */
+.q-share-overlimit {
+  margin-top: var(--q-space-2);
+}

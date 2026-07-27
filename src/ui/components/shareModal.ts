@@ -1,6 +1,6 @@
 /**
  * ShareModal (url-params.md §4): the assembled link up top (char count + Copy,
- * or the `config=` manifest path past MAX_URL_CHARS), then per-slot provenance
+ * plus the `config=` manifest offer past MAX_URL_CHARS), then per-slot provenance
  * — URL-loaded ✓ included / uploaded ✗ excluded + why. Schema's crawl bases
  * collapse into one grouped row (file count + root) with the URLs behind a
  * <details>. Reads the authoritative slot states; nothing uploaded ever
@@ -12,8 +12,8 @@ import { triggerDownload } from './download';
 import { rulesState } from '../../core/rules/rules-store';
 import { schemaState } from '../../core/schema/schema-store';
 import { configToManifest } from '../../core/share/configManifest';
-import { buildShareModel } from '../../core/share/shareModel';
-import { MAX_URL_CHARS, assembleFragment } from '../../core/share/urlConfig';
+import { buildShareLink, buildShareModel } from '../../core/share/shareModel';
+import { MAX_URL_CHARS } from '../../core/share/urlConfig';
 import type { AppStore } from '../../app/store';
 import type { SchemaSet } from '../../core/schema/types';
 import type { ShareArtifact, ShareModel } from '../../core/share/shareModel';
@@ -178,36 +178,47 @@ function renderProvenance(model: ShareModel, info: SchemaGroupInfo | null): HTML
   return section;
 }
 
+/**
+ * The over-limit offer (UX-07): advice + the manifest escape hatch, APPENDED
+ * below a link that stays copyable. url-params.md §4 conditions only the
+ * manifest on the threshold — it says "offer", not "replace" — and the reading
+ * matters because the bundled example's own link clears 2,000 chars on the
+ * deployed origin (2062) while measuring 1965 locally, so replacing the link
+ * left the flagship "Load example files → Share" path with nothing to copy.
+ */
+function renderOverLimitOffer(model: ShareModel, shareBase: string, length: number): HTMLElement[] {
+  const advice = document.createElement('p');
+  advice.className = 'q-share-warn q-share-overlimit';
+  advice.textContent =
+    `This link is ${String(length)} characters. Past ${String(MAX_URL_CHARS)} some browsers, email ` +
+    'clients and chat apps truncate links — it will work in most places, but for one that is safe ' +
+    'everywhere, share a config manifest instead:';
+
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'q-btn';
+  download.textContent = 'Download config manifest (JSON)';
+  download.addEventListener('click', () => {
+    const json = JSON.stringify(configToManifest(model.config), null, 2);
+    triggerDownload(new Blob([json], { type: 'application/json' }), 'quac-config.json');
+  });
+
+  const instructions = document.createElement('p');
+  instructions.className = 'q-share-note';
+  instructions.textContent = `Host quac-config.json by URL, then share: ${shareBase}#/load?config=<its URL>`;
+  return [advice, download, instructions];
+}
+
 function renderLinkSection(model: ShareModel, shareBase: string): HTMLElement {
   const section = document.createElement('div');
   section.className = 'q-share-link-section';
 
-  const fullUrl = `${shareBase}${assembleFragment(model.config)}`;
+  const link = buildShareLink(shareBase, model.config);
+  const fullUrl = link.url;
   const heading = document.createElement('h3');
   heading.className = 'q-share-subhead';
   heading.textContent = 'Shareable link';
   section.append(heading);
-
-  if (fullUrl.length > MAX_URL_CHARS) {
-    const warn = document.createElement('p');
-    warn.className = 'q-share-warn';
-    warn.textContent =
-      `This link is ${String(fullUrl.length)} characters — beyond the ${String(MAX_URL_CHARS)}-character ` +
-      'limit for reliable sharing. Share a config manifest instead:';
-    const download = document.createElement('button');
-    download.type = 'button';
-    download.className = 'q-btn';
-    download.textContent = 'Download config manifest (JSON)';
-    download.addEventListener('click', () => {
-      const json = JSON.stringify(configToManifest(model.config), null, 2);
-      triggerDownload(new Blob([json], { type: 'application/json' }), 'quac-config.json');
-    });
-    const instructions = document.createElement('p');
-    instructions.className = 'q-share-note';
-    instructions.textContent = `Host quac-config.json by URL, then share: ${shareBase}#/load?config=<its URL>`;
-    section.append(warn, download, instructions);
-    return section;
-  }
 
   const row = document.createElement('div');
   row.className = 'q-share-linkrow';
@@ -236,8 +247,10 @@ function renderLinkSection(model: ShareModel, shareBase: string): HTMLElement {
 
   const count = document.createElement('p');
   count.className = 'q-share-count';
-  count.textContent = `${String(fullUrl.length)} characters`;
+  count.textContent = `${String(link.length)} characters`;
   section.append(row, count);
+
+  if (link.overLimit) section.append(...renderOverLimitOffer(model, shareBase, link.length));
 
   if (model.index !== undefined) {
     const callout = document.createElement('p');

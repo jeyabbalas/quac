@@ -5,7 +5,7 @@
  * re-open button, and a bespoke details renderer (facts, ignored files,
  * findings) whose q-schemaslot-* inner classes are pinned by e2e specs.
  */
-import { clearSchema } from '../../../../app/clearInputs';
+import { clearSchema, registerSlotClearUi } from '../../../../app/clearInputs';
 import { reportError } from '../../../../app/errors';
 import { effect } from '../../../../app/signals';
 import {
@@ -107,6 +107,15 @@ export function mountSchemaSlotCard(container: HTMLElement, ctx: ShellContext): 
     clearSchema(ctx);
     // The button hid itself — keyboard focus must not strand on <body>.
     dropZone.el.focus();
+  });
+
+  // UX-06: the typed URL is this card's one surface NOT re-derived from
+  // `schemaState` below, so an explicit clear has to reach it. Registered
+  // rather than folded into `render()`, because a load that throws also lands
+  // on `phase: 'empty'` (schema-store.ts:57,110) and must keep what was typed.
+  // Covers clear-all too, which never comes through the button above.
+  registerSlotClearUi('schema', () => {
+    urlField.clear();
   });
 
   card.bodyHost.append(dropZone.el, urlField.el);

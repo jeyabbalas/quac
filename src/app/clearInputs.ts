@@ -5,7 +5,8 @@
  *      always asks),
  *   2. invalidate the previous run (`invalidateRun` — pill dark, panels
  *      empty, in-flight run cancelled),
- *   3. clear the slot's store,
+ *   3. clear the slot's store AND the card-local DOM no store owns — the typed
+ *      URL above all (UX-06: a cleared card kept naming the file it dropped),
  *   4. re-sync the address bar from the REMAINING live sources through the one
  *      shared writer (`hashSync`), which rebuilds the fragment from whatever
  *      the stores now hold — so a reload restores exactly what is on screen,
@@ -65,6 +66,45 @@ export function noteDatasetBusy(value: boolean): void {
  *  Reads the signal, so calling effects re-run on release. */
 export function isDatasetUiBusy(): boolean {
   return datasetBusy.get();
+}
+
+// ---- check-source card UI hooks ---------------------------------------------
+
+/**
+ * UX-06: the schema/rules counterpart of the dataset's `clearLocalUi`. Those
+ * two cards render everything from their store snapshot EXCEPT one surface —
+ * the typed URL — so an emptied slot went on naming the file it no longer
+ * held. `ui-design.md` §5 pins `createUrlField`'s `clear()` as "empties the
+ * typed URL on slot clear"; before this it had ONE call site in all of `src/`,
+ * the Dataset card, because that card is the only one with a hook to reach.
+ *
+ * Driven from here rather than from the cards' render effects, because `empty`
+ * is not a synonym for "the user cleared": the schema store also lands on
+ * `phase: 'empty'` when a load THROWS (`schema-store.ts:57,110`), and a failed
+ * load must keep what was typed — that text is what a typo gets fixed in and
+ * what the CORS help's Retry sits beside. This module is where the explicit
+ * clears converge, and only they: per-slot Clear, the ✕ that empties the slot,
+ * and clear-all, which never touches the cards' click handlers at all.
+ */
+export type ClearableSlot = 'schema' | 'rules';
+
+const slotClearUi: Record<ClearableSlot, (() => void) | null> = { schema: null, rules: null };
+
+/** Registered on mount (`registerDatasetClearUi` precedent — the Dataset card
+ *  needs the richer hook because it also owns an uninterruptible ingest). */
+export function registerSlotClearUi(slot: ClearableSlot, clearLocalUi: () => void): void {
+  slotClearUi[slot] = clearLocalUi;
+}
+
+/** Store reset + card wipe as ONE step, so no clear path can half-do it. */
+function clearSchemaSlot(): void {
+  resetSchemaSlot();
+  slotClearUi.schema?.();
+}
+
+function clearRulesSlot(): void {
+  clearRuleFiles();
+  slotClearUi.rules?.();
 }
 
 // ---- feedback ---------------------------------------------------------------
@@ -202,7 +242,7 @@ async function dropTablesBestEffort(ctx: ShellContext): Promise<void> {
  *  The cast revert rides typedSync's hadSchemaForGeneration path. */
 export function clearSchema(ctx: ShellContext): void {
   const hadRun = ctx.store.run.get() !== null;
-  resetSchemaSlot();
+  clearSchemaSlot();
   invalidateRun(ctx.store);
   syncHashFromStores(ctx.store);
   announceClear('JSON Schema cleared.', hadRun);
@@ -223,7 +263,7 @@ export async function clearRules(ctx: ShellContext): Promise<void> {
   }
   const hadRun = ctx.store.run.get() !== null;
   invalidateRun(ctx.store);
-  clearRuleFiles();
+  clearRulesSlot(); // downstream of the confirm — a cancelled one keeps the typed URL
   syncHashFromStores(ctx.store);
   announceClear('QC rules cleared.', hadRun);
 }
@@ -247,6 +287,9 @@ export async function removeRulesFile(ctx: ShellContext, name: string): Promise<
   invalidateRun(ctx.store);
   const removed = await removeRuleFile(name);
   if (!removed) return; // vanished while the dialog was open
+  // That was the last file, so the slot is empty and the whole-slot contract
+  // applies: no URL may outlive the file it fetched (UX-06).
+  if (rulesState.get().files.length === 0) slotClearUi.rules?.();
   syncHashFromStores(ctx.store);
   announceClear(`Removed ${name}.`, hadRun);
 }
@@ -273,8 +316,8 @@ export async function clearAllInputs(ctx: ShellContext): Promise<void> {
   const hadRun = ctx.store.run.get() !== null;
   ctx.store.preconfigured.set(false);
   invalidateRun(ctx.store); // even if the dataset card refuses below, the run must die
-  clearRuleFiles();
-  resetSchemaSlot();
+  clearRulesSlot();
+  clearSchemaSlot();
   await clearDatasetCore(ctx, false);
   syncHashFromStores(ctx.store);
   announceClear('All inputs cleared.', hadRun);

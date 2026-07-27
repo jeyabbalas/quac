@@ -14,7 +14,11 @@ export interface UrlField {
   setBusy: (busy: boolean) => void;
   /** Disable without the 'Fetching…' label swap (the clear path's latch). */
   setDisabled: (disabled: boolean) => void;
-  /** Empty the typed URL (slot clear — a stale URL must not survive it). */
+  /** Empty the typed URL. Called on an EXPLICIT slot clear, and when a URL
+   *  load is abandoned outright — never on a failed one, where the text is
+   *  what a typo gets fixed in and what Retry sits beside (UX-06). All three
+   *  slots are driven from `app/clearInputs.ts`; a stale URL must not survive
+   *  the file it named. */
   clear: () => void;
 }
 

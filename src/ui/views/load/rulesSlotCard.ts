@@ -10,7 +10,7 @@
  * already-booted bridge — the no-dataset path NEVER touches getBridge(), so
  * dropping rules before data does not boot the 35 MB wasm.
  */
-import { clearRules, removeRulesFile } from '../../../app/clearInputs';
+import { clearRules, registerSlotClearUi, removeRulesFile } from '../../../app/clearInputs';
 import { effect } from '../../../app/signals';
 import {
   addRuleFiles,
@@ -91,14 +91,25 @@ export function mountRulesSlotCard(container: HTMLElement, ctx: ShellContext): v
   clearButton.hidden = true;
   clearButton.addEventListener('click', () => {
     void clearRules(ctx).then(() => {
-      // Cleared (button hid itself) → release any in-flight load's claim on
-      // the busy latch, then hand focus to the drop zone; a cancelled confirm
-      // keeps the modal's native restore-to-opener.
-      if (rulesState.get().files.length === 0) {
-        cancelRun();
-        dropZone.el.focus();
-      }
+      // Cleared (button hid itself) → hand focus to the drop zone. The busy
+      // latch and the typed URL were already released by the hook below, which
+      // a cancelled confirm never reaches — that keeps the modal's native
+      // restore-to-opener, and keeps what was typed.
+      if (rulesState.get().files.length === 0) dropZone.el.focus();
     });
+  });
+
+  registerSlotClearUi('rules', () => {
+    // UX-04, now for the clears that do NOT come through the button above —
+    // clear-all, and the ✕ that empties the slot. Being the cancel, a clear
+    // releases this card's own latch: a hung fetch's `.finally()` never runs,
+    // and nothing else would ever unlatch it (`ui-design.md` §5). Measured
+    // before the fix: `Clear all inputs` mid-hung-fetch left the field
+    // DISABLED at `Fetching…` under an `Empty` badge.
+    cancelRun();
+    // UX-06: and the typed URL, the one thing here the effect below does not
+    // re-render — an emptied slot must stop naming the file it dropped.
+    urlField.clear();
   });
 
   /** After a confirmed per-file remove: the ✕ now at the removed index (the

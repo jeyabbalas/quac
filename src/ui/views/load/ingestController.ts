@@ -21,6 +21,10 @@ export interface IngestUi {
   detailHost: HTMLElement;
   /** P16: called with the failed URL when a URL fetch fails with FETCH_CORS. */
   onCorsError?: (url: string) => void;
+  /** UX-06: a URL load the user ABANDONED outright (the SheetPicker's Cancel)
+   *  — deliberately not the failure paths, where the typed URL is what the
+   *  CORS help's Retry sits beside and what a typo gets fixed in. */
+  onUrlAbandoned?: () => void;
 }
 
 const STAGE_LABELS: Record<IngestStage, string> = {
@@ -89,6 +93,11 @@ async function runIngest(
         const chosen = await pickSheet(workbook.sheetNames);
         if (chosen === null) {
           slot.set(restoreState); // user cancelled — nothing changed
+          // UX-06: …so the card must stop advertising the workbook it did not
+          // load. `sourceUrl` is set only by ingestFromUrl, which is exactly
+          // the gate wanted: a cancelled picker on a DROPPED file must not
+          // wipe a field that still describes the loaded dataset.
+          if (sourceUrl !== undefined) ui.onUrlAbandoned?.();
           return;
         }
         sheetName = chosen;

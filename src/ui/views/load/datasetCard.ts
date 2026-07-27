@@ -64,6 +64,9 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
         }),
       );
     },
+    onUrlAbandoned: (): void => {
+      urlField.clear();
+    },
   };
 
   // Hoisted so controllerUi.onCorsError can re-invoke it (mutual reference).

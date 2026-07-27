@@ -19,9 +19,16 @@ export function loadError(
   return error;
 }
 
+/** V8's own "… is not valid JSON" tail — this template's own closing clause. */
+const NOT_VALID_JSON_TAIL = /\s*is not valid JSON\.?\s*$/;
+
 /**
  * `E_PARSE` — "(near position {n})" only when the engine message names one
  * (V8 formats vary; the position tail is stripped from the reason).
+ *
+ * `{path}` is the file's `fileId`: the display path for uploads, the retrieval
+ * URL for URL sets — the same string the card's "Ignored files" line prints,
+ * so the two can never name one file two ways (UX-10).
  */
 export function parseMessage(path: string, engineMessage: string): string {
   const positionMatch = /\s*(?:in JSON)?\s*at position (\d+).*$/.exec(engineMessage);
@@ -29,7 +36,20 @@ export function parseMessage(path: string, engineMessage: string): string {
     const reason = engineMessage.slice(0, positionMatch.index).trim().replace(/[.:]$/, '');
     return `\`${path}\` is not valid JSON: ${reason} (near position ${positionMatch[1] ?? ''}).`;
   }
-  return `\`${path}\` is not valid JSON: ${engineMessage.trim().replace(/\.$/, '')}.`;
+  // Current V8 has a second, position-free form that quotes the file back and
+  // closes with this template's own words: `Unexpected token 'T', "This file
+  // "... is not valid JSON`. Pasted in whole it stutters, and the snippet says
+  // nothing the card does not already show — the leading clause is the whole
+  // diagnosis. Gated on the tail so no other message is ever truncated.
+  const trimmed = engineMessage.trim();
+  if (NOT_VALID_JSON_TAIL.test(trimmed)) {
+    const comma = trimmed.indexOf(',');
+    const clause =
+      comma === -1 ? trimmed.replace(NOT_VALID_JSON_TAIL, '') : trimmed.slice(0, comma);
+    const reason = clause.trim().replace(/[.:]$/, '');
+    if (reason !== '') return `\`${path}\` is not valid JSON: ${reason}.`;
+  }
+  return `\`${path}\` is not valid JSON: ${trimmed.replace(/\.$/, '')}.`;
 }
 
 export function dupIdMessage(id: string, a: string, b: string): string {

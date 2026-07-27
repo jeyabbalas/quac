@@ -195,7 +195,10 @@ export function intakeEntry(
     json = JSON.parse(raw);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    acc.errors.push(loadError('E_PARSE', parseMessage(entry.relativePath, reason), { fileId }));
+    // Named by fileId, not relativePath: identical for uploads, and for URL
+    // sets it is the retrieval URL the "Ignored files" line already prints, so
+    // the card cannot name one file two ways (UX-10).
+    acc.errors.push(loadError('E_PARSE', parseMessage(fileId, reason), { fileId }));
     const file: SchemaFile = {
       fileId,
       relativePath: entry.relativePath,
@@ -252,7 +255,12 @@ export function intakeFiles(
   origin: 'upload' | 'url',
 ): IntakeResult {
   const normalized = entries.map((e) => ({ ...e, relativePath: normalizePath(e.relativePath) }));
-  const stripped = stripCommonRoot(normalized.map((e) => e.relativePath));
+  // Uploads only (§A.2.1): the strip is a webkitRelativePath artefact. A URL's
+  // first `/`-delimited segment is its scheme, so stripping it ate `http:` —
+  // and messages built here (E_PARSE, E_DUP_ID, the whole ref graph) are frozen
+  // before relativizeUrlPaths repairs the stored path (UX-10).
+  const paths = normalized.map((e) => e.relativePath);
+  const stripped = origin === 'upload' ? stripCommonRoot(paths) : paths;
   const sorted = normalized
     .map((e, i) => ({ ...e, relativePath: stripped[i] ?? e.relativePath }))
     .sort((a, b) =>

@@ -64,6 +64,9 @@ test('a hung schema fetch shows Loading, and Clear cancels it', async ({ page })
   await expect(fetchButton(page, 'schema')).toHaveText('Fetch');
   await expect(fetchButton(page, 'schema')).toBeEnabled();
   await expect(urlInput(page, 'schema')).toBeEnabled();
+  // UX-06: and empty — releasing the latch on a field still naming the dead
+  // request would leave the card contradicting its own `Empty` badge.
+  await expect(urlInput(page, 'schema')).toHaveValue('');
 });
 
 test('a hung rules fetch shows Loading, and Clear releases its busy latch', async ({ page }) => {
@@ -92,6 +95,7 @@ test('a hung rules fetch shows Loading, and Clear releases its busy latch', asyn
   await expect(fetchButton(page, 'rules')).toHaveText('Fetch');
   await expect(fetchButton(page, 'rules')).toBeEnabled();
   await expect(urlInput(page, 'rules')).toBeEnabled();
+  await expect(urlInput(page, 'rules')).toHaveValue(''); // UX-06, as above
 
   // And it is genuinely usable: a second fetch starts rather than being
   // refused by a latch nobody released.

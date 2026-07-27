@@ -15,6 +15,7 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
 const HESP = (ext: string): string => join(FIXTURES, 'hesp', 'data', `hesp_dirty_100.${ext}`);
 const HESP_DIMS = '101 rows × 266 cols';
 const INGEST_TIMEOUT = 90_000;
+const CORS = 'http://localhost:4199';
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -22,6 +23,7 @@ const datasetCard = (page: Page): Locator => page.locator('[data-slot="data"]');
 const datasetBadge = (page: Page): Locator => datasetCard(page).locator('.q-badge');
 const datasetSummary = (page: Page): Locator => datasetCard(page).locator('.q-slotcard-summary');
 const fileInput = (page: Page): Locator => datasetCard(page).locator('input[type="file"]');
+const datasetUrlInput = (page: Page): Locator => datasetCard(page).locator('.q-urlfield-input');
 
 async function dropFile(page: Page, path: string, name: string): Promise<void> {
   const base64 = readFileSync(path).toString('base64');
@@ -101,6 +103,10 @@ test('multi-sheet xlsx opens the SheetPicker (Sheet 1 preselected); picking shee
 test('cancelling the SheetPicker leaves the slot untouched', async ({ page }) => {
   await page.goto('/quac/');
 
+  // A URL typed but never fetched: the FILE leg must not touch it (UX-06 —
+  // the field tracks the typing, and only an abandoned URL load empties it).
+  await page.getByLabel('Dataset URL').fill('http://localhost:4199/tiny/still-typing.csv');
+
   await fileInput(page).setInputFiles(join(FIXTURES, 'tiny', 'two_sheets.xlsx'));
   const dialog = page.getByRole('dialog', { name: 'Choose a sheet' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
@@ -108,6 +114,32 @@ test('cancelling the SheetPicker leaves the slot untouched', async ({ page }) =>
 
   await expect(dialog).toBeHidden();
   await expect(datasetBadge(page)).toHaveText('Empty');
+  await expect(datasetUrlInput(page)).toHaveValue('http://localhost:4199/tiny/still-typing.csv');
+});
+
+test('cancelling the SheetPicker on a URL load keeps the slot and drops the URL', async ({
+  page,
+}) => {
+  await page.goto('/quac/');
+
+  // A loaded dataset to revert to, so the cancel has something to preserve.
+  await fileInput(page).setInputFiles(join(FIXTURES, 'tiny', 'people.csv'));
+  await expect(datasetSummary(page)).toHaveText('people.csv · 12 rows × 5 cols', {
+    timeout: INGEST_TIMEOUT,
+  });
+
+  await page.getByLabel('Dataset URL').fill(`${CORS}/tiny/two_sheets.xlsx`);
+  await datasetCard(page).getByRole('button', { name: 'Fetch' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Choose a sheet' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  // UX-06: the slot keeps people.csv, so the field must stop reading
+  // two_sheets.xlsx — a badge and a URL field describing different files is
+  // the whole finding.
+  await expect(dialog).toBeHidden();
+  await expect(datasetSummary(page)).toHaveText('people.csv · 12 rows × 5 cols');
+  await expect(datasetUrlInput(page)).toHaveValue('');
 });
 
 test('Report tab shows the display grid without __row__', async ({ page }) => {

@@ -1,14 +1,15 @@
 /**
  * UIX-7 golden journey 9: every input is clearable, and an explicit clear
- * invalidates the run, the hash, and the tables. Seven passes over the tiny/
- * fixtures: (1) rules clear after a run strips run paint but keeps the data
- * grid; (2) dataset clear → same-file re-upload builds a FRESH grid (the
- * monotonic-generation regression); (3) per-file ✕ keeps the lint context;
- * (4) emptying the rules slot takes its `Details` disclosure with it (UX-05 —
- * the card used to keep a childless one); (5) unsaved Studio work gates the
- * rules clear behind a confirm; (6) clear all resets the session to first-run;
- * (7) a cleared share link stays cleared across reload (history.replaceState
- * rewrite from live sources).
+ * invalidates the run, the hash, the tables, and the card's own typed URL.
+ * Eight passes over the tiny/ fixtures: (1) rules clear after a run strips run
+ * paint but keeps the data grid; (2) dataset clear → same-file re-upload builds
+ * a FRESH grid (the monotonic-generation regression); (3) per-file ✕ keeps the
+ * lint context; (4) emptying the rules slot takes its `Details` disclosure with
+ * it (UX-05 — the card used to keep a childless one); (5) a cleared slot forgets
+ * the URL it was fetched from, and a FAILED fetch keeps it (UX-06); (6) unsaved
+ * Studio work gates the rules clear behind a confirm; (7) clear all resets the
+ * session to first-run; (8) a cleared share link stays cleared across reload
+ * (history.replaceState rewrite from live sources).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,7 +19,6 @@ import type { Locator, Page } from '@playwright/test';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 const DATA = join(FIXTURES, 'tiny', 'people.csv');
-const SCHEMA = join(FIXTURES, 'tiny', 'people.schema.json');
 const RULES = join(FIXTURES, 'tiny', 'people_rules.quac.csv');
 const CORS = 'http://localhost:4199';
 
@@ -38,6 +38,9 @@ const rulesSummary = (page: Page): Locator =>
 /** UX-05: an emptied slot must not advertise detail it does not have. */
 const slotDetails = (page: Page, slot: string): Locator =>
   page.locator(`[data-slot="${slot}"] .q-slotcard-details`);
+/** UX-06: an emptied slot must not keep naming the file it fetched. */
+const urlInput = (page: Page, slot: string): Locator =>
+  page.locator(`[data-slot="${slot}"] .q-urlfield-input`);
 const schemaBadge = (page: Page): Locator =>
   page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first();
 const runButton = (page: Page): Locator => page.locator('.q-runbar-button');
@@ -199,6 +202,41 @@ test('emptying the rules slot takes its Details disclosure with it', async ({ pa
   await expect(slotDetails(page, 'rules')).toBeHidden();
 });
 
+test('a cleared slot forgets the URL it was fetched from', async ({ page }) => {
+  await page.goto('/quac/');
+
+  await page.getByLabel('Schema URL').fill(`${CORS}/tiny/people.schema.json`);
+  await page.locator('[data-slot="schema"]').getByRole('button', { name: 'Fetch' }).click();
+  await expect(schemaBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await page.getByLabel('Rules URL').fill(`${CORS}/tiny/people_rules.quac.csv`);
+  await page.locator('[data-slot="rules"]').getByRole('button', { name: 'Fetch' }).click();
+  await expect(rulesBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+
+  // Loaded: each field still shows what it fetched, which is correct.
+  await expect(urlInput(page, 'schema')).toHaveValue(`${CORS}/tiny/people.schema.json`);
+  await expect(urlInput(page, 'rules')).toHaveValue(`${CORS}/tiny/people_rules.quac.csv`);
+
+  // Clear the schema: its field empties, and the rules field is untouched —
+  // the clear is per-slot, not a broadcast.
+  await clearSchemaButton(page).click();
+  await expect(schemaBadge(page)).toHaveText('Empty');
+  await expect(urlInput(page, 'schema')).toHaveValue('');
+  await expect(urlInput(page, 'rules')).toHaveValue(`${CORS}/tiny/people_rules.quac.csv`);
+
+  await clearRulesButton(page).click();
+  await expect(rulesBadge(page)).toHaveText('Empty');
+  await expect(urlInput(page, 'rules')).toHaveValue('');
+
+  // The other half of the contract: a FAILED fetch keeps what was typed, so
+  // the typo is still there to fix. Guarded because the tempting fix — clear
+  // whenever the slot projects `empty` — would wipe it.
+  await page.route('**/nope.quac.csv', (route) => route.abort());
+  await page.getByLabel('Rules URL').fill(`${CORS}/tiny/nope.quac.csv`);
+  await page.locator('[data-slot="rules"]').getByRole('button', { name: 'Fetch' }).click();
+  await expect(rulesBadge(page)).toHaveText('Error', { timeout: INGEST_TIMEOUT });
+  await expect(urlInput(page, 'rules')).toHaveValue(`${CORS}/tiny/nope.quac.csv`);
+});
+
 test('unsaved Studio work gates the rules clear behind a confirm', async ({ page }) => {
   await page.goto('/quac/');
   await loadDatasetAndRules(page);
@@ -215,6 +253,8 @@ test('unsaved Studio work gates the rules clear behind a confirm', async ({ page
   await expect(page.locator('.q-studio-drawer')).toBeHidden();
 
   await goToLoad(page);
+  // Something typed but not fetched, to watch across both dialog outcomes.
+  await page.getByLabel('Rules URL').fill(`${CORS}/tiny/people_rules.quac.csv`);
   await clearRulesButton(page).click();
   const dialog = page.getByRole('dialog', { name: 'Clear the QC rules?' });
   await expect(dialog).toBeVisible();
@@ -224,6 +264,8 @@ test('unsaved Studio work gates the rules clear behind a confirm', async ({ page
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
   await expect(rulesBadge(page)).toHaveText('Warning');
+  // UX-06: including the field — the card wipe sits downstream of the confirm.
+  await expect(urlInput(page, 'rules')).toHaveValue(`${CORS}/tiny/people_rules.quac.csv`);
 
   // Confirm empties the slot.
   await clearRulesButton(page).click();
@@ -232,16 +274,22 @@ test('unsaved Studio work gates the rules clear behind a confirm', async ({ page
     .getByRole('button', { name: 'Clear rules' })
     .click();
   await expect(rulesBadge(page)).toHaveText('Empty');
+  await expect(urlInput(page, 'rules')).toHaveValue('');
 });
 
 test('clear all inputs resets the session to first-run', async ({ page }) => {
   await page.goto('/quac/');
-  await datasetInput(page).setInputFiles(DATA);
+  // All three by URL, so all three URL fields have something to shed — the
+  // dataset's already did, the other two did not (UX-06).
+  await page.getByLabel('Dataset URL').fill(`${CORS}/tiny/people.csv`);
+  await page.locator('[data-slot="data"]').getByRole('button', { name: 'Fetch' }).click();
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
-  await page.getByLabel('Browse schema files').setInputFiles(SCHEMA);
+  await page.getByLabel('Schema URL').fill(`${CORS}/tiny/people.schema.json`);
+  await page.locator('[data-slot="schema"]').getByRole('button', { name: 'Fetch' }).click();
   await expect(schemaBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   // All three filled, so all three have detail to shed (the UX-05 repro).
-  await rulesInput(page).setInputFiles(RULES);
+  await page.getByLabel('Rules URL').fill(`${CORS}/tiny/people_rules.quac.csv`);
+  await page.locator('[data-slot="rules"]').getByRole('button', { name: 'Fetch' }).click();
   await expect(rulesSummary(page)).toContainText('6 rules', { timeout: INGEST_TIMEOUT });
   await expect(slotDetails(page, 'rules')).toBeVisible();
   await expect(page.locator('.q-preview')).toBeVisible();
@@ -267,6 +315,8 @@ test('clear all inputs resets the session to first-run', async ({ page }) => {
   // the one that did — its effect updated the frame before emptying the host.
   for (const slot of ['data', 'schema', 'rules']) {
     await expect(slotDetails(page, slot)).toBeHidden();
+    // UX-06: nor a URL. Only the dataset card managed this before the fix.
+    await expect(urlInput(page, slot)).toHaveValue('');
   }
   // First-run state returns: hero back, preview gone, Share dark, button gone.
   await expect(page.locator('.q-example')).toBeVisible();

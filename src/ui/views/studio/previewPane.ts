@@ -250,14 +250,19 @@ export function createPreviewPane(): PreviewPane {
 
   /** "Filter preview to matches" — offered only when the raw condition passes
    *  validateSQLFilter on the sample table (window functions or `__row__`
-   *  references simply fail validation; same contract as the report grid). */
+   *  references simply fail validation; same contract as the report grid) AND
+   *  matches at least one of its rows. A zero-match condition would empty the
+   *  preview on click, which is UX-03 wearing the Studio's clothes: the count
+   *  the test result prints is against `data`, the filter runs against
+   *  data-table's own typed copy of the 10k-row sample, and the two can
+   *  disagree. Nothing to show ⇒ nothing to offer. */
   function offerPreviewFilter(draft: QCRule, condition: string): void {
     const token = renderToken;
     void enqueue(async () => {
       const t = table;
       if (t === undefined || token !== renderToken) return;
       const verdict = await t.actions.validateSQLFilter(condition);
-      if (!verdict.valid || token !== renderToken) return;
+      if (!verdict.valid || verdict.matchCount === 0 || token !== renderToken) return;
       const label = draft.ruleId === '' ? 'rule test' : draft.ruleId;
       const toggle = document.createElement('button');
       toggle.type = 'button';

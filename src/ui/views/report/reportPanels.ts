@@ -33,7 +33,9 @@ import type { SeverityToggles } from './reportGrid';
 
 export interface PanelHooks {
   onSeverityChange: (severity: SeverityToggles) => void;
-  /** Best-effort offender focus; resolves false when not filterable. */
+  /** Best-effort offender focus; resolves false when the grid was left
+   *  unfiltered (not filterable, or filterable but matching no rows — the
+   *  view says which). The panel discards the value. */
   onOffenderFocus: (condition: string, label: string) => Promise<boolean>;
   onClearOffenderFocus: () => void;
   onRerun: () => void;

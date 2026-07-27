@@ -210,22 +210,47 @@ export function applyTooltips(plan: HeaderTooltipPlan): void {
 }
 
 /**
- * Repeat-offenders row click (qc-report-spec §4): best-effort raw-SQL filter
- * for window-free row-scope SQL rules. Returns false when the condition
- * cannot filter the display table (window fns, missing columns, __row__).
+ * How an offender focus ended (qc-report-spec.md §4 "best effort"):
+ * - `applied` — the display table has rows matching the rule; they are shown.
+ * - `unfilterable` — the condition cannot run here at all (window functions,
+ *   columns the display export does not carry, `__row__`).
+ * - `no-match` — the condition runs and matches NOTHING. The panel's count and
+ *   the grid's own copy disagree: the rules ran against `data`, where
+ *   e.g. `interview_date` is VARCHAR, while data-table's loaded copy types the
+ *   same column DATE, so a value the rule flagged as an unparseable date is
+ *   already null there (UX-03, proven on H004 in the 2026-07-26 review's repro).
  */
-export function tryFilterByCondition(condition: string, label: string): Promise<boolean> {
+export type OffenderFocusOutcome = 'applied' | 'unfilterable' | 'no-match';
+
+/**
+ * Repeat-offenders row click (qc-report-spec §4): best-effort raw-SQL filter
+ * for window-free row-scope SQL rules.
+ *
+ * `validateSQLFilter` already runs `SELECT COUNT(*) … WHERE (<sql>)`, so the
+ * match count costs nothing extra — and a filter that would empty the grid is
+ * a FAILED best effort, not a success. On either failure the previous rule's
+ * filter goes too: leaving it applied would label the grid with a rule the
+ * user did not click.
+ */
+export function tryFilterByCondition(
+  condition: string,
+  label: string,
+): Promise<OffenderFocusOutcome> {
   return enqueue(async () => {
-    if (table === undefined) return false;
     const t = table;
+    if (t === undefined) return 'unfilterable';
     const verdict = await t.actions.validateSQLFilter(condition);
-    if (!verdict.valid) return false;
+    const outcome: OffenderFocusOutcome = !verdict.valid
+      ? 'unfilterable'
+      : verdict.matchCount === 0
+        ? 'no-match'
+        : 'applied';
     if (offenderFilterId !== null) {
       t.actions.removeRawSQLFilter(offenderFilterId);
       offenderFilterId = null;
     }
-    offenderFilterId = t.actions.addRawSQLFilter(condition, label);
-    return true;
+    if (outcome === 'applied') offenderFilterId = t.actions.addRawSQLFilter(condition, label);
+    return outcome;
   });
 }
 

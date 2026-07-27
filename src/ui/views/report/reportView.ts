@@ -143,13 +143,23 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     },
     onOffenderFocus: async (condition, label) => {
       const mod = await loadGridModule();
-      const applied = await mod.tryFilterByCondition(condition, label);
-      if (!applied) {
+      const outcome = await mod.tryFilterByCondition(condition, label);
+      // Both failures leave the grid unfiltered (qc-report-spec.md §4), so the
+      // one thing left to do is say WHICH failure it was — "nothing matched"
+      // reads as a wrong count unless we account for it.
+      if (outcome === 'unfilterable') {
         showToast('This rule cannot filter the grid (window functions or unavailable columns).', {
           kind: 'info',
         });
+      } else if (outcome === 'no-match') {
+        showToast(`${label} matches no rows in the grid, so it was left unfiltered.`, {
+          kind: 'info',
+          hint:
+            'The grid shows the data as it stands after the run — ' +
+            "this rule's flagged cells are still annotated.",
+        });
       }
-      return applied;
+      return outcome === 'applied';
     },
     onClearOffenderFocus: () => {
       gridModule?.clearOffenderFilter();

@@ -6,7 +6,7 @@
  * scope are always included (cheap); dataset-scope flags are never
  * annotations — they belong to the panels / Sheet 3.
  */
-import { renderFlag } from '../flags/messages';
+import { renderFlagMessage } from '../flags/messages';
 import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
 
@@ -23,7 +23,11 @@ export interface PlannedAnnotation {
   message: string;
   rowId?: number;
   column?: string;
-  /** Rule-id provenance (data-table `code`). */
+  /**
+   * Rule-id provenance (data-table `code`). The popover renders `code · source`
+   * beneath every entry, which is why `message` must NOT repeat the id: it used
+   * to print `schema:prop:reference_year:value` twice, one row apart (UX-09).
+   */
   code: string;
   source: QCFlag['source'];
   metadata: { scope: QCFlag['scope']; correction?: QCFlag['correction'] };
@@ -43,7 +47,7 @@ const SEVERITY_ORDER: readonly QCFlag['severity'][] = ['error', 'warning', 'info
 function toAnnotation(flag: QCFlag): PlannedAnnotation | null {
   const base = {
     severity: flag.severity,
-    message: renderFlag(flag),
+    message: renderFlagMessage(flag),
     code: flag.ruleId,
     source: flag.source,
     metadata: {

@@ -314,17 +314,41 @@
   align-items: baseline;
 }
 
-/* Schema ruleIds embed the source file id — a full URL for URL-loaded sets —
-   which a flex item will not shrink below. Without these the finding text
-   spills past the panel's right edge and squeezes the severity pill to a
-   sliver. */
-.q-findings-list li > span:not(.q-pill) {
+.q-findings-list li > .q-pill {
+  flex: none;
+}
+
+/* The message + id stack (UX-09: the sentence leads, the id follows muted).
+   Schema ruleIds embed the source file id — a full URL for URL-loaded sets —
+   which a flex item will not shrink below. Without `min-width: 0` here and
+   `overflow-wrap` on the leaves, the row spills past the panel's right edge
+   and squeezes the severity pill to a sliver. */
+.q-findings-list li > .q-finding-body {
+  flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.q-finding-message {
   overflow-wrap: anywhere;
 }
 
-.q-findings-list li > .q-pill {
-  flex: none;
+.q-finding-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--q-space-1) var(--q-space-2);
+  align-items: baseline;
+  min-width: 0;
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-600);
+}
+
+.q-finding-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--q-font-mono);
 }
 
 /* Repeat offenders */

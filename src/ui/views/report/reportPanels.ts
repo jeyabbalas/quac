@@ -16,14 +16,14 @@ import { createPanelTabs } from '../../components/panelTabs';
 import type { PanelTabSpec } from '../../components/panelTabs';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { createSeverityLabel } from '../../components/severityPill';
-import { renderFlag } from '../../../core/flags/messages';
+import { renderFlagMessage } from '../../../core/flags/messages';
 import { columnDigest, missingVariables } from '../../../core/schema/column-meta';
 import { schemaState } from '../../../core/schema/schema-store';
 import { rulesState } from '../../../core/rules/rules-store';
 import {
-  RULE_STATUS_LABELS,
   exactRuleCounts,
   rankOffenders,
+  ruleStatusMessage,
   schemaRuleTargets,
 } from '../../../core/report/reportModel';
 import type { ShellContext } from '../../../app/shell';
@@ -366,21 +366,32 @@ export function mountReportPanels(
     }
     // Errors first: emission order puts the schema-set `$comment` advisories
     // (info, one per file) ahead of everything, burying the real findings.
-    const rows: { severity: 'error' | 'warning' | 'info'; text: string }[] = [
+    // The id is NOT in `message` (UX-09): schema ruleIds embed the source file
+    // id — a full URL for URL-loaded sets, 106 chars in the bundled example —
+    // which pushed the sentence off the first line and named the file twice.
+    // It rides the muted meta line below instead, the same split Sheet 3 makes
+    // with its `Rule ID` / `Message` columns.
+    const rows: {
+      severity: 'error' | 'warning' | 'info';
+      message: string;
+      ruleId: string;
+      /** Dedupe count; only rendered above 1. */
+      count: number;
+    }[] = [
       ...artifacts.flagStore.datasetScope(),
       ...artifacts.flagStore.all().filter((e) => e.flag.scope === 'column'),
     ].map((entry) => ({
       severity: entry.flag.severity,
-      text:
-        entry.count > 1 ? `${renderFlag(entry.flag)} (×${num(entry.count)})` : renderFlag(entry.flag),
+      message: renderFlagMessage(entry.flag),
+      ruleId: entry.flag.ruleId,
+      count: entry.count,
     }));
     for (const stat of (artifacts.rules?.perRule ?? []).filter((s) => s.status !== 'ok')) {
       rows.push({
         severity: stat.status === 'broken' ? 'error' : 'info',
-        text:
-          stat.status === 'broken'
-            ? `${stat.ruleId}: Rule failed to execute: ${stat.error ?? 'unknown error'}`
-            : `${stat.ruleId}: ${RULE_STATUS_LABELS[stat.status]}`,
+        message: ruleStatusMessage(stat),
+        ruleId: stat.ruleId,
+        count: 1,
       });
     }
     const rank = { error: 0, warning: 1, info: 2 };
@@ -395,9 +406,29 @@ export function mountReportPanels(
     for (const row of rows) {
       const item = document.createElement('li');
       item.append(createSeverityLabel(row.severity));
-      const text = document.createElement('span');
-      text.textContent = row.text;
-      item.append(text);
+
+      const body = document.createElement('div');
+      body.className = 'q-finding-body';
+
+      const message = document.createElement('span');
+      message.className = 'q-finding-message';
+      message.textContent = row.message;
+
+      const meta = document.createElement('div');
+      meta.className = 'q-finding-meta';
+      const id = document.createElement('code');
+      id.className = 'q-finding-id';
+      id.append(monoBreakable(row.ruleId));
+      meta.append(id);
+      if (row.count > 1) {
+        const count = document.createElement('span');
+        count.textContent = `×${num(row.count)}`;
+        count.title = `${num(row.count)} occurrences`;
+        meta.append(count);
+      }
+
+      body.append(message, meta);
+      item.append(body);
       list.append(item);
     }
     if (list.childElementCount === 0) {

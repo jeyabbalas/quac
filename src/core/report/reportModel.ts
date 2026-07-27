@@ -6,8 +6,8 @@
  * this 1:1, so all layout decisions live here where a node test can assert
  * them without exceljs.
  *
- * A handful of helpers (`RULE_STATUS_LABELS`, `schemaRuleTargets`,
- * `exactRuleCounts`, `rankOffenders`) are shared with the in-app Report
+ * A handful of helpers (`RULE_STATUS_LABELS`, `ruleStatusMessage`,
+ * `schemaRuleTargets`, `exactRuleCounts`, `rankOffenders`) are shared with the in-app Report
  * panels (`ui/views/report/reportPanels.ts`) so the workbook and the panels
  * can never disagree about a rule's status wording or its exact count.
  *
@@ -47,6 +47,18 @@ export const RULE_STATUS_LABELS: Record<RuleRunStatus, string> = {
   'skipped-external': 'not evaluated — requires external reference data',
   'skipped-inapplicable': 'skipped — target variables not in this dataset',
 };
+
+/**
+ * The one wording for a rule that did not run, shared by Sheet 3 and the
+ * Findings panel — the panel used to compose the `broken` string itself.
+ * Returns the message ONLY; both surfaces carry the ruleId separately (Sheet 3
+ * in its `Rule ID` column, the panel on its muted id line).
+ */
+export function ruleStatusMessage(stat: RuleRunStat): string {
+  return stat.status === 'broken'
+    ? `Rule failed to execute: ${stat.error ?? 'unknown error'}`
+    : RULE_STATUS_LABELS[stat.status];
+}
 
 /** Target column(s) for a schema ruleId (D.5 grammar); '—' for dataset scope. */
 export function schemaRuleTargets(ruleId: string): string {
@@ -377,10 +389,7 @@ function buildDatasetFindings(input: ReportModelInput): FindingRow[] {
       severity: stat.status === 'broken' ? 'error' : 'info',
       scope: '',
       column: '',
-      message:
-        stat.status === 'broken'
-          ? `Rule failed to execute: ${stat.error ?? 'unknown error'}`
-          : RULE_STATUS_LABELS[stat.status],
+      message: ruleStatusMessage(stat),
       count: '',
     });
   }

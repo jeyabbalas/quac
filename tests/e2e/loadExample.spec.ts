@@ -60,11 +60,19 @@ test('the one click also fills the address bar, and a reload restores all three 
 
   // UIX-10: the hero bypasses the schema and rules cards and writes the stores
   // directly — the store-driven writer covers it anyway. Accepted consequence
-  // of decision 1: a ~2000-char URL, and a reload that restores the example
-  // rather than showing first-run.
+  // of decision 1: a reload restores the example rather than showing first-run.
   await expect(page).toHaveURL(/schema=/);
   await expect(page).toHaveURL(/rules=/);
   await expect(page).toHaveURL(/data=/);
+
+  // UX-07: exactly ONE schema crawl base. The other 13 files are $ref-reachable
+  // from the root, so listing them all bought nothing and cost the deployed
+  // link 2062 chars — over the 2,000-char portability limit. The schema slot
+  // still resolves the whole set, which the summary below proves.
+  expect(page.url().match(/schema=/g)).toHaveLength(1);
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-summary')).toContainText(
+    '14 files · root: core/core.schema.json',
+  );
 
   await page.reload();
   await expect(page.locator('.q-example')).toBeHidden();

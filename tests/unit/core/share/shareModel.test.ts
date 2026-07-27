@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
-import { buildShareModel } from '../../../../src/core/share/shareModel';
-import { assembleFragment } from '../../../../src/core/share/urlConfig';
+import { buildShareLink, buildShareModel } from '../../../../src/core/share/shareModel';
+import { MAX_URL_CHARS, assembleFragment } from '../../../../src/core/share/urlConfig';
+import type { UrlConfig } from '../../../../src/core/share/urlConfig';
 
 test('empty input produces an empty, non-shareable model', () => {
   const model = buildShareModel({ dataset: null, schema: null, rules: [] });
@@ -62,6 +63,44 @@ test('mixed provenance: URL rules included, uploaded rules excluded', () => {
   expect(model.config.rules).toEqual(['https://h/hosted.quac.csv']);
   const rulesArtifacts = model.artifacts.filter((a) => a.slot === 'rules');
   expect(rulesArtifacts.map((a) => a.shareable)).toEqual([true, false]);
+});
+
+// UX-07: the modal renders link + Copy unconditionally and only ADDS the
+// manifest offer past the limit, so the threshold itself is what needs pinning.
+const BASE = 'https://jeyabbalas.github.io/quac/';
+
+/** A config whose assembled link measures exactly `target` characters. */
+function configOfLength(target: number): UrlConfig {
+  // Measure the empty-`data=` link rather than the empty config: the latter has
+  // no `?` separator, which would put the padding off by one.
+  const overhead = buildShareLink(BASE, { schema: [], rules: [], passthrough: [], data: '' }).length;
+  return { schema: [], rules: [], passthrough: [], data: 'd'.repeat(target - overhead) };
+}
+
+test('buildShareLink measures the assembled link and flags only what is OVER the limit', () => {
+  const under = buildShareLink(BASE, configOfLength(MAX_URL_CHARS - 1));
+  expect(under.length).toBe(MAX_URL_CHARS - 1);
+  expect(under.overLimit).toBe(false);
+
+  // The boundary is `>`, not `>=` — a link measuring exactly the limit is within it.
+  const exact = buildShareLink(BASE, configOfLength(MAX_URL_CHARS));
+  expect(exact.length).toBe(MAX_URL_CHARS);
+  expect(exact.overLimit).toBe(false);
+
+  const over = buildShareLink(BASE, configOfLength(MAX_URL_CHARS + 1));
+  expect(over.length).toBe(MAX_URL_CHARS + 1);
+  expect(over.overLimit).toBe(true);
+});
+
+test('buildShareLink returns the same string the fragment grammar assembles', () => {
+  const model = buildShareModel({
+    dataset: { name: 'd.csv', sourceUrl: 'https://h/d.csv' },
+    schema: null,
+    rules: [],
+  });
+  const link = buildShareLink(BASE, model.config);
+  expect(link.url).toBe(`${BASE}${assembleFragment(model.config)}`);
+  expect(link.url).toHaveLength(link.length);
 });
 
 test('multi-base schema lists one row per crawl base', () => {

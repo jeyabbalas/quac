@@ -1,12 +1,13 @@
 /**
  * UIX-7 golden journey 9: every input is clearable, and an explicit clear
  * invalidates the run, the hash, the tables, and the card's own typed URL.
- * Eight passes over the tiny/ fixtures: (1) rules clear after a run strips run
+ * Nine passes over the tiny/ fixtures: (1) rules clear after a run strips run
  * paint but keeps the data grid; (2) dataset clear → same-file re-upload builds
  * a FRESH grid (the monotonic-generation regression); (3) per-file ✕ keeps the
  * lint context; (4) emptying the rules slot takes its `Details` disclosure with
  * it (UX-05 — the card used to keep a childless one); (5) a cleared slot forgets
- * the URL it was fetched from, and a FAILED fetch keeps it (UX-06); (6) unsaved
+ * the URL it was fetched from, and a FAILED fetch keeps it (UX-06); (5b) clearing
+ * the SCHEMA explains the rules it disables in plain language (UX-08); (6) unsaved
  * Studio work gates the rules clear behind a confirm; (7) clear all resets the
  * session to first-run; (8) a cleared share link stays cleared across reload
  * (history.replaceState rewrite from live sources).
@@ -20,6 +21,7 @@ import type { Locator, Page } from '@playwright/test';
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 const DATA = join(FIXTURES, 'tiny', 'people.csv');
 const RULES = join(FIXTURES, 'tiny', 'people_rules.quac.csv');
+const SCHEMA = join(FIXTURES, 'tiny', 'people.schema.json');
 const CORS = 'http://localhost:4199';
 
 const INGEST_TIMEOUT = 90_000;
@@ -170,6 +172,41 @@ test('per-file ✕ removes one rules file and keeps the lint context', async ({ 
   // The context survived the remove: survivors relinted WITH data, so the
   // pending marker must not regress into the summary.
   await expect(rulesSummary(page)).not.toContainText('data checks pending');
+});
+
+test('clearing the schema explains, in plain language, what it disabled', async ({ page }) => {
+  // UX-08's filed repro, on the tiny fixtures. This is the pass that pins the
+  // whole causal chain — clearSchema → typedSync's revert of quac_typed to the
+  // all-VARCHAR raw copy → setLintContext → relint — not just the wording.
+  await page.goto('/quac/');
+  await datasetInput(page).setInputFiles(DATA);
+  await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await page.getByLabel('Browse schema files').setInputFiles(SCHEMA);
+  await expect(schemaBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await rulesInput(page).setInputFiles(RULES);
+
+  // WITH the schema, `age` is BIGINT and `score` DOUBLE, so all six bind.
+  await expect(rulesBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await expect(rulesSummary(page)).toHaveText('1 file · 6 rules');
+
+  await clearSchemaButton(page).click();
+  await expect(schemaBadge(page)).toHaveText('Empty');
+  // One click, and R003/R005 are gone — which is correct (V23) and must stay.
+  await expect(rulesBadge(page)).toHaveText('Warning', { timeout: INGEST_TIMEOUT });
+  await expect(rulesSummary(page)).toHaveText('1 file · 6 rules · 2 lint errors');
+
+  // What changed is the account it gives of itself.
+  await page.locator('[data-slot="rules"] .q-slotcard-details > summary').click();
+  const lintErrors = page.locator('[data-slot="rules"] .q-rulesissue--error');
+  await expect(lintErrors).toHaveCount(2);
+  await expect(lintErrors.filter({ hasText: 'R003' })).toContainText(
+    'age is stored as text in this dataset',
+  );
+  await expect(lintErrors.filter({ hasText: 'R005' })).toContainText(
+    'score, age are stored as text in this dataset',
+  );
+  await expect(lintErrors.first()).toContainText('Load a JSON Schema');
+  await expect(lintErrors.first()).not.toContainText('Binder Error');
 });
 
 test('emptying the rules slot takes its Details disclosure with it', async ({ page }) => {

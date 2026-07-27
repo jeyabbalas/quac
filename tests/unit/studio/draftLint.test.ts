@@ -67,6 +67,24 @@ describe('runDraftLint', () => {
     expect(issue?.detail).toContain('recrd_id');
   });
 
+  // UX-08: the Studio shares lint.ts, so the plain-language diagnosis reaches
+  // the rule form's per-field list and the CodeMirror diagnostics for free.
+  it('arithmetic on a text column → the untyped-column diagnosis, not binder text', async () => {
+    const result = await runDraftLint(
+      draft({ condition: 'record_id + 1 > 0' }),
+      'work.quac.csv',
+      null,
+      { ctx, files: [] },
+    );
+    expect(result.ok).toBe(false);
+    const issue = result.byField.condition?.[0];
+    expect(issue?.code).toBe('sql-error');
+    expect(issue?.message).toContain('record_id is stored as text in this dataset');
+    expect(issue?.message).toContain('TRY_CAST(record_id AS DOUBLE)');
+    expect(issue?.message).not.toContain('Binder Error');
+    expect(issue?.detail).toContain('Binder Error');
+  });
+
   it('broken update_expression → sql-error bucketed under update_expression', async () => {
     const result = await runDraftLint(
       draft({

@@ -744,6 +744,166 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
     });
   });
 
+  // UX-08. A DELIBERATELY SEPARATE scratch: `openScratch` above is fully typed,
+  // and adding VARCHAR columns to it would drag every stage-4/5/6 assertion in
+  // this file through the new code path. Leaving it typed is itself the pin
+  // that a schema'd dataset still gets the engine's own words.
+  describe('stage 4 — untyped-column diagnosis (UX-08)', () => {
+    const openUntyped = (): Promise<QcFixtureDb> =>
+      openDuckDb([
+        // The shape a schema-less CSV lands in (V23): everything VARCHAR. `n`
+        // is the typed control that proves the classifier needs a text column.
+        'CREATE TABLE tv (__row__ BIGINT, age VARCHAR, score VARCHAR, name VARCHAR, ' +
+          'city VARCHAR, zip VARCHAR, n INTEGER)',
+        'CREATE VIEW data AS SELECT * FROM tv',
+      ]);
+    const COLUMNS = ['age', 'score', 'name', 'city', 'zip', 'n'];
+    const withUntyped = async (fn: (ctx: DatasetLintContext) => Promise<void>): Promise<void> => {
+      const db = await openUntyped();
+      try {
+        await fn({ runner: db.runner, datasetColumns: COLUMNS });
+      } finally {
+        db.close();
+      }
+    };
+
+    it('arithmetic on a text column names it, and offers both ways out', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues, executable } = await lintWith(
+          `${HEADER}R1,validate,row,age,age * 10 > 1,c\n`,
+          ctx,
+        );
+        expect(issues).toHaveLength(1);
+        expect(issues[0]).toMatchObject({
+          severity: 'error',
+          code: 'sql-error',
+          file: 'test.quac.csv',
+          ruleId: 'R1',
+          rowNumber: 1,
+          csvColumn: 'condition',
+        });
+        expect(issues[0]?.message).toBe(
+          'condition failed the SQL dry-run: age is stored as text in this dataset, so DuckDB ' +
+            'cannot compare or calculate with it. Load a JSON Schema to type it, or cast it in ' +
+            'the rule — TRY_CAST(age AS DOUBLE).',
+        );
+        // The engine's own words are kept, exactly where the spec puts them.
+        expect(issues[0]?.detail).toContain('Binder Error');
+        expect(issues[0]?.message).not.toContain('Binder Error');
+        expect(executable).toBe(0); // the V23 exclusion is untouched
+      });
+    });
+
+    it('a comparison across two text columns names both, with a placeholder cast', async () => {
+      await withUntyped(async (ctx) => {
+        // The tiny fixture's R005 shape, which is where this is user-visible.
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,row,score|age,"score IS NOT NULL AND score > age * 10",c\n`,
+          ctx,
+        );
+        expect(issues[0]?.message).toContain('score, age are stored as text in this dataset');
+        // NOT TRY_CAST(score …): with several columns the binder does not say
+        // which it choked on, so naming one would be a guess (HESP Q003 targets
+        // record_id | household_id | wave — only `wave` wants a cast).
+        expect(issues[0]?.message).toContain('e.g. TRY_CAST(col AS DOUBLE)');
+      });
+    });
+
+    it('a column-scope assertion is named from the hint — its text holds no column', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,column,age,"in_range(0, 120)",c\n`,
+          ctx,
+        );
+        expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+        expect(issues[0]?.message).toContain('age is stored as text in this dataset');
+      });
+    });
+
+    it('a dataset-scope rule has no targets — the text scan names the column', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,dataset,,"SELECT * FROM data WHERE age > 1",c\n`,
+          ctx,
+        );
+        expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+        expect(issues[0]?.message).toContain('age is stored as text in this dataset');
+      });
+    });
+
+    it('a text column the rule uses but does not target is still named', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,row,name,"name IS NOT NULL AND score > 1",c\n`,
+          ctx,
+        );
+        expect(issues[0]?.message).toContain('score are stored as text');
+      });
+    });
+
+    it('beyond three columns the list summarises the rest', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,row,age|score|name|city|zip,` +
+            `"age + score + name + city + zip > 1",c\n`,
+          ctx,
+        );
+        expect(issues[0]?.message).toContain('age, score, name and 2 more are stored as text');
+      });
+    });
+
+    it('GUARD: a typo still gets the engine words, even beside text columns', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(`${HEADER}R1,validate,row,age,no_col > 1,c\n`, ctx);
+        expect(issues[0]?.message).toContain('Binder Error: Referenced column');
+        expect(issues[0]?.message).not.toContain('stored as text');
+      });
+    });
+
+    it('GUARD: a binder error with no VARCHAR at all is untouched', async () => {
+      await withUntyped(async (ctx) => {
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,row,n,"upper(n) = 'X'",c\n`,
+          ctx,
+        );
+        expect(issues[0]?.message).toContain("'upper(INTEGER)'");
+        expect(issues[0]?.message).not.toContain('stored as text');
+      });
+    });
+
+    it('GUARD: fails closed — a VARCHAR token with no text column named stays raw', async () => {
+      await withUntyped(async (ctx) => {
+        // '+(INTEGER, VARCHAR)': the VARCHAR is a cast literal, not a column.
+        const { issues } = await lintWith(
+          `${HEADER}R1,validate,row,n,"n + CAST('1' AS VARCHAR) > 1",c\n`,
+          ctx,
+        );
+        expect(issues[0]?.message).toContain('Binder Error');
+        expect(issues[0]?.message).not.toContain('stored as text');
+      });
+    });
+
+    it('GUARD: a failing DESCRIBE degrades to the raw text instead of rejecting', async () => {
+      const db = await openUntyped();
+      try {
+        const ctx: DatasetLintContext = {
+          runner: {
+            query: async <T>(sql: string): Promise<T[]> => {
+              if (sql.startsWith('DESCRIBE')) throw new Error('probe unavailable');
+              return db.runner.query<T>(sql);
+            },
+          },
+          datasetColumns: COLUMNS,
+        };
+        const { issues } = await lintWith(`${HEADER}R1,validate,row,age,age * 10 > 1,c\n`, ctx);
+        expect(issues[0]?.message).toContain('Binder Error');
+        expect(issues[0]?.message).not.toContain('stored as text');
+      } finally {
+        db.close();
+      }
+    });
+  });
+
   it('HESP fixtures + qc_fixture — inapplicable rules flagged, everything else dry-runs clean', async () => {
     const db = await openQcFixture();
     try {

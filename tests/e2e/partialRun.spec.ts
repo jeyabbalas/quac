@@ -115,6 +115,26 @@ test('rules-only full run: corrections apply, schema note, no-schema missing var
     '1 file · 6 rules · 2 lint errors',
   );
 
+  // UX-08: the two exclusions above explain themselves in plain language. This
+  // is the only tier that runs the classifier against duckdb-wasm's OWN binder
+  // strings — the node tiers use @duckdb/node-api.
+  await page.locator('[data-slot="rules"] .q-slotcard-details summary').click();
+  const lintErrors = page.locator('[data-slot="rules"] .q-rulesissue--error');
+  await expect(lintErrors).toHaveCount(2);
+  // R003 (in_range on age) names one column, so it gets the real cast; R005
+  // (score > age * 10) names two, so the cast example is the placeholder.
+  await expect(lintErrors.filter({ hasText: 'R003' })).toContainText(
+    'age is stored as text in this dataset',
+  );
+  await expect(lintErrors.filter({ hasText: 'R003' })).toContainText('TRY_CAST(age AS DOUBLE)');
+  await expect(lintErrors.filter({ hasText: 'R005' })).toContainText(
+    'score, age are stored as text in this dataset',
+  );
+  await expect(lintErrors.filter({ hasText: 'R003' })).toContainText('Load a JSON Schema to type it');
+  // The engine's words stay in `detail` (the title) — never on the card's face.
+  await expect(lintErrors.filter({ hasText: 'R003' })).not.toContainText('Binder Error');
+  await expect(lintErrors.filter({ hasText: 'R005' })).not.toContainText('Binder Error');
+
   // Four executable rules still satisfy the rules leg — the button enables.
   await expect(runButton(page)).toBeEnabled();
   await runButton(page).click();

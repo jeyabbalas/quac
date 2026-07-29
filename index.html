@@ -8,6 +8,18 @@
       name="description"
       content="QuaC — in-browser data quality control. Your data never leaves this browser."
     />
+    <!-- The wordmark face is reached through an @import inside the bundled CSS,
+         so it is discovered a round trip late and the header visibly reflows.
+         Preloading it costs 10 KB and removes the flash. Vite rewrites this
+         href to the emitted asset at build time; keep it in sync with the
+         @fontsource/boogaloo import in src/styles/base.css. -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin
+      href="/node_modules/@fontsource/boogaloo/files/boogaloo-latin-400-normal.woff2"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

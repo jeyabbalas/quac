@@ -70,7 +70,7 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   title.textContent = 'QuaC';
   const subtitle = document.createElement('p');
   subtitle.className = 'q-subtitle';
-  subtitle.textContent = 'in-browser data quality control';
+  subtitle.textContent = 'Privacy-preserving data quality control';
   titles.append(title, subtitle);
   brand.append(logo, titles);
 

@@ -49,10 +49,13 @@
   --q-sky-deep: #0099cc; /* wave stroke inside the duck-progress water SVG; the
      data-URI must keep the literal hex — update both together */
 
-  /* Type — @fontsource self-hosting arrives in P04; system fallbacks until then */
+  /* Type — all three faces self-hosted via @fontsource (base.css), no CDN */
   --q-font-sans:
     'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --q-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Display: the header wordmark and nothing else. Boogaloo ships weight 400
+     only — never set a bold weight on it or browsers synthesise one. */
+  --q-font-display: 'Boogaloo', var(--q-font-sans);
 
   /* Type scale — six steps; the header wordmark/h1 sizes stay component-local */
   --q-text-xs: 0.75rem;

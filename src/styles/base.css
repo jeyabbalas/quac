@@ -6,6 +6,10 @@
 @import '@fontsource/inter/latin-700.css';
 @import '@fontsource/jetbrains-mono/latin-400.css';
 @import '@fontsource/jetbrains-mono/latin-700.css';
+/* Boogaloo is the display face for the header wordmark ONLY (.q-title) — four
+   glyphs, 10 KB woff2, single weight 400. index.html preloads it so the swap
+   off the Inter fallback lands before first paint rather than after it. */
+@import '@fontsource/boogaloo/latin-400.css';
 
 /* Reset */
 *,

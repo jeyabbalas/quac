@@ -60,11 +60,16 @@
   min-width: 0;
 }
 
+/* Wordmark. Retuned off Inter 700/1.625rem when Boogaloo landed: the display
+   face reads lighter and narrower at the same size, so it needs the larger step
+   to hold its own beside the 56px logo, weight 400 (Boogaloo has no bold), and
+   neutral-to-open tracking instead of Inter's -0.01em correction. */
 .q-title {
-  font-size: 1.625rem;
-  font-weight: 700;
+  font-family: var(--q-font-display);
+  font-size: 2rem;
+  font-weight: 400;
   line-height: 1.15;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.01em;
 }
 
 .q-subtitle {

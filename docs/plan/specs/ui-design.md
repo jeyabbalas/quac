@@ -451,3 +451,11 @@ QuaC does not author this markup and cannot fix it from here. It is excluded fro
 - `scrollable-region-focusable` (serious) on `.dt-body-scroll`.
 
 **CodeMirror 6 (`.cm-editor`)** — clean; no violations at any severity.
+
+**P22 re-check (2026-07-30, still `@jeyabbalas/data-table` 0.5.1).** The diagnostic pass was re-run against the
+pinned version and **the list is unchanged** — the same three axe findings on `.dt-root` in both the QC Report and
+the Rule Studio contexts, and CodeMirror still clean. The keyboard trap is now filed upstream as
+[jeyabbalas/data-table#84](https://github.com/jeyabbalas/data-table/issues/84), with the 900-press evidence, the
+note that axe cannot detect a 2.1.2 violation, and the three axe findings above carried along so they are in one
+place. Discharges phase-19's V22 obligation; the mitigations (skip control, Escape hatch) stay, because filing an
+issue is not a fix.

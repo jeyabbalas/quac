@@ -105,4 +105,13 @@ First stable release. Both halves are feature-complete against
 - `xlsx` installs from `cdn.sheetjs.com` rather than the npm registry, pinned
   and integrity-checked. Behind a registry mirror, that install step fails.
 
+### Release process
+
+From 1.0.1 onward, pushing a `v*` tag publishes to npm through
+[`.github/workflows/release.yml`](.github/workflows/release.yml) using **OIDC
+trusted publishing** — no token exists in the repository, and provenance is
+attached automatically. The one setting a human owns lives on npmjs.com:
+package `quac` → Settings → Trusted Publisher → GitHub Actions, org
+`jeyabbalas`, repo `quac`, workflow `release.yml`, no environment.
+
 [1.0.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.0.0

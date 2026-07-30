@@ -1,0 +1,75 @@
+# Publish to npm on a version tag, using OIDC trusted publishing.
+#
+# The one setting a human owns is on npmjs.com, not here: package `quac` →
+# Settings → Trusted Publisher → GitHub Actions, org `jeyabbalas`, repo `quac`,
+# workflow `release.yml`, no environment. Until that is configured, this
+# workflow fails at `npm publish` with an auth error — which is the correct
+# failure, since the alternative is a long-lived token in the repository.
+name: Release
+
+# `CI` runs on pushes to `main` and on pull requests, never on tags, so the two
+# workflows cannot collide over the same commit.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # The whole point: this mints the short-lived OIDC token npm exchanges for
+      # publish rights. No NPM_TOKEN exists in this repository, so a leaked
+      # secret is not a thing that can happen here.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          # Required even for trusted publishing: it writes the .npmrc that
+          # points the client at the registry the OIDC exchange happens with.
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted publishing needs npm >= 11.5.1. Node 24 ships npm 11.x, but the
+      # bundled patch version moves with the runner image, so assert rather than
+      # assume — a silent fallback to token auth would fail later and more
+      # confusingly, with no token to fall back to.
+      - name: Assert npm supports trusted publishing
+        run: |
+          need=11.5.1
+          have=$(npm --version)
+          echo "npm $have (need >= $need)"
+          if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]; then
+            echo "::error::npm $have is too old for OIDC trusted publishing (need >= $need)."
+            echo "Add a 'npm install -g npm@latest' step, or pin a newer Node."
+            exit 1
+          fi
+
+      # A tag is cheap to mistype and impossible to reuse once published. This
+      # is the last chance to notice that v1.0.1 is about to publish 1.0.0.
+      - name: Assert the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          echo "tag $tag · package.json $pkg"
+          [ "$tag" = "$pkg" ] || {
+            echo "::error::tag v$tag does not match package.json version $pkg."
+            exit 1
+          }
+
+      - run: npm ci
+
+      # The same gate `main` is held to. A tag can only ever point at a commit
+      # that already passed CI, but the tag is what gets published, so it is
+      # what gets checked.
+      - run: npm run verify
+      - run: npm run test:cli
+
+      # `prepack` builds dist-cli/. Provenance is attached automatically under
+      # trusted publishing — passing --provenance is unnecessary and, on some
+      # npm versions, an error.
+      - run: npm publish

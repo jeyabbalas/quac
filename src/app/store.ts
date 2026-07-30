@@ -1,6 +1,6 @@
 /**
  * AppState per architecture.md §7 — state only, no behavior. Later phases fill
- * these signals: P05+ drive the slots, P14 drives pipeline/run, P16 shareables.
+ * these signals: P05+ drive the slots, P14 drives pipeline/run.
  * Signals hold immutable snapshots: always `set()` a fresh object.
  *
  * P14 additions beyond §7 (recorded in phase-14 Deferred notes): runArtifacts
@@ -91,9 +91,6 @@ export interface RunSummary {
   datasetName: string;
 }
 
-/** Per artifact: an upload (never shareable) or the URL it was fetched from. */
-export type ArtifactProvenance = 'upload' | { url: string };
-
 /**
  * The ingested dataset (P05+). Source bytes stay in memory for the session
  * (re-ingest on schema change) and are what the P19b write-through persists
@@ -137,7 +134,6 @@ export interface AppStore {
   runEpoch: Signal<number>;
   /** "Apply corrections" run toggle (qc-rules-engine.md §2); false = assess-only. */
   applyCorrections: Signal<boolean>;
-  shareables: Signal<readonly ArtifactProvenance[]>;
   /** True once the boot flow loaded any slot from a URL/config= link (P16)
    *  or seeded it from the stored session (P19b restore — set optimistically
    *  from the presence hint before the async IDB read, so the first-run hero
@@ -164,7 +160,6 @@ export function createAppStore(): AppStore {
     runArtifacts: signal<RunArtifacts | null>(null),
     runEpoch: signal(0),
     applyCorrections: signal(true),
-    shareables: signal<readonly ArtifactProvenance[]>([]),
     preconfigured: signal(false),
   };
 }

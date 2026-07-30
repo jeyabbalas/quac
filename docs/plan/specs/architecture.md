@@ -19,7 +19,7 @@ src/
     shell.ts                  # header banner, nav tabs, layout regions, footer
     router.ts                 # hash router: #/load | #/report | #/studio (+ config params, see url-params.md)
     signals.ts                # signal<T>() / computed() / effect()  (~60 LOC, zero deps)
-    store.ts                  # AppState: slots, pipeline, run summary, shareables
+    store.ts                  # AppState: slots, dataset, pipeline, run summary, runEpoch
     errors.ts                 # QuacError{code,userMessage,hint,cause} + reportError()
     toast.ts  modal.ts        # shared primitives (focus trap, ARIA)
   core/                       # framework-free; no document/window except bridge/ + lazy loaders
@@ -134,8 +134,10 @@ annotate     COPY display bytes → loadData → re-apply annotations + tooltips
               progress: {done:number; total:number}; cancel: CancelToken }
   run: { flagsSummary; lastRunAt; datasetName } | null
   runEpoch: number                        // bumped by every explicit run invalidation (UIX-7, §6)
-  shareables: ArtifactProvenance[]        // per artifact: 'upload' | {url}
   ```
+  The reserved `shareables: ArtifactProvenance[]` field was **superseded and deleted in P22**: provenance is
+  co-located on the artifacts themselves (`DatasetSession.sourceUrl`, `SchemaSlotState.sourceUrls`,
+  `RulesSlotState.sources`) and `buildShareModel` computes the share set from them on demand (P16 decision).
 - data-table's own signals drive grid internals; QuaC subscribes to its events (`ready`, `loadProgress`, `loadComplete`) and never duplicates grid state.
 - `QuacError` codes (closed set): `INGEST_UNSUPPORTED`, `INGEST_TOO_LARGE`, `FETCH_CORS`, `FETCH_HTTP`, `SCHEMA_INVALID`, `SCHEMA_AMBIGUOUS_ROOT`, `RULES_PARSE`, `RULE_SQL_ERROR`, `RULE_JS_ERROR`, `PIPELINE_CANCELLED`, `EXPORT_FAILED`, `BRIDGE_FAILED`. Every async UI action wraps in `reportError()` → toast (transient) + slot/panel state (persistent).
 

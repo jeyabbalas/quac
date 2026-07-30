@@ -17,6 +17,7 @@ import {
   removeRule,
   removeRuleFile,
   resetRulesSlot,
+  restoreRuleFiles,
   rulesState,
   setLintContext,
   summarizeSlot,
@@ -243,6 +244,77 @@ describe('dirty lifecycle', () => {
     await updateRule('test.quac.csv', 0, draft({ ruleId: 'R1' }));
     await load('other.quac.csv', `${FULL_HEADER}X1,validate,row,x,x > 1,sql,,error,c,true\n`);
     expect(rulesState.get().dirtyFiles.has('test.quac.csv')).toBe(true);
+  });
+});
+
+// P19b session restore: the persisted text IS the session-edited text, so the
+// restore loader must keep dirty marks where the re-upload loader deletes them.
+describe('restoreRuleFiles', () => {
+  const REMOTE = 'https://example.test/remote.quac.csv';
+
+  it('restores files in order with aligned sources and dirty marks, one publish then relint', async () => {
+    const phases: string[] = [];
+    const unsubscribe = rulesState.subscribe((state) => phases.push(state.phase));
+    try {
+      await restoreRuleFiles(
+        [
+          { name: 'remote.quac.csv', text: THREE_RULES, sourceUrl: REMOTE },
+          { name: 'local.quac.csv', text: THREE_RULES, sourceUrl: null },
+        ],
+        ['local.quac.csv'],
+      );
+    } finally {
+      unsubscribe();
+    }
+    const state = rulesState.get();
+    expect(state.phase).toBe('ready');
+    expect(state.files.map((f) => f.file.name)).toEqual(['remote.quac.csv', 'local.quac.csv']);
+    expect(state.sources).toEqual([REMOTE, null]);
+    expect(state.dirtyFiles.has('local.quac.csv')).toBe(true);
+    expect(state.dirtyFiles.has('remote.quac.csv')).toBe(false);
+    expect(state.files[1]?.file.rules).toHaveLength(3);
+    expect(state.results.map((r) => r.file)).toEqual(['remote.quac.csv', 'local.quac.csv']);
+    expect(phases).toEqual(['loading', 'ready']);
+  });
+
+  it('keeps a dirty mark where the same-name re-add path deletes it', async () => {
+    await load();
+    await updateRule('test.quac.csv', 0, draft({ ruleId: 'R1' }));
+    expect(rulesState.get().dirtyFiles.has('test.quac.csv')).toBe(true);
+    await load(); // re-upload: the fresh bytes supersede the session edits
+    expect(rulesState.get().dirtyFiles.has('test.quac.csv')).toBe(false);
+    await restoreRuleFiles(
+      [{ name: 'test.quac.csv', text: THREE_RULES, sourceUrl: null }],
+      ['test.quac.csv'],
+    );
+    expect(rulesState.get().dirtyFiles.has('test.quac.csv')).toBe(true);
+  });
+
+  it('ignores a dirty name that matches no restored file (corrupt-record tolerance)', async () => {
+    await restoreRuleFiles(
+      [{ name: 'a.quac.csv', text: THREE_RULES, sourceUrl: null }],
+      ['ghost.quac.csv'],
+    );
+    const { dirtyFiles } = rulesState.get();
+    expect(dirtyFiles.has('ghost.quac.csv')).toBe(false);
+    expect(dirtyFiles.size).toBe(0);
+  });
+
+  it('empty entries return without moving the phase', async () => {
+    await restoreRuleFiles([], ['x.quac.csv']);
+    expect(rulesState.get().phase).toBe('empty');
+    expect(rulesState.get().files).toEqual([]);
+  });
+
+  it('a clear landing while the restore awaits its codecs wins', async () => {
+    const pending = restoreRuleFiles(
+      [{ name: 'test.quac.csv', text: THREE_RULES, sourceUrl: null }],
+      [],
+    );
+    clearRuleFiles();
+    await pending;
+    expect(rulesState.get().phase).toBe('empty');
+    expect(rulesState.get().files).toEqual([]);
   });
 });
 

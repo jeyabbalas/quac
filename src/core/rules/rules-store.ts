@@ -177,6 +177,45 @@ function nameFromUrl(url: string): string {
 }
 
 /**
+ * Rehydrate the rules slot from a persisted session (P19b). `addRuleFiles`
+ * already restores `sources`, but it actively DELETES dirty marks on a
+ * same-name re-add — correct for re-uploads (the fresh bytes supersede the
+ * session edits), wrong for restore, where the persisted text IS the
+ * session-edited text and the mark must survive. This mirrors its loop minus
+ * the dirty-delete, applies `dirtyNames` (restored names only — a corrupt
+ * record may name a file that is not there), publishes ONCE, then relints.
+ */
+export async function restoreRuleFiles(
+  entries: readonly { name: string; text: string; sourceUrl: string | null }[],
+  dirtyNames: readonly string[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  const token = loadToken;
+  const { parseRuleFile } = await loadCodecs();
+  if (token !== loadToken) return; // a clear/remove superseded this restore
+  const current = rulesState.get();
+  const files = [...current.files];
+  const sources = [...current.sources];
+  const dirtyFiles = new Set(current.dirtyFiles);
+  for (const entry of entries) {
+    const parsed = parseRuleFile(entry.text, entry.name);
+    const existing = files.findIndex((f) => f.file.name === entry.name);
+    if (existing >= 0) {
+      files[existing] = parsed;
+      sources[existing] = entry.sourceUrl;
+    } else {
+      files.push(parsed);
+      sources.push(entry.sourceUrl);
+    }
+  }
+  for (const name of dirtyNames) {
+    if (files.some((f) => f.file.name === name)) dirtyFiles.add(name);
+  }
+  rulesState.set({ ...rulesState.get(), phase: 'loading', files, sources, dirtyFiles });
+  await relint(files);
+}
+
+/**
  * Install or clear the dataset lint context, re-linting loaded files.
  * `null` = no dataset (SQL checks report pending-data). The context is kept
  * for files added later.

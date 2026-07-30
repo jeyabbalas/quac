@@ -22,7 +22,7 @@ The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQua
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V23) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V26) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -72,7 +72,7 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 | [x] 2026-07-24 · 47179c2 | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [x] 2026-07-24 · ce4e15b | P18 | Rule Studio: preview, gate, export | P17 |
 | [x] 2026-07-25 · a89baa0 | P19 | Branding polish & accessibility | P14, P16, P18 |
-| [ ] | P20 | Headless core: the QC pipeline under Node | P14, P15 |
+| [x] 2026-07-30 · c8bd3ba | P20 | Headless core: the QC pipeline under Node | P14, P15 |
 | [ ] | P21 | Headless CLI & packaging | P20 |
 | [ ] | P22 | Hardening, perf, docs, release | all |
 
@@ -82,6 +82,25 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-07-30 · P20 · **The whole QC pipeline runs under plain Node — `runQuac()`, no browser, no server.** Four adapters at
+seams that already existed: `headless/nodeBridge.ts` (a `WorkerBridge` facade over `@duckdb/node-api`),
+`headless/harden.ts`, `headless/validationWorker.ts` (in-process Ajv engine), and stubbed `exportDisplay` + no-op
+`present`; assembly in `headless/{run,intake,errors}.ts`. The Ajv engine body moved VERBATIM out of
+`validation.worker.ts` into `core/schema/validation-core.ts` (`createValidationEngine(post)`, per-engine state) — the
+worker is now the `self` binding and nothing else, guarded by the untouched browser tier. **Three V-facts** (V24–V26):
+node-api's `getRowObjectsJS()` bigints ⇒ recursive normalization (V13's shapes hold); single-file `read_json` /
+`read_parquet(file_row_number=true)` ⇒ `__rowid__` is file order; and — reversing V6's wasm verdict —
+`enable_external_access=false` DOES bind here, so untrusted rule SQL cannot reach the filesystem, safe because every
+temp-file read precedes prepare. **The load-bearing step is §4.3's typed-sync mirror**: deleting it excludes 12 of the
+22 HESP rules on node-api's binder — the same 12 UIX-16 measured on wasm — verified by removing it and watching the
+gate go red. Parity is by SHARED MANIFEST, never cross-tier comparison: `nodePipeline.test.ts` deep-equals
+`mini_expected_flags.json` with the browser tier's own canonical-sort recipe and lands all 23 `seeded-violations.json`
+injections at their cells. Two narrowings handed to P21 (both in the phase's Deferred notes): intake is local
+paths/dirs only — **multi-sheet workbooks are NOT gated yet** — and `RunQuacResult` carries `inputs` instead of a §7
+summary, whose `flagsTruncated`/`rowsAffected` do not exist under those names on `FlagStoreSummary`.
+Unit 803 → 840, browser 73 unchanged, e2e 112 unchanged, entry 50.3 KB gz unchanged (a fourth bundle-gate marker now
+proves `src/headless/**` reaches no chunk at all — verified by pointing it at a string that is in the bundle).
 
 2026-07-30 · plan · **QuaC grows a headless mode — P20/P21 inserted, the release phase renumbered P20 → P22.** Owner-directed
 amendment for pipeline users who need ingest → schema validation → rules + corrections → Excel report under plain Node

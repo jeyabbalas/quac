@@ -23,6 +23,12 @@ const CODEMIRROR_MARKER = 'cm-announced';
 // nowhere in app code (data-dictionary.ts guards the empty case rather than
 // letting it throw).
 const DICTIONARY_MARKER = 'requires a non-empty array';
+// The headless Node runtime (P20, src/headless/**) must not reach the web build
+// AT ALL — not the entry, not a lazy chunk. It pulls @duckdb/node-api and
+// node:fs, which have no business in a browser bundle. Unlike the three markers
+// above (which gate *where* a legitimately-shipped chunk lands), this one is
+// exported by src/headless/nodeBridge.ts purely so its absence is checkable.
+const HEADLESS_MARKER = 'quac-headless-runtime';
 const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const html = readFileSync(join(distDir, 'index.html'), 'utf8');
 
@@ -78,12 +84,23 @@ if (total > LIMIT_BYTES) {
   process.exit(1);
 }
 
-// Report the lazy third-party chunk weights so their cost stays visible in CI
-// logs.
 const assetsDir = join(distDir, 'assets');
 const lazyChunks = readdirSync(assetsDir).filter(
   (f) => f.endsWith('.js') && !entryRels.has(`assets/${f}`),
 );
+
+// The headless layer is checked across EVERY emitted chunk, not just the entry:
+// the claim it backs is "no headless module entered the web graph" (architecture
+// §2's import rule), which a lazy chunk would violate just as badly.
+for (const rel of [...entryRels, ...lazyChunks.map((f) => `assets/${f}`)]) {
+  if (readFileSync(join(distDir, rel)).includes(HEADLESS_MARKER)) {
+    console.error(`check-bundle-size: FAIL — src/headless/** reached the web bundle (${rel})`);
+    process.exit(1);
+  }
+}
+
+// Report the lazy third-party chunk weights so their cost stays visible in CI
+// logs.
 for (const { label, marker, missing } of [
   { label: 'exceljs', marker: EXCELJS_MARKER, missing: 'report-export path absent?' },
   { label: 'codemirror', marker: CODEMIRROR_MARKER, missing: 'studio workspace path absent?' },

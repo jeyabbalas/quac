@@ -9,7 +9,8 @@
  * the URL it was fetched from, and a FAILED fetch keeps it (UX-06); (5b) clearing
  * the SCHEMA explains the rules it disables in plain language (UX-08); (6) unsaved
  * Studio work gates the rules clear behind a confirm; (7) clear all resets the
- * session to first-run; (8) a cleared share link stays cleared across reload
+ * session to first-run AND a reload stays first-run (the P19b purge also wipes
+ * the persisted session); (8) a cleared share link stays cleared across reload
  * (history.replaceState rewrite from live sources).
  */
 import { readFileSync } from 'node:fs';
@@ -360,6 +361,13 @@ test('clear all inputs resets the session to first-run', async ({ page }) => {
   await expect(page.locator('.q-preview')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Share' })).toBeDisabled();
   await expect(clearAllButton(page)).toBeHidden();
+
+  // P19b tail: the confirm's own promise. The clear purged the persisted
+  // session with the slots, so a reload lands on first-run — not on a
+  // restore of what was just cleared.
+  await page.reload();
+  await expect(page.locator('.q-example')).toBeVisible();
+  await expect(page.getByText('Restored your previous session.')).toHaveCount(0);
 });
 
 test('a cleared share link stays cleared across reload', async ({ page }) => {

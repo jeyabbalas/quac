@@ -252,6 +252,24 @@ test('Clear-all confirm dialog', async ({ page }) => {
   await expectNoSeriousViolations(page, 'Clear-all confirm dialog');
 });
 
+/** P19b: the same dialog, reached through the HEADER Reset from a route that
+ *  has no run-bar — the pairing the new button exists for. */
+test('Reset confirm dialog — opened from the Report route', async ({ page }) => {
+  await page.goto('/quac/');
+  await page
+    .locator('[data-slot="rules"] input[type="file"]')
+    .setInputFiles(join(FIXTURES, 'tiny', 'people_rules.quac.csv'));
+  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
+    'Valid',
+    { timeout: INGEST_TIMEOUT },
+  );
+
+  await page.getByRole('link', { name: 'QC Report' }).click();
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Clear all inputs?' })).toBeVisible();
+  await expectNoSeriousViolations(page, 'Reset confirm dialog (Report route)');
+});
+
 test('IndexPicker modal', async ({ page }) => {
   await page.goto('/quac/');
   const a = `${CORS}/synthetic/two-roots/a.schema.json`;

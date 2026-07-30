@@ -4,7 +4,9 @@
  * URL-provenance slots keep re-fetching themselves; the QC report is NEVER
  * restored (consent to compute — the user clicks Run QC again); a different
  * share link wins over the stored session; header Reset returns the app to
- * first-run and a reload STAYS first-run.
+ * first-run and a reload STAYS first-run. Restore is route-independent
+ * (UIX-19): a reload parked on #/report or #/studio resumes in place — the
+ * dataset leg runs through the eagerly-mounted (hidden) Load view.
  *
  * Persistence is debounced (dataset immediate, slots 500 ms, studio 1 s), so
  * every reload is anchored on `readPersisted` polling the real IndexedDB via
@@ -159,9 +161,9 @@ test('mixed provenance crown: upload + URLs → run → reload → restore, neve
 
   await awaitPersisted(page, ['meta', 'dataset', 'schema', 'rules']);
   // The run parked the app on #/report — reload lands there, which is the
-  // interesting case: the toast fires route-independently, and the dataset
-  // leg waits parked for the Load view exactly like a URL boot on a non-Load
-  // route does today.
+  // interesting case: the whole restore is route-independent (UIX-19). The
+  // dataset leg runs through the eagerly-mounted (hidden) Load view, so the
+  // session is back BEFORE the Load tab is ever visited.
   await page.reload();
 
   // The bar held only what URLs can reload; the upload came back from IDB.
@@ -169,8 +171,13 @@ test('mixed provenance crown: upload + URLs → run → reload → restore, neve
   expect(page.url()).toContain('schema=');
   expect(page.url()).toContain('rules=');
   expect(page.url()).not.toContain('data=');
-  await page.getByRole('link', { name: 'Load', exact: true }).click();
+  // Hidden-element assertions on purpose — text and enabled-state read fine
+  // through `hidden`, and clicking Load first would mask the old parking bug
+  // (the dataset used to wait for the Load view to mount).
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await expect(runButton(page)).toBeEnabled({ timeout: INGEST_TIMEOUT });
+  expect(page.url()).toContain('#/report');
+  await page.getByRole('link', { name: 'Load', exact: true }).click();
   await expect(datasetSummary(page)).toContainText('101 rows × 266 cols');
   await expect(schemaBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
   await expect(rulesSummary(page)).toContainText('3 files · 22 rules', {
@@ -256,6 +263,42 @@ test('an unsaved Studio drawer draft survives a reload on #/studio', async ({ pa
   await expect(guard).toBeVisible();
   await guard.getByRole('button', { name: 'Keep editing' }).click();
   await expect(page.locator('.q-studio-drawer')).toBeVisible();
+});
+
+test('a #/studio reload restores the dataset too — no Load visit required', async ({ page }) => {
+  // The user's filed repro (UIX-19): work on Rule Studio, refresh, and the
+  // session must come back RIGHT THERE — the dataset leg runs through the
+  // eagerly-mounted (hidden) Load view, nobody clicks the Load tab.
+  await page.goto('/quac/');
+  await datasetInput(page).setInputFiles(TINY_CSV);
+  await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await rulesInput(page).setInputFiles(TINY_RULES);
+  await expect(rulesBadge(page)).toHaveText('Warning', { timeout: INGEST_TIMEOUT });
+
+  await page.getByRole('link', { name: 'Rule Studio' }).click();
+  await page.locator('.q-rulegrid tbody tr', { hasText: 'R001' }).click();
+  await expect(page.locator('.q-studio-drawer')).toBeVisible();
+  await page.locator('#q-rf-comment').fill('Typed on studio, reloaded on studio.');
+
+  await awaitPersisted(page, ['meta', 'dataset', 'rules']);
+  await expect
+    .poll(async () => (await readPersisted(page)).studioComment, { timeout: 15_000 })
+    .toBe('Typed on studio, reloaded on studio.');
+  await page.reload();
+
+  await expect(page.locator('.q-studio-drawer')).toBeVisible({ timeout: INGEST_TIMEOUT });
+  await expect(page.locator('#q-rf-comment')).toHaveValue('Typed on studio, reloaded on studio.');
+  await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  // 'Warning', not the pending-data 'Valid': the restored dataset's lint
+  // context reached the restored rules — the whole chain ran on #/studio.
+  await expect(rulesBadge(page)).toHaveText('Warning', { timeout: INGEST_TIMEOUT });
+  // The DRAFT re-lints too once the context lands: the restored drawer must
+  // not keep a stale "SQL checks are pending" hint beside live data.
+  await expect(page.locator('.q-studio-drawer')).not.toContainText(
+    'SQL checks are pending until a dataset is loaded.',
+    { timeout: INGEST_TIMEOUT },
+  );
+  expect(page.url()).toContain('#/studio');
 });
 
 test('a saved dirty marker survives the reload', async ({ page }) => {

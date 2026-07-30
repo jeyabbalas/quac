@@ -54,7 +54,9 @@ export interface TestGate {
 
 export interface RuleForm {
   readonly el: HTMLElement;
-  load: (rule: QCRule | null, opts: { mode: 'new' | 'edit' }) => void;
+  /** `dirty` seeds the edited flag (default false): a restored unsaved draft
+   *  must come back DIRTY, or the discard guard would wave it through. */
+  load: (rule: QCRule | null, opts: { mode: 'new' | 'edit'; dirty?: boolean }) => void;
   readDraft: () => QCRule;
   setIssues: (result: DraftLintResult | null) => void;
   setTestGate: (gate: TestGate) => void;
@@ -465,7 +467,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
     };
   }
 
-  function load(rule: QCRule | null, opts: { mode: 'new' | 'edit' }): void {
+  function load(rule: QCRule | null, opts: { mode: 'new' | 'edit'; dirty?: boolean }): void {
     mode = opts.mode;
     loaded = rule;
     loadingFields = true;
@@ -494,7 +496,7 @@ export function createRuleForm(deps: RuleFormDeps): RuleForm {
       suspended: false,
       saveLabel: mode === 'edit' ? 'Save rule' : 'Add to file',
     };
-    dirty = false;
+    dirty = opts.dirty ?? false;
     setIssues(null);
     applyCatalog();
     syncMatrixAndModes();

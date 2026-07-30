@@ -24,6 +24,11 @@ import { effect, signal } from '../../../app/signals';
 import { isRunningStage } from '../../../app/store';
 import { openModal } from '../../../app/modal';
 import { registerRulesDraftProbe } from '../../../app/rulesDraftProbe';
+import {
+  noteStudioSessionChanged,
+  registerStudioSessionProbe,
+  takePendingStudioRestore,
+} from '../../../app/studioSession';
 import { showToast } from '../../../app/toast';
 import { createBadge } from '../../components/badge';
 import { createSeverityLabel } from '../../components/severityPill';
@@ -189,12 +194,20 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   let railCollapsed = readRailPref();
   syncRailView();
 
+  // P19b: every selection change — user click or the render effect's
+  // auto-heal alike — is session-relevant. Drawer/draft changes are noted at
+  // their call sites (openDrawer/closeDrawer/form onChange).
+  selectedFile.subscribe(() => {
+    noteStudioSessionChanged();
+  });
+
   // ---------- form ----------
   const form = createRuleForm({
     onChange: () => {
       resetTest(); // ANY edit invalidates the last test
       syncGate();
       scheduleDraftLint();
+      noteStudioSessionChanged(); // the draft is session state (P19b)
     },
     onTest: () => {
       void runTestNow();
@@ -229,6 +242,26 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   registerRulesDraftProbe(() =>
     drawerTarget !== null && form.isDirty() ? drawerTarget.fileName : null,
   );
+
+  // P19b: the persister's window into this closure. The draft snapshot rides
+  // along whenever a drawer is open — for a clean edit drawer it equals the
+  // stored rule, so restore can always `form.load` what it gets back.
+  registerStudioSessionProbe(() => {
+    const target = drawerTarget;
+    return {
+      selectedFile: selectedFile.get(),
+      drawer:
+        target === null
+          ? null
+          : {
+              kind: target.kind,
+              fileName: target.fileName,
+              ...(target.kind === 'edit' ? { index: target.index } : {}),
+              draft: form.readDraft(),
+              draftDirty: form.isDirty(),
+            },
+    };
+  });
 
   drawer.addEventListener('keydown', (event) => {
     // CodeMirror/combobox/modal Escapes arrive defaultPrevented — theirs.
@@ -458,14 +491,16 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     drawer.hidden = !editing;
   }
 
-  function openDrawer(target: DrawerTarget): void {
+  /** Returns whether the drawer actually opened (the P19b restore needs to
+   *  know; interactive callers ignore it — their targets come from the grid). */
+  function openDrawer(target: DrawerTarget): boolean {
     const state = rulesState.get();
     const parsed = state.files.find((f) => f.file.name === target.fileName);
-    if (parsed === undefined) return;
+    if (parsed === undefined) return false;
     let rule: QCRule | null = null;
     if (target.kind === 'edit') {
       rule = parsed.file.rules[target.index] ?? null;
-      if (rule === null) return;
+      if (rule === null) return false;
     }
     drawerTarget = target;
     drawerTitle.textContent =
@@ -484,7 +519,9 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     resetTest();
     syncGate();
     scheduleDraftLint();
+    noteStudioSessionChanged();
     form.focusFirst();
+    return true;
   }
 
   function closeDrawer(restoreFocus: boolean): void {
@@ -494,6 +531,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
     cancelScheduledLint();
     resetTest();
     syncWorkView(); // brings the table back BEFORE anything focuses into it
+    noteStudioSessionChanged();
     if (restoreFocus) {
       if (target.kind === 'edit') focusGrid(target.fileName, target.index);
       else addRuleButton.focus();
@@ -1162,4 +1200,45 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   effect(() => {
     form.setColumns(catalog.get());
   });
+
+  // ---------- session restore (P19b) ----------
+  // AFTER the initial render effect: it has already auto-healed the selection
+  // to the first file, so restoring a different one is a plain re-selection
+  // the effect cannot fight. Every guard failure drops silently — a session
+  // whose file/row vanished restores as much as still exists.
+  const pending = takePendingStudioRestore();
+  if (pending !== null) {
+    const files = rulesState.get().files;
+    if (
+      pending.selectedFile !== null &&
+      files.some((f) => f.file.name === pending.selectedFile)
+    ) {
+      // Direct set, not selectFile(): no dirty guard applies at mount and the
+      // restore must not steal focus into the rail.
+      selectedFile.set(pending.selectedFile);
+    }
+    const storedDrawer = pending.drawer;
+    if (storedDrawer !== null) {
+      const target: DrawerTarget | null =
+        storedDrawer.kind === 'edit'
+          ? storedDrawer.index !== undefined
+            ? { kind: 'edit', fileName: storedDrawer.fileName, index: storedDrawer.index }
+            : null // an edit drawer without an index is a torn record
+          : { kind: 'new', fileName: storedDrawer.fileName };
+      // openDrawer runs its own still-exists guards (file present, row in
+      // range) and reports whether it opened.
+      if (target !== null && openDrawer(target) && storedDrawer.draft !== undefined) {
+        // Overlay the persisted draft on what openDrawer loaded; a dirty one
+        // comes back DIRTY so the discard guard stays armed. Lint was
+        // scheduled by openDrawer against the stored row — reschedule for
+        // the overlaid draft.
+        form.load(storedDrawer.draft, {
+          mode: storedDrawer.kind === 'edit' ? 'edit' : 'new',
+          dirty: storedDrawer.draftDirty,
+        });
+        syncGate();
+        scheduleDraftLint();
+      }
+    }
+  }
 }

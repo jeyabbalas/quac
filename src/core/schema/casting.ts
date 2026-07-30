@@ -13,8 +13,8 @@
  * DOUBLE-integrality first and only then converts, keeping exact int64
  * precision via the BIGINT branch for values beyond 2^53.
  */
-import { quoteIdentifier } from '@jeyabbalas/data-table';
 import { QUAC_RAW, QUAC_TYPED } from '../bridge/tables';
+import { quoteIdentifier } from '../sql-identifier';
 import { schemaPropRuleId } from './rule-ids';
 import { castNonIntegralMessage, castNonNumericMessage } from './translator';
 import type { QCFlag } from '../flags/flag';

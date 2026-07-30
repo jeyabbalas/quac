@@ -17,9 +17,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { quoteIdentifier } from '@jeyabbalas/data-table';
 import type { DuckDBConnection } from '@duckdb/node-api';
 import type { ProgressCallback, WorkerBridge } from '@jeyabbalas/data-table';
+import { quoteIdentifier } from '../core/sql-identifier';
 
 /**
  * Leak sentinel for `scripts/check-bundle-size.mjs`: a string that exists in

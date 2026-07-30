@@ -4,7 +4,7 @@
 // identifiers — the §4.1 grammar summary omits the last form, but the monotonic
 // signature (`monotonic(increasing, …)`) requires it. Case-insensitive,
 // whitespace-tolerant, ONE assertion per rule.
-import { quoteIdentifier } from '@jeyabbalas/data-table';
+import { quoteIdentifier } from '../sql-identifier';
 
 export type AssertionName =
   | 'unique'

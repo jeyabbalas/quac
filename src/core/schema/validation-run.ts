@@ -10,9 +10,9 @@
  * plain VARCHAR on both SQL backends (node list() wraps values, Arrow
  * differs).
  */
-import { quoteIdentifier } from '@jeyabbalas/data-table';
 import { QUAC_TYPED } from '../bridge/tables';
 import { computePertinence } from '../pertinence';
+import { quoteIdentifier } from '../sql-identifier';
 import { applyCastPlan, buildCastPlan, describeColumns, scanCastFailures } from './casting';
 import { hasOpenPropertyUniverse } from './row-shaping';
 import {

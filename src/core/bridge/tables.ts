@@ -3,8 +3,8 @@
  * Every mutating helper ends with bridge.clearQueryCache(): the bridge's
  * SELECT cache is NOT invalidated by DDL/DML (Verified facts V2).
  */
-import { quoteIdentifier } from '@jeyabbalas/data-table';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
+import { quoteIdentifier } from '../sql-identifier';
 
 export const QUAC_RAW = 'quac_raw';
 export const QUAC_TYPED = 'quac_typed';

@@ -2,7 +2,7 @@
 // string/comment-aware scanner, top-level-semicolon analysis, `__value__` token
 // substitution, and the wrapper/builder strings the P11–P13 engine executes.
 // Everything here is a pure function of its inputs — no bridge, no DOM.
-import { quoteIdentifier } from '@jeyabbalas/data-table';
+import { quoteIdentifier } from '../sql-identifier';
 import type { QCRule } from './types';
 
 // ---- scanner ----------------------------------------------------------------

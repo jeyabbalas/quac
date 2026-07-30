@@ -18,9 +18,9 @@
  * The loaders' temp table is dropped and the SELECT cache cleared after
  * every step (Verified facts V2).
  */
-import { quoteIdentifier } from '@jeyabbalas/data-table';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { QUAC_RAW, QUAC_TYPED, QUAC_WORK, ctas, refreshDataView } from '../bridge/tables';
+import { quoteIdentifier } from '../sql-identifier';
 import { parseDelimited } from './csv';
 import { IngestError } from './errors';
 import { openWorkbook } from './excel';

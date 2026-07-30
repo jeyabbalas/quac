@@ -22,6 +22,7 @@ import { quoteIdentifier } from '@jeyabbalas/data-table';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import { QUAC_RAW, QUAC_TYPED, QUAC_WORK, ctas, refreshDataView } from '../bridge/tables';
 import { parseDelimited } from './csv';
+import { IngestError } from './errors';
 import { openWorkbook } from './excel';
 import { sanitizeColumnNames } from './hygiene';
 import { checkJsonArrayPrefix } from './json';
@@ -31,6 +32,49 @@ import type { IngestFormat } from './sniff';
 
 /** Loader landing zone; transient within one ingest call (not in the §4 registry). */
 const QUAC_INGEST_TMP = 'quac_ingest_tmp';
+
+/**
+ * The engine-load step, by the route the user actually chose. Everything the
+ * loader can say about a file it cannot read is raw DuckDB text — `No magic
+ * bytes found at end of file`, `Out of Memory Error`, a Thrift exception —
+ * and before P22 all of it toasted verbatim. These are its designed
+ * replacements; the engine's own words survive on `cause`.
+ */
+type LoadRoute = 'json' | 'parquet' | 'delimited';
+
+const LOAD_FAILURE_COPY: Readonly<Record<LoadRoute, { message: string; hint: string }>> = {
+  json: {
+    message: 'This JSON file could not be read — it looks truncated or malformed.',
+    hint: 'A valid file is a complete array of row objects. Check the download finished, then try again.',
+  },
+  parquet: {
+    message: 'This Parquet file could not be read — it looks truncated or damaged.',
+    hint: 'Parquet keeps its index in the last bytes of the file, so a partial download always fails. Re-export or re-download it.',
+  },
+  delimited: {
+    message: 'This file was parsed, but its rows could not be loaded into the engine.',
+    hint: 'Very large or very wide delimited files can exhaust the browser. Converting the dataset to Parquet is the reliable route.',
+  },
+};
+
+/** V20: the ceiling has one cause and one answer, whatever the route. */
+const OUT_OF_MEMORY = {
+  message: 'This dataset is too large for QuaC to load in the browser.',
+  hint: 'Convert it to Parquet (far smaller and streamed), or split it into fewer rows and run them separately.',
+};
+
+/**
+ * Map an engine failure from the load step onto a designed message. Already
+ * designed errors (`IngestError`) pass through untouched — the JSON prefix
+ * check and the size gate get there first and say something better.
+ */
+function loadFailure(route: LoadRoute, cause: unknown): IngestError {
+  if (cause instanceof IngestError) return cause;
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  const copy = /out of memory/i.test(raw) ? OUT_OF_MEMORY : LOAD_FAILURE_COPY[route];
+  const code = copy === OUT_OF_MEMORY ? 'INGEST_TOO_LARGE' : 'INGEST_UNSUPPORTED';
+  return new IngestError(code, copy.message, { hint: copy.hint, cause });
+}
 
 /** data-table's loader-injected physical row-order column. */
 const ROWID = '__rowid__';
@@ -152,24 +196,31 @@ export async function loadWrappedJsonAsRaw(
     ndjsonBytes.byteOffset,
     ndjsonBytes.byteOffset + ndjsonBytes.byteLength,
   ) as ArrayBuffer;
-  await loadTmp(bridge, buffer, 'json', onStage);
+  // The delimited route's engine leg. QuaC generated these bytes itself, so a
+  // failure here is not a malformed file — it is scale (V20) or a genuine
+  // engine fault, and either way the raw text is not for the user.
   try {
-    const selectList = columns
-      .map((name, i) => `json_extract_string(j, '$.c${String(i)}') AS ${quoteIdentifier(name)}`)
-      .join(', ');
-    await bridge.query(
-      `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
-        `SELECT ${quoteIdentifier(ROWID)} AS __row__, ${selectList} ` +
-        `FROM ${quoteIdentifier(QUAC_INGEST_TMP)} ` +
-        `ORDER BY ${quoteIdentifier(ROWID)}`,
-    );
-    bridge.clearQueryCache();
-    return {
-      rowCount: await countRawRows(bridge),
-      columns: [...columns],
-    };
-  } finally {
-    await dropTmp(bridge);
+    await loadTmp(bridge, buffer, 'json', onStage);
+    try {
+      const selectList = columns
+        .map((name, i) => `json_extract_string(j, '$.c${String(i)}') AS ${quoteIdentifier(name)}`)
+        .join(', ');
+      await bridge.query(
+        `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
+          `SELECT ${quoteIdentifier(ROWID)} AS __row__, ${selectList} ` +
+          `FROM ${quoteIdentifier(QUAC_INGEST_TMP)} ` +
+          `ORDER BY ${quoteIdentifier(ROWID)}`,
+      );
+      bridge.clearQueryCache();
+      return {
+        rowCount: await countRawRows(bridge),
+        columns: [...columns],
+      };
+    } finally {
+      await dropTmp(bridge);
+    }
+  } catch (cause) {
+    throw loadFailure('delimited', cause);
   }
 }
 
@@ -180,15 +231,22 @@ async function loadTmpAndCtas(
   format: 'json' | 'parquet',
   onStage: IngestStageFn,
 ): Promise<{ result: RawTableResult; renames: Rename[] }> {
-  const loaded = await loadTmp(bridge, bytes, format, onStage);
+  // The choke point for the two file-shaped routes: a truncated parquet or a
+  // truncated-but-prefix-valid JSON dies inside `loadData`, and its message is
+  // pure engine text (`No magic bytes found at end of file 'quac_ingest_tmp'`).
   try {
-    const originals = loaded.columns.filter((c) => c !== ROWID);
-    const { names, renames } = sanitizeColumnNames(originals);
-    const mapping = originals.map((from, i) => ({ from, to: names[i] ?? from }));
-    const result = await ctasRawFromTmp(bridge, mapping);
-    return { result, renames };
-  } finally {
-    await dropTmp(bridge);
+    const loaded = await loadTmp(bridge, bytes, format, onStage);
+    try {
+      const originals = loaded.columns.filter((c) => c !== ROWID);
+      const { names, renames } = sanitizeColumnNames(originals);
+      const mapping = originals.map((from, i) => ({ from, to: names[i] ?? from }));
+      const result = await ctasRawFromTmp(bridge, mapping);
+      return { result, renames };
+    } finally {
+      await dropTmp(bridge);
+    }
+  } catch (cause) {
+    throw loadFailure(format, cause);
   }
 }
 

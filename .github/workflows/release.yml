@@ -69,7 +69,26 @@ jobs:
       - run: npm run verify
       - run: npm run test:cli
 
+      # v1.0.0 is published by hand, because npm cannot be told about a trusted
+      # publisher for a package that does not exist yet. So the very first `v*`
+      # tag would otherwise fire this workflow at a version already on the
+      # registry and fail with E403 — a red run on the release commit, for a
+      # release that went fine. A tag naming an already-published version is a
+      # no-op, not an error. This also makes re-running the workflow safe.
+      - name: Is this version already on the registry?
+        id: published
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "quac@$v" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::quac@$v is already published — skipping publish."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+            echo "quac@$v is not on the registry yet — will publish."
+          fi
+
       # `prepack` builds dist-cli/. Provenance is attached automatically under
       # trusted publishing — passing --provenance is unnecessary and, on some
       # npm versions, an error.
-      - run: npm publish
+      - if: steps.published.outputs.already != 'true'
+        run: npm publish

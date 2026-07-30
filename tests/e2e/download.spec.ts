@@ -9,8 +9,8 @@
  */
 import { expect, test } from '@playwright/test';
 import type { Workbook } from 'exceljs';
+import { loadExampleSession } from './support/exampleSession';
 
-const INGEST_TIMEOUT = 90_000;
 const RUN_TIMEOUT = 180_000;
 test.describe.configure({ timeout: 360_000 });
 
@@ -19,16 +19,9 @@ const excelRow = (row: number): number => row + 2;
 
 async function loadRunAndOpenSummary(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
-  await expect(page.locator('[data-slot="data"] .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
+  // Settled, not merely valid: the three badges alone let a run start inside
+  // the VARCHAR window with 12 of 22 rules excluded (see exampleSession.ts).
+  await loadExampleSession(page);
 
   await expect(page.locator('.q-runbar-button')).toBeEnabled();
   await page.locator('.q-runbar-button').click();

@@ -20,6 +20,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { Result } from 'axe-core';
 import type { Page } from '@playwright/test';
+import { loadExampleSession } from './support/exampleSession';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 const CORS = 'http://localhost:4199';
@@ -86,27 +87,12 @@ async function diagnoseThirdParty(page: Page, surface: string): Promise<void> {
   }
 }
 
-async function loadExample(page: Page): Promise<void> {
-  await page.locator('.q-example-load').click();
-  await expect(page.locator('[data-slot="data"] .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
-}
-
 test('Load view — first run, all slots filled, and the Share modal', async ({ page }) => {
   await page.goto('/quac/');
   await expect(page.locator('.q-example-load')).toBeVisible();
   await expectNoSeriousViolations(page, 'Load (first run)');
 
-  await loadExample(page);
+  await loadExampleSession(page);
   // The preview table and the input-consistency line are both on screen by now.
   await expect(page.locator('.q-preview-pertinence-text')).toBeVisible({
     timeout: INGEST_TIMEOUT,
@@ -186,7 +172,7 @@ test('Load — the input-consistency line in its warning and mismatch tints', as
 
 test('QC Report — after a full run, grid mounted', async ({ page }) => {
   await page.goto('/quac/');
-  await loadExample(page);
+  await loadExampleSession(page);
 
   await page.locator('.q-runbar-button').click();
   await expect(page.locator('.q-statcard', { hasText: 'Errors' })).toBeVisible({
@@ -210,7 +196,7 @@ test('QC Report — after a full run, grid mounted', async ({ page }) => {
 
 test('Rule Studio — workspace open, editor mounted', async ({ page }) => {
   await page.goto('/quac/');
-  await loadExample(page);
+  await loadExampleSession(page);
 
   await page.getByRole('link', { name: 'Rule Studio' }).click();
   await expect(page.locator('.q-filebtn')).toHaveCount(3, { timeout: 30_000 });

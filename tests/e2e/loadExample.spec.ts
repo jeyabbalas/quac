@@ -6,6 +6,11 @@
  * also writes the whole set into the address bar and a reload restores it.
  */
 import { expect, test } from '@playwright/test';
+import {
+  EXAMPLE_RULES_SUMMARY,
+  expectExampleSettled,
+  loadExampleSession,
+} from './support/exampleSession';
 
 const INGEST_TIMEOUT = 90_000;
 test.describe.configure({ timeout: 180_000 });
@@ -21,15 +26,22 @@ test('one click fills all three slots and enables Run QC', async ({ page }) => {
   await expect(page.locator('[data-slot="data"] .q-slotcard-summary')).toContainText(
     'hesp_dirty_100.csv',
   );
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
+  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
+    'Valid',
+    {
+      timeout: INGEST_TIMEOUT,
+    },
+  );
   await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
     'Valid',
     { timeout: INGEST_TIMEOUT },
   );
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-summary')).toContainText(
-    '3 files · 22 rules',
+  // `toHaveText`, not `toContainText`: the settled summary is the ONLY signal
+  // that the rules have been re-linted against the typed table, and the looser
+  // matcher also passes on `… · data checks pending` (see exampleSession.ts).
+  await expect(page.locator('[data-slot="rules"] .q-slotcard-summary')).toHaveText(
+    EXAMPLE_RULES_SUMMARY,
+    { timeout: INGEST_TIMEOUT },
   );
 
   await expect(page.locator('.q-runbar-button')).toBeEnabled();
@@ -46,17 +58,7 @@ test('the one click also fills the address bar, and a reload restores all three 
   page,
 }) => {
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
-  await expect(page.locator('[data-slot="data"] .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
+  await loadExampleSession(page);
 
   // UIX-10: the hero bypasses the schema and rules cards and writes the stores
   // directly — the store-driven writer covers it anyway. Accepted consequence
@@ -76,18 +78,11 @@ test('the one click also fills the address bar, and a reload restores all three 
 
   await page.reload();
   await expect(page.locator('.q-example')).toBeHidden();
-  await expect(page.locator('[data-slot="data"] .q-badge')).toHaveText('Valid', {
-    timeout: INGEST_TIMEOUT,
-  });
+  // The restore replays the same load path, so it goes through the same
+  // VARCHAR window — settle on it rather than on the badges alone.
+  await expectExampleSettled(page);
   await expect(page.locator('[data-slot="data"] .q-slotcard-summary')).toContainText(
     'hesp_dirty_100.csv',
-  );
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-summary')).toContainText(
-    '3 files · 22 rules',
   );
 });
 
@@ -101,7 +96,7 @@ test('the one click also fills the address bar, and a reload restores all three 
  */
 test('Findings: a URL-loaded schema id does not open the row (UX-09)', async ({ page }) => {
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
+  await loadExampleSession(page);
   await expect(page.locator('.q-runbar-button')).toBeEnabled({ timeout: INGEST_TIMEOUT });
 
   await page.locator('.q-runbar-button').click();

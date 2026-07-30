@@ -20,6 +20,7 @@
  */
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { loadExampleSession } from './support/exampleSession';
 
 const CORS = 'http://localhost:4199';
 const INGEST_TIMEOUT = 90_000;
@@ -88,16 +89,9 @@ test('a dataset replaced with a different column set re-runs into a live grid', 
   page,
 }) => {
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
-  await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
-  await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
+  // Settled, not merely valid: run 1's counts below assume all 22 rules ran,
+  // which the VARCHAR window would quietly break (see exampleSession.ts).
+  await loadExampleSession(page);
 
   // Run 1 — the baseline the review recorded (101 × 266, grid populated).
   await runAndExpectLiveGrid(page, 101, 266);
@@ -132,8 +126,7 @@ test('a dataset replaced with a different column set re-runs into a live grid', 
 
 test('the Studio sample grid rebuilds after the dataset is reshaped', async ({ page }) => {
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
-  await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
+  await loadExampleSession(page);
 
   // The Studio's preview is a second data-table instance with the same
   // lifecycle; before UX-01's fix it died on a reshape too, with the sibling

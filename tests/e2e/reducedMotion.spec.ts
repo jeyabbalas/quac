@@ -12,6 +12,7 @@
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { expectExampleSettled, loadExampleSession } from './support/exampleSession';
 
 const INGEST_TIMEOUT = 90_000;
 const RUN_TIMEOUT = 150_000;
@@ -36,10 +37,9 @@ test('progress surfaces render un-animated and still reach their end states', as
   await expect(page.locator('.q-duckprogress-duck').first()).toBeHidden();
   expect(await animationCount(page, '.q-duckprogress-fill')).toBe(0);
 
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
+  // Settled, not merely valid — a run started inside the VARCHAR window
+  // executes 10 of the 22 rules (see exampleSession.ts).
+  await expectExampleSettled(page);
 
   await page.locator('.q-runbar-button').click();
   const runCard = page.locator('.q-run-progress');
@@ -60,11 +60,7 @@ test('progress surfaces render un-animated and still reach their end states', as
 test('the Studio rail collapses with no animation and keeps its state', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/quac/');
-  await page.locator('.q-example-load').click();
-  await expect(page.locator('[data-slot="rules"] .q-slotcard-header .q-badge')).toHaveText(
-    'Valid',
-    { timeout: INGEST_TIMEOUT },
-  );
+  await loadExampleSession(page);
 
   await page.getByRole('link', { name: 'Rule Studio' }).click();
   const toggle = page.locator('.q-studio-railtoggle');

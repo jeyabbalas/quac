@@ -28,7 +28,7 @@ New features; dark mode (documented as out of scope).
 
 ## Verification
 - **Unit:** n/a (UI phase) beyond copy-grep test for pun containment (cheap and real: assert the 3 lines exist and no other file contains "quack"/"duck" puns outside the allowlist).
-- **UI/UX:** Playwright `a11y.spec.ts` — axe: zero serious/critical on Load/Report/Studio + open IndexPicker/SheetPicker/Share modals; `reducedMotion.spec.ts` — DuckProgress renders as plain bar under emulation. Manual checklist from `ui-design.md §7` completed and pasted into the progress log (contrast table + keyboard-only journey).
+- **UI/UX:** Playwright `a11y.spec.ts` — axe: zero serious/critical on Load/Report/Studio + open IndexPicker/SheetPicker/Share modals; `reducedMotion.spec.ts` — DuckProgress renders as plain bar under emulation. Manual checklist from `ui-design.md §7` completed (contrast table + keyboard-only journey); results recorded in `ui-design.md` §2/§7 — the token table carries every recomputed pairing, §7 the tinted-background failures, and §9 the data-table keyboard trap (also `architecture.md` V22). The full table was originally pasted into the master-plan progress log and was condensed out of it on 2026-07-30; the one figure that lived nowhere else — the annotated grid cell's *rendered* 9.12, which beats the raw `#9c0006`/`#ffc7ce` pair's 5.92 because data-table alpha-blends the tint — is kept in that log's P19 entry.
 
 ## Deferred notes
 

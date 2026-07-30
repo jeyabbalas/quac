@@ -72,773 +72,292 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 ## Progress log
 
-> Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
+> Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <5–10 lines>` — what shipped and where
+> it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
+> counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
+> verification walkthroughs belong in the phase file or the spec they amend — not here.
 
-2026-07-30 · UIX-19 · **A reload restores the session on whatever tab it lands — the Load visit is no longer part of the deal.**
-Filed by the owner against shipped P19b: refresh on `#/report` or `#/studio` and the work does not reload until the
-Load tab is clicked. The mechanism was mount order, not persistence: both dataset entry points —
-`registerDatasetUrlLoader` (P16) and `registerDatasetRestoreLoader` (P19b) — are registered by the Load VIEW at
-mount, and the shell mounted views lazily on first visit, so any boot landing elsewhere parked its dataset leg in
-the pending seam (schema/rules never parked — store-level loaders — which is why Studio looked half-restored:
-files present, dataset and completions missing). The P19b log recorded the `#/report` half as a pre-existing quirk
-mirrored deliberately; the owner has now ruled, and the ruling covers the URL leg too. Fix in one move: the shell
-mounts the Load view eagerly — hidden — before `applyBootConfig` runs, on every route; Report and Studio stay
-lazy. That makes main.ts's "loader registered before boot reads the fragment" comment true everywhere instead of
-only on `#/load`, un-parks both dataset legs, keeps `data=` in the bar on a `#/report` reload instead of
-transiently dropping it (`url-params.md` §2), and puts the dataset clear UI behind header Reset on routes that
-never visited Load. The pending seams stay as safety nets. Checked before choosing eager mount: the Load subtree
-is measurement-safe hidden (plain tables, no CodeMirror) and every heavy import stays behind data-arrival effects,
-so a cold boot fetches nothing new — entry 50.2 → 50.3 KB gz is the mount call and comments. Two consequences
-handled in the Studio chunk: (1) with the dataset leg live, a restored dataset can flip studioView's content gate
-and mount the workspace BEFORE the rules leg publishes, and the mount-time `takePendingStudioRestore` would
-consume-and-drop a record naming files merely late, not gone — the restore now applies as soon as every named file
-exists, or the moment the slot settles (one-shot `rulesState.subscribe`), restoring whatever still exists as ever;
-(2) a restored drawer opened before the lint context installs kept "SQL checks are pending until a dataset is
-loaded" beside a 101-row live preview — found in the manual pass, and the same staleness always hit a drawer left
-open across a Load-tab upload — so the gate-tracking effect now re-lints the open draft when `getLintContext()`
-changes identity. e2e: the mixed crown asserts the dataset badge and an ENABLED Run through the hidden Load view
-before any tab click (clicking Load first would mask the parking bug), and a new `#/studio` pass reloads a
-dataset+rules+draft session in place — drawer and draft back, rules badge landing `Warning` (not pending-data
-`Valid`) because the restored context reached the restored rules, and the draft hint gone. Verified by hand in
-Chrome on the built preview, both filed repros: example → QC Report → reload lands on `#/report` with the grid
-inspectable, all badges settling Valid, Run enabled, `data=` kept, zero toasts (all-URL refetch claims no
-restore); Studio → Q011 drawer → typed draft → reload on `#/studio` → drawer, draft, 3 files, 101-row preview all
-back with no Load visit, and the pending-data hint clears when the context lands. Console QuaC-silent.
+2026-07-30 · UIX-19 · **A reload restores the session on whatever tab it lands — no Load-tab visit needed** (reverses
+P19b's "deliberate quirk" note). Mount order, not persistence: both dataset loaders (`registerDatasetUrlLoader` P16,
+`registerDatasetRestoreLoader` P19b) register on Load-VIEW mount and views mounted lazily, so any boot landing off
+`#/load` parked that leg — schema/rules are store-level, hence the half-restored Studio. Fix: `shell.ts` mounts Load
+eagerly and hidden before `applyBootConfig` on EVERY route (Report/Studio stay lazy), so `data=` also survives a
+`#/report` reload. Only free while the Load subtree stays CodeMirror-free with heavy imports behind data-arrival
+effects. Studio: `takePendingStudioRestore` now waits for every named file or for the slot to settle, and the gate
+effect re-lints an open draft when `getLintContext()` changes identity. Amends `url-params.md` §2, `ingestion.md` §6.
 Unit 803 unchanged, browser 73 unchanged, e2e 111 → 112, entry JS 50.2 → 50.3 KB gz.
 
-2026-07-30 · P19b · **IndexedDB session persistence & app-wide Reset (owner-directed spec amendment).**
-Users close the tab expecting to come back to their review, and until now the hash fragment was the only thing that
-survived — uploads, Rule Studio work and the toggle died with the tab. This deliberately amends the standing "no
-storage" rule (`architecture.md` §8.5, `ingestion.md` §6, the footer line): the session now persists to ONE
-IndexedDB database (`quac-session`) on this device — inputs only, never the report, and restore never auto-runs
-(consent to compute stands). Core stance: **persist original inputs, replay the existing loaders** — the dataset's
-already-retained source Blob re-ingests through the real card path with the sheet choice pinned (no SheetPicker),
-schema sets rebuild from persisted intake entries (`preserveIntakePaths` stops the upload strip from eating a second
-directory level; the chosen root rides `indexParam`, so no IndexPicker either), rules round-trip the §7 serializer
-with per-file provenance and dirty marks, and the Studio drawer draft comes back DIRTY so the discard guard stays
-armed. Boot is arbitrated by a four-row decision table (`url-params.md` §1): empty fragment → full restore (hashSync
-then self-heals restored URL slots back to refetch semantics); equal config → the normal refresh with upload slots
-from IDB (the rules slot moves whole iff any file is an upload — correction order is a contract); a different link
-wins wholesale. One judgment call against the plan's row-3 letter, recorded in `decideBoot`'s doc comment: the
-`index=` pin is EXCLUDED from the equality key (the refetch leg honors the current link's pin regardless, so a stale
-pin demoting the refresh would only drop the uploads it protects). The write-through is one effect over the live
-stores — loading slots never flush (a hung fetch persists nothing), dataset immediate, slots 500 ms, studio 1 s,
-hidden-tab flush, meta rewritten by the bar's own writer, all-empty clears the DB outright (a purge empties the DB
-rather than deleting it — a blocked `deleteDatabase` is not worth the open-connection gymnastics). Header `Reset`
-(before Share, enabled like Share) drives the same always-confirming clear-all, which now also purges. Two known
-fidelity losses documented in §6 (Ignored-files list, partly-failed-fetch findings); a link boot persists nothing
-until the first user change (markers seed from live state — also what stops a restore echo-saving itself). P20 still
-owns the README privacy rewording. Verified by hand in the real browser on the built preview: cold start → example →
-run (39/13/10/6, pill 62) → reload → restore toast → run → identical counts; Reset → first-run with `quac-session`
-emptied; two-tab last-write-wins; console QuaC-silent throughout.
+2026-07-30 · P19b · **IndexedDB session persistence & app-wide Reset** — owner-directed amendment of the "no storage"
+rule (`architecture.md` §8.5, `ingestion.md` §6, the footer line): ONE device-local DB `quac-session`, INPUTS only,
+never the report, and restore never auto-runs (consent to compute stands). Stance: persist original inputs, replay the
+existing loaders — per-slot replay and write-through timings in `ingestion.md` §6; schema replays with
+`preserveIntakePaths` and the root on `indexParam`, so no IndexPicker; an all-empty state EMPTIES the DB rather than
+deleting it, since `deleteDatabase` can block on an open connection. New `app/session{Snapshot,Persistence,Backend}.ts`
++ `app/studioSession.ts`; boot is arbitrated by `decideBoot`'s four-row table (`url-params.md` §1), whose row 3
+EXCLUDES `index=` from the equality key against the plan's letter (reasoned in its doc comment). Header `Reset` is the
+always-confirming clear-all plus a purge. Two fidelity losses documented in §6; P20 still owns the README rewording.
 Unit 762 → 803, browser 60 → 73, e2e 101 → 111, entry JS 46.9 → 50.2 KB gz.
 
 2026-07-27 · UIX-18 · **A schema parse error names a file you can paste, and says it once — UX-10.**
-Reproduced first in the real browser, exactly as filed and confirmed at the character level: the finding read
-`` Error: `/localhost:4199/synthetic/mixed/notes.txt` is not valid JSON: Unexpected token 'T', "This file "... is not
-valid JSON. `` — 126 characters, `is not valid JSON` twice, and code point 47 (`/`) directly after the opening
-backtick where `http:` should have been, while the *Ignored files* line two rows above held the URL in full. Both
-halves are one line each, and the second sits a layer below where the finding points. The stutter is exactly as
-diagnosed — current V8 has a second, position-free form that quotes the file back and closes with this template's own
-clause — but the suggested "cut at the first `,`" is taken **gated on that tail**, not unconditionally: a message
-merely containing a comma must survive whole, which is its own fail-closed unit case. The path is not a
-degenerate-common-root problem at all. `stripCommonRoot` is a `webkitRelativePath` helper (its own header says so, and
-§A.2.1 scopes it to uploads) that `intakeFiles` was handing every origin; a URL's first `/`-delimited segment is its
-scheme, so `'http://…'.indexOf('/') === 5` and the strip ate `http:` off **every** URL entry, not just lonely ones.
-The 14-file set survives only because `relativizeUrlPaths` (`schema-set.ts:341`) rebuilds `relativePath` off `fileId`
-afterwards — and "afterwards" is the whole finding: messages are frozen at intake, before that repair. So the same
-line silently fixes `E_DUP_ID` (`:231`) and all four `ref-graph` messages (`:277,303,340,360`), which have been
-printing `//host/…` in URL sets with nobody filing it, and it costs no special case. Second half of the fix, one
-token: `E_PARSE` names the file by `fileId`, not `relativePath` — provably identical for uploads (`:190` assigns one
-from the other) and, for URL sets, the exact string `ignored[].fileId` renders one list above it, so the card cannot
-name one file two ways. That is the unit invariant now, rather than a coincidence of two code paths. Deliberately NOT
-taken: re-rendering `E_PARSE` after `relativizeUrlPaths` so URL sets get short display paths. It would need the engine
-reason stashed on `meta`, and it answers the wrong half — the finding asks for a path that can be pasted, and the line
-above already prints the full URL. Measured live after: 126 → **97** characters, `is not valid JSON` 2 → 1, the
-pasteable `http://localhost:4199/synthetic/mixed/notes.txt` inside the backticks, zero horizontal overflow, and the
-regression this could only have broken re-measured on the same build — `Load example files` still reads `14 files ·
-root: core/core.schema.json` with `set id: 636a370031d8ef6f`, byte-identical to the pre-fix capture (`setId` hashes
-post-relativization paths, so it is a real pin, not a tautology). Console QuaC-silent throughout (only the extension's
-own `chrome-extension://…` lines). Pin-checked against the un-fixed code: all 4 new unit cases and the new e2e pass
-fail, while the 26 other cases in those two files and the other 6 `schemaLoad` passes pass either way. Left standing,
-deliberately: `stripCommonRoot` itself — its contract and its two unit cases are untouched, since it was never wrong,
-only mis-aimed; `relativizeUrlPaths`, which owns the short display paths and keeps them; and the upload E_PARSE copy,
-unchanged to the byte.
+`stripCommonRoot` is a `webkitRelativePath` helper (§A.2.1: uploads only) that `intakeFiles` handed every origin, and
+a URL's first `/` segment is its scheme, so it ate `http:` off EVERY URL entry; `relativizeUrlPaths` repairs
+`relativePath` off `fileId` only afterwards, while messages freeze at intake — so gating the strip on upload origin
+also fixes `E_DUP_ID` and the four `ref-graph` messages. Second half, one token: `E_PARSE` names the file by
+`fileId`, not `relativePath` — the same string the card's *Ignored files* line prints, so one file can never be named
+two ways (now a unit invariant). V8's position-free tail is cut only when present, so a message merely containing a
+comma survives whole (fail-closed). Spec: `json-schema-subsystem.md` §A.1 + §A.3's `E_PARSE` row,
+`testing-strategy.md` §16. `stripCommonRoot` itself was mis-aimed, not wrong: its contract and tests stand.
 Unit 755 → 762, e2e 100 → 101, browser 60 unchanged, entry JS 46.8 → 46.9 KB gz.
 
-2026-07-27 · UIX-17 · **The Findings list leads with its message, not a 106-character machine id — UX-09.**
-Reproduced first in the real browser, and the filed prefix lengths reconcile exactly once you know what they counted: the
-report's 38, 10, 36, 106, 111, 96, 90, 9, 9 are the *rendered row* prefixes, i.e. the id plus the severity chip's own word
-(`error ` = 6, `info ` = 5); the ids themselves measure 32, 4, 30, 101, 106, 91, 85, 4, 4 — same nine rows, same order, and
-the longest is 106. The doubling the finding names is verbatim in the DOM: row 5 reads
-`schema:advisory:http://…/core/categories/household_composition.json: Schema note (core/categories/household_composition.json): …`,
-the file named twice fifteen characters apart. The fix is display-composition only, and that is the point worth naming: P14
-had already recorded this exact tension as **Deferred** (`phase-14-run-report.md:117-119` — "`relativePath` would read far
-better, but §D.5 pins the id on `fileId`, so changing it is a spec deviation for P19/P20 to weigh"). Giving the two
-id-carrying surfaces the bare message answers it without spending that deviation: `schema:advisory:<fileId>` is untouched, so
-`seeded-violations.json` and `mini_expected_flags.json` never move. `renderFlag` keeps its name, signature and output and is
-now a composition of the new `renderFlagMessage` over a shared `correctionSuffix`, so the Excel `<col>__review` cells — the
-one surface with nowhere else to put the id — are unchanged BY CONSTRUCTION, and `renderFlag(f) === \`${f.ruleId}: ${renderFlagMessage(f)}\``
-is itself a unit test. The popover needed one line: `annotations.ts` already set `code`/`source`, and data-table renders
-`code · source` beneath every entry, so prefixing the message was printing `schema:prop:reference_year:value` twice, one row
-apart; it now appears once, in `.dt-annotation-meta`. Two things the desk design did not have. The panel was carrying its own
-copy of the broken-rule string (`reportPanels.ts:382` vs `reportModel.ts:381-383`) despite reportModel's header promising the
-two "can never disagree about a rule's status wording" — that is now `ruleStatusMessage()`, shared, and Sheet 3's bytes are
-identical. And the CSS rule that stopped URL ids overflowing (`li > span:not(.q-pill)`) targeted the very span the markup
-change removes, so it had to be re-expressed on `.q-finding-body`/`.q-finding-message`/`.q-finding-id` rather than left
-behind — dropping it silently would have handed back exactly the overflow Pass E cleared. Measured after: same 9 rows in the
-same order, every message id-free and every id intact on its own line, counts unchanged (39/13/10/6, 101 · 266 · 20 · 2,
-pill 62), and the panel now shows four complete findings where two and a half fit before. Overflow re-measured by shrinking
-the panel to 420/340/280/220/180 px — zero at every step, down to a 144 px list, far below any real viewport. Console
-QuaC-silent throughout (only the extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 6 of
-the new unit cases fail and both new e2e assertions fail on the UX-09 line, while the three `renderFlag` cases,
-`download.spec`'s `Q047:` + corrected-suffix workbook assertions and `zeroOverlapSchema`'s findings text pass either way.
-Left standing, deliberately: the Offenders panel and Sheets 3/4 (already id-in-its-own-column — the review says they read
-fine), the `__review` prefix, and `qc-report-spec.md` §1's "no other module formats flag text" invariant, which still holds
-with two renderers because both live in that one module.
+2026-07-27 · UIX-17 · **The Findings list leads with its message, not a 106-character machine id — UX-09.** Display
+composition only: `schema:advisory:<fileId>` is untouched, so `seeded-violations.json`/`mini_expected_flags.json` never
+move and P14's Deferred note (`phase-14-run-report.md:117-119`, still unstruck) is answered without spending the §D.5
+`fileId` deviation. `renderFlag` keeps its name, signature and output, and is now composed of a new `renderFlagMessage`
+over a shared `correctionSuffix`, so Excel's `<col>__review` cells are unchanged BY CONSTRUCTION. Two extras: the
+panel's private broken-rule string became a shared `ruleStatusMessage()` (`reportModel.ts`); and the URL-id overflow
+guard `li > span:not(.q-pill)` lost the span the markup change removed, so it was RE-EXPRESSED on the `.q-finding-*`
+leaves rather than dropped. Spec: `qc-report-spec.md` §1/§2/§4, `architecture.md` §5, `testing-strategy.md` §15.
 Unit 750 → 755, e2e 99 → 100, browser 60 unchanged, entry JS 46.8 KB gz unchanged.
 
 2026-07-27 · UIX-16 · **A rule disabled by an untyped column says so in plain language — UX-08.**
-Reproduced first in the real browser, exactly as filed and to the number: `Load example files` → `Valid · 3 files ·
-22 rules`, one click on the JSON Schema card's `Clear` → `Warning · 3 files · 22 rules · **12 lint errors**`, every
-one of the 12 a raw binder error. The finding's constraint — the *exclusion* is correct (V23) and must not change —
-is what the after-state is measured against, and it holds to the number: same badge, same summary, same 12, and a
-subsequent run still reports **9 Rules run** (down from 20), exactly as the report recorded. Only the account
-changes. The whole fix is one branch inside stage 4's `dryRun` (`lint.ts`), which is why it costs no renderer and
-no bundle: `RuleLintIssue` already splits `message` from `detail`, and all three consumers — the slot card,
-`ruleForm` and `codeEditor` — already render `message` as text and `detail` as the `title`, so rewriting one string
-fixed the card AND both Studio surfaces (confirmed live in the Studio: all 12 read the new sentence there too).
-It **fails closed**, which is the design decision worth naming. The class needs `Binder Error` + a `VARCHAR` token
-+ one of four phrase families **and** at least one implicated VARCHAR column, or the engine's own words stand
-untouched — so `Referenced column "x" not found` (no VARCHAR token) and `'+(INTEGER, VARCHAR)'` from a user's own
-cast literal both stay raw, and so does everything after a failed `DESCRIBE`. The suggested generic sentence for
-the un-nameable case was deliberately NOT taken: it is exactly the branch a misclassification lands in, and it
-would trade the one useful thing left for a sentence naming nothing. The probe is memoized across the pass and
-wrapped, because `relint` (`rules-store.ts:67`) has no try/catch and a rejection escaping here would strand the
-card at `phase: 'loading'` with its badge stuck — a diagnosis is never worth that. Three things driving it
-corrected the desk design. `target_variables` alone cannot name the columns: a column-scope assertion's text
-(`in_range(0, 120)`) contains none, and Q038 targets only `monthly_rent` while failing on the `wave` in its
-`PARTITION BY` — so each of the five wrappers passes what it actually built its SQL from, unioned with a
-word-bounded scan of the rule text, and the live card now names `monthly_rent, wave` for Q038. The copy says a
-column is "**stored as** text" rather than that it needs a numeric type, because with no schema *every* column is
-VARCHAR and the sentence has to stay true of `household_id` and `record_id`, which are text on purpose. And
-`TRY_CAST` names a real column only where exactly one is implicated (4 of the 12 — `TRY_CAST(monthly_rent AS
-DOUBLE)`); with several the binder never says which it choked on, so the example falls back to V23's own `col`
-placeholder rather than advising Q003 to cast `record_id` when only `wave` wants it. `qc-rules-engine.md` §7
-stage 4 said binder errors are "surfaced **verbatim**", which forbade this outright; it now pins verbatim as
-`detail`'s job and spells out the one exception, its gate and its fail-closed rule. V23 gains the live numbers,
-including a `Cannot mix … in CASE expression` form the desk analysis did not predict — the four-phrase gate
-already covered it, and the 12 fall into exactly three families (3 / 4 / 5). Console QuaC-silent throughout (only
-the extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 6 of the 10 new
-`lint.test` cases, the `draftLint` case and BOTH e2e passes fail, while all four fail-closed guards and the two
-existing stage-4 cases pass either way. Left standing, deliberately: `sql-error` stays one code (the taxonomy is
-by stage, not by cause, and `rulesExec.browser.test` filters on it); `recordBrokenRule` (`engine.ts:382`) keeps
-its raw text, since lint excludes these rules before a run can reach it — not *never*, per the race
-`phase-17-studio-editor.md:43` documents, but not this finding; and the P20 README limitation is still owed, which
-is the point — a README cannot help someone reading `'+(VARCHAR, VARCHAR)'` inside the card.
+One branch in lint stage 4's `dryRun` (`core/rules/lint.ts`): `RuleLintIssue` already splits `message` (text) from
+`detail` (`title`), so one rewritten string fixed the slot card AND both Studio surfaces (`ruleForm`, `codeEditor`).
+`qc-rules-engine.md` §7 stage 4 said binder errors are surfaced **verbatim**, forbidding this; verbatim is now
+`detail`'s job and the fail-closed gate is pinned there, V23 gaining the live numbers. The `DESCRIBE` probe is
+memoized + wrapped: `relint` (`rules-store.ts:67`) has no try/catch, and an escaping rejection strands the card at
+`phase: 'loading'`. Untouched by design: `sql-error` stays one code, `recordBrokenRule` (`engine.ts:382`) stays raw.
 Unit 739 → 750, e2e 98 → 99, browser 60 unchanged, entry JS 46.8 KB gz unchanged.
 
 2026-07-27 · UIX-15 · **An over-length share link keeps its link and its Copy button — UX-07.**
-Reproduced first in the real browser, exactly as filed, and the report's *computed* production number was
-confirmed from the page's own link rather than re-derived: `Load example files` → `Share` read **1965
-characters** with `Copy` present, and substituting the deployed origin into that live string — 18 encoded
-occurrences of the base — gave **2062**, over by 62. Fetching a fourth rules file then crossed the line locally
-and produced the filed state at **2032 characters**: no readonly input, no `Copy`, no char count, no `index=`
-callout, the modal's only two controls `×` and `Download config manifest (JSON)`. Root cause is the early
-`return section;` at `shareModal.ts:209` — everything below it, the whole link row, was unreachable past the
-threshold. The spec reading in the finding is right and is now pinned both ways: `url-params.md` §4 conditions
-only the manifest on the limit ("**offer**"), and `ui-design.md`'s ShareModal line said "…index callout, **or**
-the `config=` manifest path", which is the sentence that licensed *replace*; both now say the offer is additive.
-The link row, count and callout render unconditionally; the advice + manifest button + hosting note append below
-them, `Copy` stays the modal's one primary and the manifest stays a plain `q-btn`. The threshold moved out of the
-view into `buildShareLink` (`shareModel.ts`) so it is node-testable — `MAX_URL_CHARS` had no consumer outside the
-modal — and the boundary is pinned as `>`, not `>=`. One correction to the report: focus in the broken state
-landed on `×`, not on the Download button, because `openModal` focuses the dialog's own close control ahead of
-body content; what the bug cost a keyboard user was the first control *after* it, which is why the browser guard
-asserts the link is the first control in the **body** rather than asserting `document.activeElement`. The second
-half of the suggested fix — "check the example's link length against the production origin" — was taken, but not
-by shortening the fixture paths, which would have rippled into every `$ref`, the golden digests and pinned
-strings like `root: core/core.schema.json` for 62 chars of need. Sweeping every `$ref` target under
-`tests/fixtures/hesp/json_schema/` shows all 13 non-root files are reachable from `core/core.schema.json` (12
-`categories/*.json` plus `../../common/defs.json`), so `index.json` now lists the **root only** as a crawl base
-while still staging all 14 files; `loadView.ts` needed no change, since `manifest.schema.map(abs)` simply passes
-one URL. Measured live after the fix: the deployed link falls **2062 → 591** (1409 chars of headroom, local 1965
-→ 559), the schema card still reads `14 files · root: core/core.schema.json`, the Share modal's grouped row is
-unchanged with its `<details>` now reading `1 source URL in the link`, and a full run still returns
-**39 / 13 / 10 / 6** with pill 62. The over-limit state was then re-driven to 2055 chars: input present and
-readOnly, `Copy` primary, `2055 characters`, the advice, the manifest button and the callout all in the spec'd
-order, and the real `Copy` click put all **2055** characters on the clipboard with the input left selected — so
-the ⌘/Ctrl-C fallback, which had nothing to select before, works too. Console QuaC-silent throughout (only the
-extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 2 of 4 new browser cases
-and the new e2e pass fail, 2 of 3 `exampleLink` cases fail against the 14-base manifest, while every guard — the
-under-limit case, the exactly-at-limit case, the localhost-stays-under case and journey 4 — passes either way.
-Left standing, deliberately: `MAX_URL_CHARS` stays 2,000. The limit was never wrong; treating it as a hard
-ceiling instead of a portability caution was.
+Root cause: the early `return section;` at `shareModal.ts:209` made the link row unreachable past the threshold. The
+link row, char count and callout now render unconditionally with the advice + manifest button appended below, and the
+threshold moved out of the view into `buildShareLink` (`shareModel.ts`) to be node-testable (boundary `>`, not `>=`).
+`url-params.md` §4 and `ui-design.md`'s ShareModal line, which had licensed the *replace*, now pin the offer as
+additive. Also: `public/examples/index.json` (`scripts/example-manifest.mjs`) lists the schema ROOT only as a crawl
+base (all 14 still staged), fitting the example under the limit at the DEPLOYED origin; fixture paths untouched.
 Browser 56 → 60 (13 files), e2e 97 → 98, unit 734 → 739, entry JS 46.7 → 46.8 KB gz.
 
 2026-07-26 · UIX-14 · **A cleared slot forgets the URL it was fetched from — UX-06.**
-Reproduced first in the real browser, exactly as filed, on both halves and in one probe: after clearing the rules
-slot, then the schema slot, then the dataset slot, all three badges read `Empty` while the two check-source fields
-still held `…/hesp_consistency.quac.csv` and `…/core/core.schema.json` and only the dataset's was `''` — the
-asymmetry the finding names, measured in a single call. The SheetPicker half reproduced too: fetching
-`tiny/two_sheets.xlsx` over a loaded `people.csv` and cancelling left the slot reading `people.csv · 12 rows ×
-5 cols` under a field reading `two_sheets.xlsx`. Root cause is exactly the one the report pins.
-`ui-design.md` §5 specifies `createUrlField.clear()` as "empties the typed URL on slot clear" and
-`urlField.ts:17` calls a stale URL something that "must not survive it", but the helper had ONE call site in all
-of `src/` — `datasetCard.ts:131`, inside `registerDatasetClearUi({ clearLocalUi })`. `clearSchema` and
-`clearRules` (`clearInputs.ts:203,213`) are store-only; the two check-source cards have no hook, which is the
-structural reason the bug is theirs alone. The fix gives each of them one, registered on mount and driven from
-`clearInputs.ts` via `clearSchemaSlot()` / `clearRulesSlot()`, so the store reset and the card wipe are a single
-step no path can half-do. Deliberately NOT the shape UIX-13 used one line earlier in that very card:
-`if (status === 'empty') …` is unsound here because `empty` is not a synonym for "the user cleared" — the schema
-store lands on `phase: 'empty'` when a load THROWS (`schema-store.ts:57,110`), and a failed load must keep what
-was typed, since that text is what a typo gets fixed in and what the CORS help's Retry sits beside. Driving it
-from the explicit clears separates the two by construction, and a browser case pins it: a bare
-`clearRuleFiles()` / `resetSchemaSlot()` must leave both fields standing. Two things the report did not have.
-The rules card's `cancelRun()` moves out of its Clear handler into the hook, closing a latent UX-04-class defect
-measured live before the fix — `Clear all inputs` during a hung rules fetch left the field DISABLED at
-`Fetching…` under an `Empty` badge with the dead URL in it, because only the card's OWN Clear released the latch
-that `ui-design.md` §5 already says the cancel owns. And the finding's parenthetical half is fixed on its narrow
-reading: `runIngest` already carries `sourceUrl`, set only by `ingestFromUrl`, so `IngestUi.onUrlAbandoned` fires
-on the SheetPicker's Cancel for the URL leg only — a cancelled picker on a DROPPED file must not wipe a field
-that still describes the loaded dataset, and the error paths stay untouched for the same reason. The rule that
-falls out, now pinned in both specs: the field empties on an explicit slot clear or an abandoned URL load, never
-on a failed one — it holds the user's typing, not a mirror of the slot, which a share-link boot proves by filling
-three slots with three empty fields. Verified live on the rebuilt preview across every path: both per-slot
-clears, `Clear all inputs`, `✕` on a non-last file (field kept, focus on the next row's `✕`) versus the last one
-(field emptied, `Details` hidden and collapsed), a 404 rules fetch and a `notes.txt` schema fetch (both `Error`,
-both fields kept, then cleared), a two-root schema dismissed into `Warning · 15 files · choose the index schema`
-whose whitespace-separated multi-URL string went wholesale, `Clear all inputs` mid-hung-fetch (now `Empty`,
-enabled, `Fetch`, `''`), and the SheetPicker cancel on both legs — console QuaC-silent throughout (only the
-extension's own `chrome-extension://…` lines). Pin-checked against the un-fixed code: 3 of 4 new browser cases
-and 6 e2e tests fail, while every guard — the store-reset case, the non-last `✕`, the failed fetch, the cancelled
-confirm, the file-leg picker — passes either way. Left standing, deliberately: nothing here changes what a
-*replacement* does to the field, which the review does not raise and which keeps the URL by the same rule.
+Root cause: `createUrlField.clear()` had ONE call site in `src/` — `datasetCard.ts:131` — while
+`clearSchema`/`clearRules` (`clearInputs.ts:203,213`) are store-only, so neither check-source card had a hook. Both
+now register one on mount, driven from `clearInputs.ts` via `clearSchemaSlot()` / `clearRulesSlot()`, bound to the
+EXPLICIT clears and not to `status === 'empty'` (a THROWN schema load lands there too — `schema-store.ts:57,110`).
+The rules card's `cancelRun()` moved into that hook, closing a latent clear-all-mid-fetch defect, and
+`IngestUi.onUrlAbandoned` fires on SheetPicker Cancel, URL leg only. Pinned: `ingestion.md` §1, `ui-design.md` §5.
 Browser 52 → 56 (12 files), e2e 95 → 97, unit 734 unchanged, entry JS 46.6 → 46.7 KB gz.
 
 2026-07-26 · UIX-13 · **An emptied slot advertises no detail it does not have — UX-05.**
-Reproduced first in the real browser, exactly as filed, and on all three paths rather than the one the report
-walks: `Load example files` → `Clear all inputs` left the QC Rules card at badge `Empty` with its `<details>`
-`hidden === false` over a host of **0** children, while Dataset and JSON Schema — probed in the same call —
-correctly read `hidden === true`, the asymmetry the finding names. The per-slot `Clear` and `✕` on the last
-file reproduce it too, and both land in a **worse** state than the filed one: `open === true` as well, because
-nothing ever resets the disclosure a user expanded, so the card sits visibly unfolded onto nothing. Root cause
-is exactly the ordering slip the review names. `createSlotCard.update()` derives two things from live DOM —
-`actionsHost.hidden` from its children's hidden state and `details.hidden` from `detailHost.childElementCount`
-— so a card must settle **both** before calling it. The rules effect settled only the first: it called
-`update()` and then `renderDetails()`, so `update` counted the previous load's file blocks.
-`schemaSlotCard.ts:193` ("Fill the detail host BEFORE update()") and `datasetCard.ts` (via `clearLocalUi`,
-which `clearInputs.ts:171` deliberately runs ahead of the slot write) already do it the right way round; the
-rules card was the sole violator of an invariant the codebase states twice, which is why one line of the
-comment above it already warned about the *other* derivation. The swap is the whole fix — `renderDetails`
-wipes its host **before** its early return, so no extra clear is needed. One addition beyond the review's
-suggestion: the effect now collapses the disclosure when the slot goes empty. Without it the stale `open`
-survives into the next load and a re-filled card comes back pre-expanded, unlike a cold one — measured live,
-`open: true` after the clear and still `true` on the re-load. It cannot hide readable content, because
-`summarizeSlot` returns `'empty'` on precisely "no files AND no fetch errors", which is precisely when
-`renderDetails` rendered nothing; a card holding only fetch errors reads `error`, not `empty`, and keeps its
-list. `focusAfterRemove` is unaffected — it reads the host from a `.then()` downstream of the synchronous
-effect — and that was checked live, not just argued: removing a non-last file still lands focus on the next
-row's `✕`, and a whole-slot Clear still lands it on the drop zone. Verified on the rebuilt preview: all three
-paths now return the card to a state identical to the cold-load probe (`hidden: true`, `open: false`, 0
-children), a re-load brings `Details` back populated **and collapsed**, and removing a non-last file still
-leaves it open over the survivor — console QuaC-silent throughout (only the extension's own
-`chrome-extension://…` lines). Left standing, deliberately: `schemaSlotCard.ts:204`'s `setDetailsOpen(true)`
-on a fatal error has no paired `false`, so that card's disclosure is stickily expanded after a clear — same
-class, different finding, and not in UX-05's scope. `rulesSlotDetails.browser.test.ts` is the first slot-card
-test in the browser tier; it mounts the production card against the production store (the layer all three
-paths converge on) and needs no DuckDB, since a card with no dataset never boots the bridge. Pin-checked
-against the un-fixed code: 2 of 3 new browser cases and both new e2e assertions fail on `details.hidden`,
-while the loaded-state controls pass either way. Browser 49 → 52 (11 files), e2e 94 → 95, unit 734 unchanged,
-entry JS 46.6 KB gz unchanged.
+Root cause: `createSlotCard.update()` derives the actions row AND `<details>` visibility from live DOM
+(`detailHost.childElementCount`), and the rules effect called `update()` before `renderDetails()`, counting the last
+load's blocks. The swap is the fix; `renderDetails` wipes its host before its early return. Also: the effect
+collapses the disclosure when the slot empties — safe, since `summarizeSlot` reads `'empty'` only with no files AND
+no fetch errors. Invariant + collapse pinned in `ui-design.md` §5. Known issue: `schemaSlotCard.ts:204`'s
+`setDetailsOpen(true)` on a fatal error has no paired `false`, so the SCHEMA card stays expanded after a clear.
+Browser 49 → 52 (11 files), e2e 94 → 95, unit 734 unchanged, entry JS 46.6 KB gz unchanged.
 
 2026-07-26 · UIX-12 · **A slow fetch is visible, and the way out is on screen — UX-04.**
-Reproduced first in the real browser, exactly as filed, against a throwaway host on `:4201` that accepts the request
-and never ends the response (its log confirms both requests left the browser). Sampling anchored to each card's own
-form `submit` — an interval armed before the click races it — at 300 ms / 1.5 s / 4 s: badge `Empty`, summary blank,
-Clear `hidden`, on **both** check-source slots, with the JSON Schema card visually indistinguishable from cold (the
-hero still up). One correction to the filing, which called the two identical: the rules card *does* swap its button
-to `Fetching…`; the schema card, which has no busy latch at all, shows **nothing**. Three defects, not one. (1) The
-schema projection's loading branch was dead code: both loaders publish `{ phase: 'loading', set: null }`
-(`schema-store.ts:50/75`) and the emptiness guard above it matched `set === null` first. (2) The rules projection had
-the same inversion — but the review's suggested reorder **fixes only the schema half**, because `addRuleUrls`
-published *nothing* until the bytes were in hand: its first `phase: 'loading'` came from `addRuleFiles`, downstream of
-the fetch. It now enters the phase before the loop, `loadSchemaUrls`' and `ingestController.ts:51`'s pattern, and
-holds it through fetch → parse → lint rather than settling and re-entering (which would flicker the badge and re-hide
-Clear in the gap before `loadCodecs()` resolves). That opened one new hazard, guarded explicitly: when every URL
-fails, `addRuleFiles` returns at its own empty guard and moves nothing, so `addRuleUrls` settles the phase itself —
-back to `empty`/`ready` by file count, reproducing the pre-UX-04 state exactly (`summarizeSlot` still reads `error`,
-its empty guard needing BOTH lists empty). (3) The rules `Clear` cancelled the store but not the card: `run()`
-releases `busy` in `.finally()`, which for a hung fetch never runs, so a successful clear left the field dead at
-`Fetching…` over an `Empty` badge — two surfaces disagreeing again. `run()` is now generation-counted and the Clear
-handler calls `cancelRun()`, which also stops the late settle from unlatching a *newer* fetch. The schema card gains
-the `Fetching…` affordance it never had, derived from the phase rather than latched around the call, so Clear
-releases it for free. **Knock-on, intended:** `slots.{schema,rules}` now genuinely report `loading`, so
-`loadView`'s `anyFilled` turns true the moment a check-source fetch starts — the hero recedes and `Clear all inputs`
-appears for the duration, which is the honest reading. `runReadiness` is untouched (it reads the raw stores for those
-two legs). This discharges the deferred UIX-7 niggle recorded at line 207 below; the schema half was recorded
-nowhere. Verified live on the rebuilt preview: both slots read `Loading…` / "Loading schema files…" / "Loading rules
-files…" with Clear **visible and enabled** and `Fetching…` up at all three samples; Clear returns each to `Empty`
-with its toast, drops the param from the bar, and leaves the field typeable; a real 14-file HESP crawl off `:4199`
-resolves `Valid · 14 files · root: core/core.schema.json`; a 404 rules URL lands `Error · 0 files · 0 rules · 1 fetch
-error` with no stuck badge; and `Load example files` → `Run QC` still gives 39 / 13 / 10 / 6, `101 rows · 266 columns
-· 20 rules run · 2 skipped`, pill 62, zero toasts — console QuaC-silent throughout (only the extension's own
-`chrome-extension://…` lines). Pin-checked against the un-fixed code: both e2e cases sat at `Empty` for the full 30 s
-timeout, and 4 of the 5 new unit cases failed on `expected 'empty' to be 'loading'`. The fifth (all-URLs-failed
-settles) passes either way by construction — it guards the stranding hazard this change introduces, not the original
-bug, and is kept for that. Unit 727 → 734, e2e 92 → 94, browser 49 unchanged, entry JS 46.5 → 46.6 KB gz.
+Three defects: both check-source projections tested emptiness before phase (`schema-store.ts:50/75` publishes
+`loading` with a null `set`, so the branch was dead), `addRuleUrls` published no phase until bytes landed, and the
+rules Clear cancelled the store, not the card's `.finally()` latch. Fix, now `ingestion.md` §1: phase is tested
+FIRST, `addRuleUrls` enters `loading` before the loop, `run()` is generation-counted behind `cancelRun()`, the schema
+card gains `Fetching…`. Knock-on, intended: the slots now report `loading` honestly, so `loadView`'s `anyFilled`
+turns true as a fetch starts — hero recedes and `Clear all inputs` shows meanwhile; `runReadiness` untouched.
+Discharges UIX-7's deferred niggle. Unit 727 → 734, e2e 92 → 94, browser 49 unchanged, entry JS 46.5 → 46.6 KB gz.
 
 2026-07-26 · UIX-11 · **A focus filter that matches nothing is a failed best effort, not an empty grid — UX-03.**
-Reproduced first in the real browser, exactly as filed: example set → Run QC (39/13/10/6, 101×266) → Offenders →
-`H004` (`error · interview_date · Count 1 · 1.0%`) → `Active filters: SQL H004` over **`0 / 101 rows`**, no toast, on
-the one click whose whole purpose is "show me the rows behind this number". Root cause, and the open question the
-review left: the two surfaces really are filtering different typings of one column, but **QuaC never casts to DATE
-at all** — `data`, which is both what the rules ran against and the source of the display export, types
-`interview_date` `VARCHAR` (read off the Load preview's type row), while data-table's own loaded copy of those
-exported bytes types it `DATE`, so `2026-02-30` is already null there and `TRY_CAST(… AS DATE) IS NULL` can never
-fire. Measured through data-table's own Validate button on the live grid: `typeof(interview_date) = 'DATE'` → 101
-rows match; H004's exact condition → **valid, 0 rows match**. That count was already in the reply QuaC was reading —
-`validateSQLFilter` returns `{valid, matchCount}` and only `valid` was consulted, so a filter that parsed, ran and
-returned nothing counted as success. `tryFilterByCondition` now returns `OffenderFocusOutcome`
-(`applied` | `unfilterable` | `no-match`) and **both** failures clear the previous rule's filter before returning —
-today a refused focus left the earlier `SQL <id>` chip applied, naming a rule the user did not click. `reportView`
-switches on the outcome: the window-function string is unchanged, and `no-match` gets its own message plus a
-`showToast` hint that deliberately names no cause the repro cannot show ("The grid shows the data as it stands after
-the run — this rule's flagged cells are still annotated."). The Studio's twin (`previewPane.offerPreviewFilter`) got
-the same guard in the same commit, per the UIX-8 precedent: **Filter preview to matches** is simply not offered when
-it would empty the preview. `reportPanels`' `Promise<boolean>` hook is untouched (`outcome === 'applied'`); the
-panel discards it anyway. Considered and not taken: filtering by `__rowid__ IN (…)` from the run's own flags — exact
-for every rule, but `OffenderRow` carries no row list, flag emission is cap-truncated at 20k while the counts are
-not, and it changes what the spec promises rather than making the promise hold. Verified live on the rebuilt
-preview: H004 leaves 101 rows with the new toast, `Q002` still gets the window-function toast, `Q003` still focuses
-to `4 / 101`, `Clear focus` still works, and `Q003` → `H004` leaves no stale chip; console QuaC-silent (only the
-extension's own `chrome-extension://…` lines). Both new files pin-checked against the un-fixed code — the e2e got
-all the way to the H004 click and failed on the missing toast — and the "clear the stale chip" assertions
-re-checked against a variant that clears only on success. Browser 46 → 49 tests (10 files), e2e 91 → 92, unit
-727 unchanged, entry JS 46.4 → 46.5 KB gz.
+Offender focus on `H004` emptied the grid to `0 / 101 rows`: `validateSQLFilter` returns `{valid, matchCount}` and only
+`valid` was read. `tryFilterByCondition` now returns `OffenderFocusOutcome` (`applied`|`unfilterable`|`no-match`); both
+failures also drop the previous rule's chip. Both toasts + the VARCHAR-vs-DATE divergence behind H004:
+`qc-report-spec.md` §4. Studio twin `previewPane.offerPreviewFilter` took the same guard — "Filter preview to matches"
+is not offered when it would empty the preview (phase-18 pins only `!valid`). Rejected: `__rowid__ IN (…)` off the
+run's flags — `OffenderRow` has no row list and flags are 20k-capped.
+Browser 46 → 49 (10 files), e2e 91 → 92, unit 727 unchanged, entry JS 46.4 → 46.5 KB gz.
 
 2026-07-26 · UIX-10 · **The address bar tracks the live inputs, not just the link you arrived on — UX-02.**
-Reproduced first in the real browser, exactly as filed: boot `#/load?data=…/hesp_dirty_100.csv`, fetch
-`…hesp_dirty_100.parquet` in the Dataset URL field — the card, the preview and the Share modal all switched to the
-Parquet while the bar still read `.csv`, and a reload silently handed back the CSV; the mirror case (clear-all →
-bare `#/load` → fetch a dataset URL) left the bar bare, so a reload **lost** an input that had been loaded by URL.
-Root cause: the only writer of artifact params was UIX-7's clear path, so the fragment was one-directional. New
-`src/app/hashSync.ts` is now the single writer for both directions — `buildSyncedConfig` is UIX-7's
-`buildClearedConfig` moved verbatim except that `index=` is **derived** from the live root
-(`set.root.indexFileId`, `buildShareModel`'s own rule) instead of copied out of the stale hash, which retires
-`bootConfig`'s `installIndexSync` (also the one writer that used `window.location.hash` and so pushed a history
-entry). Because the writer is store-driven it covers every path without touching the cards: drop / browse / URL /
-CORS retry, the `Load example files` hero, `chooseRoot`, rules drop/URL, per-file ✕ and all five clears; an upload
-over a URL-loaded slot correctly drops the param, contributing no source URL. The arming gate is the subtle part —
-`signals.ts` re-tracks deps every run and unlinks branches not read, so a flag-guarded early return would deafen the
-effect permanently; instead `applyBootConfig` awaits all three legs (`datasetCard.run()` now returns its promise
-chain, `fetchUrl: Promise<void>`) and installs the effect last on every exit path, its initial run being the first
-sync. Otherwise an effect armed at t0 fires when the schema resolves and drops the still-in-flight `rules=`/`data=`
-from the link the user just opened. **One deliberate deviation from the plan:** `syncHashFromStores` owns the QUERY,
-not the path — it carries the raw path through verbatim (defaulting to `#/load` only when there is no fragment at
-all) rather than re-formatting `parseHash`'s route, because the plan's verbatim version silently canonicalized
-`#/nope?keep=1` → `#/load?keep=1` and broke router.ts's read-only-unknown-route contract pinned by `nav.spec`.
-Accepted consequences, both owner-confirmed: the example hero leaves a ~2000-char URL and a reload restores the
-example instead of first-run; and params now ride the current route, so `download.spec.ts:35` relaxes from
-`/#\/report$/` to `/#\/report/`, matching three sibling specs. Verified live on the rebuilt preview — the bar flips
-to `.parquet` with `history.length` unchanged (replaceState), the reload keeps it, the mirror case regains `data=`
-and survives a reload, console QuaC-silent. Every new assertion pin-checked against the un-fixed code: all 3 e2e
-cases and the loadExample extension failed with the reviewed symptom, and the two `index=` unit cases failed against
-the old copy-forward rule. `clearInputs.test.ts` → `hashSync.test.ts`. Unit 723 → 727, e2e 87 → 91, entry JS
-46.3 → 46.4 KB gz.
+The fragment was write-only on clears: replacing a URL-loaded artifact left the bar, and any reload, on the old one.
+New `src/app/hashSync.ts` is the single writer both ways — `buildSyncedConfig` is UIX-7's `buildClearedConfig` but
+DERIVES `index=` from `set.root.indexFileId`, retiring `bootConfig`'s `installIndexSync` (the only history-pushing
+writer). Arming (`url-params.md` §2): the effect installs LAST, after all three boot legs settle (`datasetCard.run()`
+now returns its chain) — never gate it behind a flag-guarded early return instead, `signals.ts` re-tracks deps per run
+and unlinks unread branches, so it would go deaf for good. Deviation, same §: the writer owns the QUERY, not the path
+(canonicalizing breaks router.ts's read-only unknown-route contract).
+Unit 723 → 727, e2e 87 → 91, entry JS 46.3 → 46.4 KB gz.
 
 2026-07-26 · UIX-9 · **A schema that describes none of the dataset's columns is a finding, not a parser error.**
-The zero-overlap bug UIX-8 filed. `selected` — the column list handed to the QC worker — is empty exactly when the
-schema's property universe is closed and not one of its variables appears in the dataset, and the row loop
-interpolated it into `SELECT ${selectList} FROM …`, so DuckDB answered `Parser Error: SELECT clause without
-selection list` and the run died on a raw-engine toast with no report at all. On inputs §E.5 had already flagged
-`Mismatch` — and deliberately does not gate. The row loop now doesn't run: there is nothing to validate (every row
-shapes to `{}`, and each `required` error it would raise is already suppressed by `missingColumns` in favour of the
-one column-scope flag), so no worker is even constructed, and one new dataset-scope flag
-`schema:dataset:no-overlap` says why in a sentence — "None of the schema's 265 variables are present among the
-dataset's 5 columns, so no records could be validated — check that the schema and the dataset describe the same
-table." The dataset-level SQL checks were hoisted OUT of the worker's `try/finally` so they still run on this path:
-`minItems` counts rows and `uniqueItems` groups by the dataset's own columns, neither of which needs a schema match.
-The sibling empty-list site (`uniqueItems`' `dataCols`) was checked and left alone — it is built from ALL dataset
-columns, so it is empty only for a zero-column dataset, which returns at the `rowsTotal === 0` guard first.
-Verified live on a cold preconfigured boot (`tiny/people.csv` + the HESP schema): 271 errors / 0 warnings / 4 info
-where 271 = 265 missing + 5 unexpected + 1 no-overlap, grid populated, findings list led by the new sentence, zero
-toasts, console QuaC-silent; then 5 → 266 → 5 cols by URL replacement and a Re-run, all identical. Both new tests
-pin-checked against the guard disabled — the unit test fails with the exact production `Parser Error`, the e2e with
-the toast the user saw. Unit 721 → 723, e2e 85 → 87, entry JS 46.3 KB gz (unchanged).
+The zero-overlap bug UIX-8 filed: when a closed schema names none of the dataset's columns the QC worker's column list
+`selected` is empty, and interpolating it into `SELECT ${selectList} FROM …` made DuckDB answer `Parser Error: SELECT
+clause without selection list` — the run died on a raw-engine toast with no report. `validation-run.ts` now skips the
+row loop entirely (no worker constructed) and emits one dataset-scope flag `schema:dataset:no-overlap` (`rule-ids.ts`)
+saying why nothing was validated; the dataset-level SQL checks were hoisted OUT of the worker's `try/finally` so they
+still run. Rule, copy and rationale now in `json-schema-subsystem.md` §H edge 20 (flag table §D.5, placement §F);
+§E.5 reports it `Mismatch` and does not gate.
+Unit 721 → 723, e2e 85 → 87, entry JS 46.3 KB gz (unchanged).
 
 2026-07-26 · UIX-8 · **A display grid never reuses another build's parquet path — UX-01 from the manual review.**
-Reproduced first, exactly as filed: example set → Run QC → replace the dataset with `hesp_valid_100.csv` (one column
-fewer) → Run QC, and the grid sat on data-table's "Load data to see the table" while the panels read correctly, with
-two toasts of raw engine text (`No magic bytes found at end of file 'quac_display.parquet'`); `Re-run QC` reproduced
-it verbatim, only a reload cleared it. The review's suggested fix ("dispose and re-create when the column set
-differs") was already the behaviour — `ensureTable` rebuilds on every generation change. The real cause is one layer
-down: data-table names its duckdb-wasm virtual file `<tableName>.parquet` and drops it in a `finally`, but DuckDB
-keeps per-path state across that cycle, so the second `createDataTable({tableName: 'quac_display'})` read the new,
-smaller export against the old file's extent. Fix is `nextDisplayTableName()` in `core/bridge/tables.ts` — a
-monotonic per-build suffix — at both `createDataTable` call sites. The same-generation refresh (`loadData` with no
-options) is left alone and now carries a comment saying why: data-table already generates a unique name there, which
-is precisely why same-dataset re-runs never broke. **The Studio's sample grid had the same latent bug** and was
-measured failing the same way (`TProtocolException … quac_studio_display.parquet`) before being fixed with it.
-Secondary: a failed build no longer leaves the library's half-built instance lying about an empty table — `catch`
-resets `tableGeneration`, swaps in a `.q-panel-note` ("The report grid could not be built for this dataset. Re-run QC
-to rebuild it.") and rethrows a typed `QuacError`, so no DuckDB text reaches a toast; and the presenter now writes
-`renderedGeneration`, which both removes a redundant second full grid build after every reshaped run and (with an
-`announcedFailureGeneration` latch) collapses the review's two identical toasts into one while keeping the retry.
-Found while verifying, filed separately and fixed in UIX-9 below: running a schema against a dataset it shares **no**
-columns with toasts `Parser Error: SELECT clause without selection list` from `schema/validation-run.ts` (empty
-`selectList`) — it reproduces on a cold boot with no reshape, so it is a separate bug, not UX-01's third toast.
+A reshaping dataset replacement + re-run left the grid empty behind two toasts of `No magic bytes found at end of file
+'quac_display.parquet'`. Cause: data-table's fixed `<tableName>.parquet` virtual file, whose DuckDB per-path state
+survives register/drop. Fix: `nextDisplayTableName()` (`core/bridge/tables.ts`) at both `createDataTable` call sites
+(not on the same-generation refresh); the Studio sample grid had the same bug. Both pinned in `architecture.md` §4 +
+`ingestion.md` §2. Secondary: a failed build resets `tableGeneration`, swaps in a `.q-panel-note` and rethrows a typed
+`QuacError` so no engine text toasts; `renderedGeneration` + an `announcedFailureGeneration` latch kill a redundant
+rebuild and a duplicate toast.
 Unit 718 → 721, browser 45 → 46, e2e 83 → 85, entry JS 46.3 KB gz (unchanged).
 
 2026-07-26 · merge · UIX-6+UIX-7 merged to main (e5474d4, 0103daf). Zero conflicts — the two branches were a linear
 chain (uix7 branched off uix6's tip), so both `--no-ff` merges replayed clean and the integrated tree is
 byte-identical to uix7's; no cross-branch fixes needed. Integrated tree green: typecheck + lint clean, unit 718 +
 fixtures:check byte-clean + browser 45 + e2e 83 + build/size (entry 46.3 KB gz) — every count matches what the two
-entries below claim. Manual pass on the built preview: example set → full run (39 errors / 13 warnings / 10 info, 6
-corrections) → per-file ✕ 22→17 rules → rules clear → schema-only run carrying the "rules stage was skipped" note
-with em-dash (not zero) rule counts → clear all → reload stays cleared → dataset clear reverting the rules card to
-"data checks pending". Every clear rewrote the hash to the remaining live sources, and the app logged nothing to the
-console throughout. Branches removed.
+entries below claim. Manual pass covered both partial-run modes and all five clear paths. Branches removed.
 
 2026-07-26 · UIX-7 · **Every input is clearable; an explicit clear invalidates the run, the hash, and the tables.**
-Each slot card grows a `Clear` (rules also a per-file ✕; schema stays whole-slot — a set compiles as one unit) and
-the run bar a left-pinned `Clear all inputs` (always confirms; per-slot confirms only when unsaved Studio work would
-be lost — `dirtyFiles` ∪ the open drawer draft via the new `app/rulesDraftProbe.ts`). New `app/clearInputs.ts` owns
-the actions: `invalidateRun` (`app/runInvalidation.ts` bumps the new `store.runEpoch`, idles the pipeline behind a
-PRE-CANCELLED token so the collapse never announces "QC run complete."), a `history.replaceState` hash rewrite from
-the remaining live sources (`config=` drops, `index=` dies with the last `schema=`), and for the dataset a
-best-effort `dropDatasetTables` through the new `peekBridge()` (never boots WASM) under the card's busy latch (R4).
-Races closed with store-level load tokens (rules AND schema — a clear mid-fetch/mid-lint wins; Clear doubles as the
-hung-fetch cancel), an epoch-gated `startRun` (R1: a check-source clear mid-run can no longer resurrect the report),
-and TWO live bugs fixed en route: R2 — a dataset replace mid-run left a late `onProgress` tick rewriting the reset
-pipeline, wedging Run on "in progress" forever (now abort-suppressed + token-ownership release); and ingest
-generations now come from a module high-water counter, else clear→re-upload reissued generation 1 and reportGrid's
-memo served the PREVIOUS dataset's grid. reportGrid gains `disposeGrid` (dataset clear) / `clearRunPresentation`
-(check-source clear keeps the data grid, strips annotations + the offender filter + stale header tooltips).
-Deliberate deviation from the reviewed plan: the rules-card Clear does NOT ride the card's `run()` latch — the busy
-refusal would dead-button it during exactly the hung fetch the loading-state amendment wants it to cancel; the
-loadToken makes the direct call race-safe. Deferred niggles: older back-stack entries still carry pre-clear URLs
-(replaceState fixes only the current entry); the rules URL-fetch window still shows no Loading badge, so a hung
-FIRST rules fetch has nothing visible to clear; a cancelled run racing a dataset clear may log swallowed worker-side
-stage errors to the console; `store.shareables` stays declared-but-dead (separate cleanup).
+Every slot card gains a `Clear` (rules a per-file ✕ too; schema is whole-slot — a set compiles as one unit), the run
+bar a left-pinned `Clear all inputs`. New `app/clearInputs.ts` + `app/runInvalidation.ts` (`store.runEpoch`) +
+`app/rulesDraftProbe.ts` + `peekBridge()` (WASM-free table drop) + reportGrid `disposeGrid`/`clearRunPresentation`;
+contract `ingestion.md` §1/§4 + `architecture.md` §6/§7, copy `ui-design.md` §5. Two live bugs fixed en route: the
+mid-run-replace `onProgress` wedge, and non-monotonic ingest generations (`ingestController.ts`) that let reportGrid's
+memo serve the previous dataset's grid. Deferred: back-stack entries still carry pre-clear URLs (replaceState fixes
+only the current one); a cancelled run racing a dataset clear may log swallowed worker-side stage errors. (The third —
+no Loading badge on a first rules fetch — was discharged by UIX-12.)
 Unit 695 → 718, e2e 76 → 83, entry JS 44.4 → 46.3 KB gz.
 
 2026-07-26 · UIX-6 · **Only the dataset is mandatory; either check source alone runs** (contract for P20's README).
-The engine always worked this way — what shipped is the surface: `app/runReadiness.ts` is now the ONE gate the Run
-button and `startRun` both consume (a Warning dataset runs; a failed re-ingest with a stale `store.dataset` refuses;
-an index-pending schema blocks only when no rules can carry the run, else it rides as a non-blocking "won't be
-checked this run" note), the Load cards carry Required/Optional tags under a one-line rubric, and partial runs stop
-misleading: Summary dashes the three rules cards off `RunArtifacts.inputs` (+ scope notes), Missing-vars splits its
-no-schema/no-dataset empties, the Offenders hint renders only when a row is actually filterable, and Excel Sheet 2
-gains a "comparison was not performed" note row. Golden journey 8 (`partialRun.spec`) drives both modes; rules-only
-stays all-VARCHAR by design (docs-only caveat — see V23: the binder refuses implicit VARCHAR casts, so lint stage 4
-excludes such rules pre-run). Deferred niggle: a file whose every ROW is lint-errored still counts as an executable
-file (empty rule list) — the run gate says ready with nothing to run; inherited from `executableFiles()`, now noted.
+The engine always worked this way — what shipped is the surface: `app/runReadiness.ts` is now the ONE gate Run and
+`startRun` share (Warning dataset runs; stale-`store.dataset` re-ingest failure refuses; index-pending schema blocks
+only when no rules can carry the run — `ingestion.md` §1), the Load cards carry Required/Optional tags, and partial
+runs stop misleading — dashed rules cards + scope notes off `RunArtifacts.inputs`, split Missing-vars empties, a
+conditional Offenders hint, an Excel Sheet 2 "comparison was not performed" row (`qc-report-spec.md` §4/§5). Golden
+journey 8 (`partialRun.spec`) drives both modes; rules-only stays all-VARCHAR by design (V23). Deferred niggle: a file
+whose every ROW is lint-errored still counts as executable (empty rule list), so the gate says ready with nothing to
+run — inherited from `executableFiles()`.
 Unit 676 → 695, e2e 74 → 76, entry JS 43.0 → 44.4 KB gz.
 
-2026-07-25 · UIX-5 · **Pertinence is a line in the Preview head, not a strip with a modal.** The check compared
-Dataset↔Schema and Dataset↔Rules and never Schema↔Rules, so it could say some numbers disagreed but structurally
-could not say WHICH of the three files was from another project — one bad edge names a disagreeing PAIR with no
-third opinion to break the tie — and it returned early on a null dataset, so a mismatched schema/rules pair already
-on screen got nothing at all. `crossCheckInputs` (`core/pertinence.ts`) now runs the unchanged `computePertinence`
-over all three pairs and triangulates: an edge is bad at `score < 0.5`, exactly two bad edges always share exactly
-one vertex, and that vertex is the suspect. 0, 1 or 3 bad edges name nobody, and `warn` edges never accuse anyone —
-90% coverage is partial data, not a stranger. Full rules in `json-schema-subsystem.md §E.5`.
+2026-07-25 · UIX-5 · **Pertinence is a line in the Preview head, not a strip with a modal.** The old check compared
+only Dataset↔Schema and Dataset↔Rules, so it could say numbers disagreed but structurally could not name WHICH input
+was foreign, and it returned early on a null dataset. `crossCheckInputs` (`core/pertinence.ts`) now runs the unchanged
+`computePertinence` over all three pairs and triangulates: an edge is bad at `score < 0.5`, exactly two bad edges share
+exactly one vertex, and that vertex is the suspect; 0/1/3 bad edges name nobody and `warn` edges never accuse. Full
+rules → `json-schema-subsystem.md` §E.5. The strip, block modal, `blockCopy`, `overrideKey` and the `prompted` set are
+all DELETED — nothing was ever blocked, so nothing pretends to be: one Tier 2 `role="status"` line inside the existing
+Preview sticker, rendered from `mountPreviewSection`'s existing availability effect with its write to `tabs.active`
+staying last, per the UIX-4 hazard. Numbers appear only when something is wrong (a test asserts the consistent line
+contains no digit); tints use `--q-warning-ink`/`--q-error-ink` and a new axe scan covers both tinted tones.
+Unit 660 → 676, e2e 69 → 74, entry JS 42.9 → 43.0 KB gz.
 
-The strip, the block modal, `blockCopy`, the `overrideKey` signal and the `prompted` set are **all deleted**.
-Nothing was ever blocked, so nothing pretends to be: one Tier 2 line inside the existing Preview sticker
-(`role="status"`, badge `OK`/`Warning`/`Mismatch`), rendered from `mountPreviewSection`'s existing availability
-effect rather than a second one — the write to `tabs.active` stays last, per the hazard note that cost a real bug in
-UIX-4. `Pertinence: 265/265 schema variables present · 0 missing · 1 extra` becomes `Inputs look consistent — the
-dataset, JSON Schema, and QC rules all describe the same variables`, and a mismatch reads `The dataset doesn't look
-like it belongs with the other two inputs — only 0 of 265 schema variables match.` Numbers appear only when
-something is wrong; a test asserts the consistent line contains no digit.
+2026-07-25 · UIX-4d · **The QC rules tab has content.** `rulesPreview.ts` was a 41-line stub — you could load three
+`.quac.csv` files and never read a rule on the Load tab. The panel is now the SAME component as the data dictionary
+over a different payload (layout in `ui-design.md` §5): one `<details class="q-rp-file" open>` per file in **load
+order** — the cross-file correction-order contract — with a search box, Collapse/Expand all and six curated columns
+rather than the raw ten. Syntax highlighting reuses the Studio's `@lezer/highlight` + PostgreSQL/JS parsers so the two
+surfaces agree by construction; the `tok-*` colours moved to `primitives.css` under a **`.q-syntax` marker — unscoped
+`.tok-*` would restyle data-table's own bundled CodeMirror**. The bundle gate drove the split: `exprTokens.ts` is
+reachable only via the dynamic `import()` in `exprHighlight.ts` (`lang-sql → language → view`, Load being eager).
+One guard worth keeping: the panel rebuilt on every `rulesState` publish — and every load ends with a second, re-lint
+publish — throwing away user-collapsed `<details>` and typed queries, so it reference-compares `state.files`.
+Deviation: `TokenRun`/`ExprLang`/`splitLines` live in the DOM-free `rulesPreviewModel.ts` and `exprTokens.ts` imports
+the types, not the reverse, so the node-tested model never reaches CodeMirror (this swapped the plan's commits 2/3).
+Unit 599 → 640, loadPreview 13 → 20 e2e, two new axe scans; entry JS 41.4 → 42.9 KB gz (all QuaC's own code).
 
-Two things the copy deck did not settle, decided in the code: the missing-examples ellipsis is conditional (`…` only
-when the list is truly capped at three, or it promises names that are not there — and the near-miss clause is
-appended to the same sentence and needs a terminator), and the suspect phrase carries its own verb, since one shared
-template yields `The QC rules doesn't look like it belongs` for a slot that holds a list of files. Tints use
-`--q-warning-ink`/`--q-error-ink`; the strip painted `--q-gray-800` on both fills, 4.7:1 on the error tint, which is
-what `tokens.css:20` warns about — and a new axe scan covers both tinted tones, since the populated Load scan only
-ever saw the untinted OK. Unit 660 → 676, e2e 69 → 74 (three suspect cases, the no-dataset edge, the near-miss),
-entry JS 42.9 → 43.0 KB gz. Manually verified against all five cases in the browser.
+2026-07-25 · UIX-4c · **The data dictionary's categories collapse.** All twelve opened at once made the panel 82
+screens tall on HESP. Each category is now a native `<details class="q-dd-cat" open>` whose `<summary>` is the whole
+header row, plus one Collapse all / Expand all beside the search box — native `<details>` is why it is cheap
+(`aria-expanded`, Enter and Space are the UA's; both the button and the filter reduce to writing `.open`). **Search
+wins over a collapsed category**: typing force-opens every category still holding a match and clearing restores what
+you had open, snapshotted on the *transition* into filtering because `toggle` fires from a queued task and cannot
+tell a click from a programmatic write. Default stays expanded — axe skips unrendered subtrees, so collapsing by
+default would take twelve tables out of the gate. Deviation: the blanket `.q-dd-scroll summary` rule was narrowed to
+`details:not(.q-dd-cat) > summary` rather than adding `color: inherit`. 599 unit unchanged (DOM only) + 3 e2e and a
+fourth axe scan; entry 41.2 → 41.4 KB gz, no new dependency.
 
-2026-07-25 · UIX-4d · **The QC rules tab has content.** `rulesPreview.ts` was a 41-line stub: you could load three
-`.quac.csv` files, see `3 files · 22 rules` and read per-file lint on the slot card, and still not read a single rule
-anywhere on the Load tab — the Studio's grid is the only place they were tabulated, and at ~510–710px wide it
-deliberately omits both `condition` and `update_expression`. The panel is now the SAME component as the data
-dictionary over a different payload: one native `<details class="q-rp-file" open>` per file in **load order** (the
-cross-file correction-order contract), a `Search rules` box, a derived `Collapse all` / `Expand all`, a debounced
-`role="status"` count, and one `<table>` per file. Everything identical between the two panels — head, search,
-toggle, count, scroll region, disclosure, table base, chip, muted mono sub-line — is now declared ONCE in
-`preview.css` under grouped `.q-dd-*, .q-rp-*` selectors; only the payload cells and the measured percentages differ.
+2026-07-25 · UIX-4b · Follow-up on the Preview panel, on review of the shipped one. **The tabs are now named for the
+inputs, not the rendering**: `Dataset · JSON Schema · QC rules`, the three slot-card names verbatim; the dictionary
+framing moves inside as a `.q-preview-panelcaption` (`JSON Schema formatted as a data dictionary`), present in every
+state. **Format folded into Type** — at 7% it was ~95px of em-dash on 260 of HESP's 265 rows, and it renders as a
+muted mono line under the type (`.q-dd-format`), which is what `format` IS in JSON Schema: a qualifier of `type`, not
+a peer. Six columns instead of seven, every one wider and the table 110px narrower (`min-width` 1180 → 1070). 599
+unit unchanged (the model still carries `format`; only the DOM changed) + 1 e2e pinning the six headers; 59 e2e green.
 
-**Six curated columns, not the raw ten**: `Rule` (id, with `type · scope` folded under it and `off`/`external` as
-badges), `Targets`, `Condition`, `Update expression`, `Severity`, `Comment`. **Syntax-highlighted** by the same
-`@lezer/highlight` `classHighlighter` and the same PostgreSQL/JS parsers the Studio editors use, so the two surfaces
-agree by construction; the `tok-*` colours moved from `studioView.css`'s `.q-studio` to `primitives.css` under a
-`.q-syntax` marker (scoped, or an unscoped `.tok-*` would restyle `@jeyabbalas/data-table`'s own bundled CodeMirror).
-The bundle gate drove the module split: `exprTokens.ts` is reachable only through the dynamic `import()` in
-`exprHighlight.ts`, since `lang-sql → language → view` and the Load view is eager. Entry JS **41.4 → 42.9 KB gz**,
-all of it QuaC's own code; the codemirror marker chunk reads 116.3 → 109.7 KB gz but that is a re-split, not a
-saving — total JS 909.8 → 912.3 KB gz over 47 → 50 chunks. Cold, the first cells paint plain mono and upgrade in
-place behind a stamp+`isConnected` guard; warm, every cell highlights synchronously off a 256-entry LRU.
+2026-07-25 · UIX-4 · Interstitial Load-view pass on main (post-P19, before P20): **the Load tab previews all three
+inputs, not one** — one Tier 1 sticker holding a `createPanelTabs` tablist over Dataset · Data dictionary · QC rules
+(renamed in UIX-4b; the rules tab stayed empty until UIX-4d), spec'd in `ingestion.md` §2. Extraction is
+`json-schema-data-dictionary@0.1.0` (MIT, pinned exact) behind `core/schema/data-dictionary.ts`, in a lazy 16.4 KB gz
+chunk under its own `check-bundle-size.mjs` marker — statically imported it would have grown eager JS ~45% for a tab
+most users never open. **Three deviations.** (1) The preview key gained `typedRevision`, since a schema-load recast
+re-points the `data` view WITHOUT bumping `dataset.generation` — causal chain in `ingestion.md` §2's ⚠️ note.
+(2) Panel-tab primitives moved to `primitives.css` + `components/panelTabs.ts`, discharging
+`phase-17-studio-editor.md:41`'s standing instruction. (3) The dictionary renders where `columnDigest` refuses to:
+§A.5 blocks validation on fatal set-level errors, not schema browsing. The **agreement test** caught a real divergence
+— digest 0 vs package 2 on `synthetic/no-ids`, a §E.1 scope limit — pinned as `KNOWN_DIVERGENT` in
+`tests/unit/schema/data-dictionary.test.ts`, NOT in any spec. Hazard UIX-5 later leans on: the visibility effect read
+the signal it wrote, so `active.set()` re-entered it and bounced the user's first click on any other tab.
+Unit 548 → 599, +9 e2e (`loadPreview.spec.ts`); `a11y.spec.ts` ACTIVATES each Preview tab before scanning, since axe
+skips `[hidden]`. Entry JS 37.5 → 41.2 KB gz.
 
-**Column widths measured, not guessed.** Unwrapped content need per column over all 22 rules (p50/p90/max px):
-Rule 125/154/190 · Targets 125/176/233 · Condition **348**/658/917 · Update expression **24**/176/363 ·
-Severity 53/72/72 · Comment 722/870/1024. Condition's MEDIAN need is 348px against the 333 it got at the starting
-25%, so it takes the largest share; Update expression is the Format pathology again — 15 of the 22 rules are
-`validate` or `external` and carry none, so its median content is an em-dash — and went 21 → 13% on the numbers,
-then back to **16%** on the eye, 13% being above its p90 but breaking `LAG(reference_education)` mid-identifier.
-Final **12 · 14 · 28 · 16 · 7 · 23** = 160/186/372/213/93/306 at 1440; `.q-rp-scroll` scrollWidth/clientWidth
-1514/1514 · 1354/1354 · 1280/1280 · 1194/1194 · 1112/938 · 1112/698 at 1600/1440/1366/1280/1024/768, page-level
-overflow **0** throughout. Expressions cap at 6 lines behind the dictionary's `+N more` (HESP Q021's 11-line
-condition → `+5 more`); the cap is exact because `highlightCode` emits every break as its own run and never emits a
-text run spanning one, verified through strings, block comments and template literals.
+2026-07-25 · P19 · **Favicon re-cut from the artwork** (post-merge review): P19 hand-drew a duck believing the artwork
+was a raster, but `a44d234` had already vectorised `assets/logo/*.svg`, so the tab carried a different duck than the
+header. `scripts/generate-favicons.mjs` now emits `public/favicon.svg` too, placing the artwork by measured minimal
+enclosing circle with the coordinates baked into the 32-unit icon space (no `transform` for a dumb rasteriser to
+mangle). One deliberate non-token: the bill keeps the artwork's `#f95d1d` — `--q-orange` on `--q-yellow` is 1.42:1 and
+the bill dissolves at 16px. Constants and rationale → `ui-design.md` §6; deviation #4 in `phase-19-polish-a11y.md`.
+Output is byte-identical across runs. 548 unit · 49 e2e green; `typecheck`/`lint` clean.
 
-**Three things found by driving it.** (1) The panel rebuilt on every `rulesState` publish, and every load ends with a
-second publish — the re-lint once the dataset lands — which threw away the `<details>` the user had just collapsed
-and the query they had just typed; guarded by reference-comparing `state.files`, which the store replaces on every
-real change and reuses when only lint moves. (2) axe caught a genuine serious violation the eye did not: a disabled
-rule's muted row painted its target chips `--q-gray-500` on `--q-gray-100`, **4.35:1** — `tokens.css:23` already said
-gray-500 is text on WHITE or gray-50. (3) After a Studio edit the serializer writes CRLF and PapaParse keeps `\r\n`
-inside quoted fields, so `renderExpr` normalises line endings the way CodeMirror does to its own documents.
-Deviation from plan: `TokenRun`/`ExprLang`/`splitLines` live in the DOM-free `rulesPreviewModel.ts` and
-`exprTokens.ts` imports the types, not the reverse, so the node-tested model never reaches CodeMirror — which also
-swapped the plan's commits 2 and 3. 640 unit green (**+41**: the model, and the real Lezer output on real HESP
-expressions, both in the fast `node` project); loadPreview 13 → 20 e2e; two new axe scans (rules populated, rules
-collapsed).
-
-2026-07-25 · UIX-4c · **The data dictionary's categories collapse.** All twelve opened at once, so the panel could
-tell you about any one variable and nothing about what it contained: measured on HESP at 1440×900, `.q-dd-scroll`
-was **51,354px of content in a 628px box** (`min(70vh, 720px)`) — 82 screens, with `Identification` and
-`Derived measures` ~200 rows apart. Each category is now a native `<details class="q-dd-cat" open>` whose
-`<summary>` is the whole header row (chevron · `<h4>` title · count), plus one `Collapse all` / `Expand all` beside
-the search box. Collapsed, the same panel is **492px** — twelve lines, each still carrying its count, no scrolling
-at all, and no horizontal overflow at 1024/768 either (938/938, 698/698: the `min-width: 1070px` tables are out of
-flow while closed). Native `<details>` is why it is cheap: `aria-expanded`, Enter and Space are the UA's, and both
-the button and the filter reduce to writing `.open`. **Search wins over a collapsed category** — typing force-opens
-every category still holding a match, clearing restores exactly what you had open, snapshotted on the *transition*
-into filtering because `toggle` fires from a queued task and cannot tell a click from a programmatic write.
-Default stays expanded: axe skips unrendered subtrees, so collapsing by default would take twelve tables out of the
-gate. Deviation from plan: `.q-dd-cathead` needed no `color: inherit`; the blanket `.q-dd-scroll summary` rule was
-narrowed to `details:not(.q-dd-cat) > summary` instead, so titles stay `--q-ink` (17,17,17) and `+N more` stays
-`--q-gray-600` (82,82,82). 599 unit green unchanged (DOM only) + 3 new e2e and a fourth axe scan of the collapsed
-state; entry bundle 41.2 → **41.4 KB gz**, no new dependency.
-
-2026-07-25 · UIX-4b · Follow-up on the Preview panel, on review of the shipped one. **The schema tab is now named for
-the input, not the rendering**: `Dataset · JSON Schema · QC rules`, the three slot-card names verbatim, so the strip
-under the cards names the same three things the cards do — `Data dictionary` left the schema card the only slot with
-no tab bearing its name. The dictionary framing moves inside as a `.q-preview-panelcaption` under the panel head,
-`JSON Schema formatted as a data dictionary`, present in every state (the empty note shortens to `…to see it here.`,
-matching the rules panel, since the caption above it now says what you would see). **Format folded into Type**,
-superseding this entry's `Format 8→7%` below: at 7% it was ~95px of em-dash on 260 of HESP's 265 rows, and the 5 rows
-that do carry one get a 40-character `Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$` that wrapped to five lines
-inside it. Folded in it renders as a muted mono line under the type (`.q-dd-format`, the `.q-dd-when` treatment) —
-which is also what `format` IS in JSON Schema, a qualifier of `type`, not a peer. Re-measured at 1440: the six columns
-are **186/266/160/279/239/200** against the old seven's 176/257/135/95/271/230/190 — every remaining column wider AND
-the table 110px narrower (`min-width` 1180 → 1070, `.q-dd-scroll` 1192 → **1082** at 1024/768, page overflow still 0
-at all six widths). Type took the largest share (+25px) because it was the column against its ceiling: widest content
-130px against 10% of a 1354px table. 260 of the table's 347 em-dashes are gone. 599 unit green unchanged (the model
-still carries `format`; only the DOM changed) + 1 new e2e pinning the six headers, the folded cell and the count of 5;
-59 e2e green.
-
-2026-07-25 · UIX-4 · Interstitial Load-view pass on main (post-P19, before P20): **the Load tab now previews all three
-inputs, not one.** It took a dataset, a schema set and rules files and showed you a bare 50-row table — you could load
-the bundled 14-file, 265-variable HESP schema and never see a single variable it defines. One Tier 1 sticker now holds
-a `createPanelTabs` tablist over **Dataset · Data dictionary · QC rules**. Extraction is
-`json-schema-data-dictionary@0.1.0` (MIT, zero runtime deps, pinned exact) behind `core/schema/data-dictionary.ts`;
-QuaC renders its own table. **Measured on HESP: 265 rows / 12 categories / 0 warnings in 17.6 ms** on the main thread
-(so no worker, no chunking, no idle callback), per-category counts `[16,28,24,32,26,24,24,26,17,23,10,15]` pinned.
-Search filters in **0.1 ms median (p90 0.3)** per keystroke over 265 precomputed haystacks — but it is a per-row
-`hidden` toggle rather than a rebuild because a rebuild would allocate ~8,500 nodes per keystroke, destroy every
-`<details>` the user just opened and reset the scroll position mid-typing. Entry JS **37.5 → 41.2 KB gz**, all of it
-QuaC's own new UI: the package sits in a lazy chunk (16.4 KB gz) with a `check-bundle-size.mjs` marker guard beside
-`EXCELJS_MARKER`/`CODEMIRROR_MARKER`; a static import would have grown eagerly-loaded JS ~45% to serve a tab most
-users never open. Dictionary column widths measured, not guessed (Format's median content is **12px — an em-dash**,
-since only 5 of 265 HESP variables carry a `format` and the package falls back to describing `pattern`; Type's p90 is
-130px and wrapped at 8%), so Format 8→7%, Additional info 15→14%, Type 8→10%; `.q-dd-scroll` scrollWidth/clientWidth
-1514/1514 · 1354/1354 · 1280/1280 · 1194/1194 · 1192/938 · 1192/698 at 1600/1440/1366/1280/1024/768 with page-level
-overflow 0 throughout. **Four deviations, all deliberate.** (1) `typedRevision` — `typedSync.ts`'s own doc comment
-promised the 50-row preview sees what the run will see, but a rebuild re-points the `data` view WITHOUT bumping
-`dataset.generation`, which was invisible while the preview showed only values and becomes a visible lie with a type
-row: measured **250 BIGINT · 9 DOUBLE · 7 VARCHAR** after the cast against 266 VARCHAR before. (2) The panel-tab
-primitives moved to `primitives.css` and `components/panelTabs.ts`, discharging `phase-17-studio-editor.md:41`'s
-standing instruction; `ruleForm.ts` needed no change, which was the point. (3) All three tabs are permanently present
-(the option preview said disabled/absent-until-filled) — the rules tab had no content yet (UIX-4d gave it some) and
-would have hidden forever, and both roving-tabindex hazards vanish. (4) The dictionary renders where `columnDigest` refuses to: §A.5
-says fatal set-level errors block validation, not schema browsing. The **agreement test** is the highest-value artifact
-— row count and variable-name set asserted equal across HESP, tiny and every synthetic set — and it caught a real
-divergence on the first run: `synthetic/no-ids` gives 0 from the digest and 2 from the package, because §E.1 walks
-`items.allOf` and that fixture hides the row object behind a `$ref` ON `items`. Widening §E.1 would newly subject
-those columns to casting/translation/Ajv attribution, so it is **pinned with its exact numbers** as a known
-divergence, not skipped. One bug found by driving it: the visibility effect read the signal it wrote, so
-`active.set()` re-entered it while `pinned` was still false and bounced the user's *first* click on any other tab.
-Also stripped a literal NUL byte from `json-schema-subsystem.md` (offset 17636) that made grep/rg treat the whole spec
-as binary. 51 new unit tests (548 → 599) + 9 new e2e (`loadPreview.spec.ts`, incl. the `typedRevision` regression);
-`a11y.spec.ts` now ACTIVATES each Preview tab before scanning, since axe skips `[hidden]`; 58 e2e green.
-
-2026-07-25 · P19 · **Favicon re-cut from the artwork** (post-merge, on review of the shipped icon). P19 hand-drew the
-duck because the phase file said the artwork was a raster that wouldn't downscale — but `a44d234` had already replaced
-`assets/logo/*.svg` with clean vector paths, so the tab carried a *different* duck than the header. `generate-favicons.mjs`
-now generates `public/favicon.svg` as well: it samples the artwork's outline, solves its minimal enclosing circle
-(r 481.2 at (573.4, 533.0) artwork units — a bbox centre sits left of true, the bill juts right), drops it concentric
-with the sky disk leaving 1.2 units of sky inside the ink ring, and bakes the coordinates into the 32-unit icon space
-so no `transform` survives for a dumb rasteriser to mangle. One deliberate non-token: the bill keeps the artwork's
-`#f95d1d` — `--q-orange` on `--q-yellow` measures **1.42:1** and dissolves at 16px, the artwork orange holds **2.19:1**.
-Touch icon gained an 8% inset off the iOS mask curve. Output is byte-identical across runs; checked by eye at
-16/20/24/32/48/64/128 on paper and on dark chrome. 548 unit · 49 e2e green; `typecheck`/`lint` clean (the script is
-JSDoc-typed — `tsconfig` includes `scripts`).
-
-2026-07-25 · P19 · Branding polish + a hard accessibility pass. Shipped: a hand-drawn flat duck favicon (checked by eye
-at 16/24/32/64/128) with `favicon-32.png`/`apple-touch-icon.png` from a committed **Playwright** script — not `sharp`
-as the phase file sketched, since Playwright is already a devDep and renders through the engine that paints the tab;
-`tests/e2e/a11y.spec.ts` (axe over 3 views + 4 report panels + 3 modals, gated on serious/critical — CI already runs
-`test:e2e`, so that IS axe in CI); `reducedMotion.spec.ts`; and `copyDeck.test.ts` (pun containment by scanning string
-literals, allowlist + staleness check; verified by injecting a pun into `toast.ts`). **Four real defects, all
-measured**: (1) `--q-error` on `--q-error-fill` = **3.38** and `--q-success` on `--q-success-fill` = **3.97**, i.e. the
-Error/Valid badges, the stat-card hero, and — via `--dt-annotation-*-fg` — the text in every annotated grid cell, all
-sub-AA; new `--q-*-ink` tokens take the Excel workbook's font colours (`qc-report-spec.md §5`) so workbook/grid/chrome
-share one palette, measuring 5.92 / 5.33 / 7.14 / 4.56 on fill, fills untouched so the P05 `#ffc7ce` e2e stays green.
-(2) `createDataTable` never pinned `colorScheme`, so the library default `'auto'` turned the whole grid dark under a
-dark OS — pinned `'light'` in both calls, proved with `emulateMedia({colorScheme:'dark'})`: `data-dt-color-scheme=light`,
-grid `rgb(255,255,255)`. (3) `--q-orange` measures **1.08:1 on `--q-sky`**, so the focus ring was invisible exactly
-where the header puts Share/GitHub/the nav tabs — `--q-focus-edge` adds an ink companion (18.9/13.0/10.0). (4) the
-placeholder favicon. Axe then found seven more, all fixed: the offenders `<tr role="button">` inside a `<tbody>`
-(`aria-required-children`, the only **critical**), three unfocusable scroll containers, an unnamed `progressbar`,
-`role="tablist"` without the APG keys, a bare pertinence strip, and four more contrast failures on *tinted*
-backgrounds (`--q-gray-500` passes on white at 4.74 but fails at 4.49 on `--q-yellow-tint`). **The keyboard walk found
-what axe could not**: data-table is a WCAG 2.1.2 keyboard trap — focus `.dt-root` and neither Tab nor Shift+Tab moves
-again, with ~1600 focusables inside — so the report's Download/Re-run were unreachable. Mitigated with a `.q-skiplink`
-(a `<button>`, never an `<a href="#…">` — QuaC routes on the hash) and Escape-to-leave on both grid hosts; logged as
-upstream in `ui-design.md §9` along with the rest of data-table's debt (`.cm-editor` is clean). Deviations: Playwright
-over `sharp`; `--dt-primary`/`--dt-accent` deliberately NOT remapped (96 usages, several white-on-primary — brand hues
-would *create* failures); one `runQc.spec` locator scoped to `.q-duckprogress-meta` because the new stage live region
-repeats that string (copy unchanged). Responsive re-measured at 1023/768/640 — page overflow 0 everywhere; the Studio
-rule table's 32px scroller overflow at 640 fixed below a 720px ceiling so no UIX-3 band can see it. 548 unit (+3) · 44
-browser · 49 e2e (+4) green; entry 37.5 KB gz (was 37.1, budget 300) and axe stayed devDep-only. **For P20**: the
-data-table keyboard trap is the one thing a release audit will flag that QuaC cannot fix in-repo — it wants an upstream
-issue, and `ui-design.md §9` should be re-checked on any data-table bump.
-
-<details><summary>P19 contrast table — every §7 pairing recomputed after the token edits (AA 4.5; focus indicator 3.0)</summary>
-
-| Surface | Pairing | Ratio | AA | Was |
-|---|---|---|---|---|
-| Slot / rule badges | `--q-error-ink` on `--q-error-fill` | **5.92** | ✓ | 3.38 ✗ |
-| Slot / rule badges | `--q-success-ink` on `--q-success-fill` | **5.33** | ✓ | 3.97 ✗ |
-| Slot / rule badges | `--q-info-ink` on `--q-info-fill` | **7.14** | ✓ | 4.89 |
-| Slot / rule badges | `--q-warning-ink` on `--q-warning-fill` | **4.56** | ✓ | unchanged |
-| Grid annotated cell | `--dt-annotation-error-fg` on `-bg`, **as rendered** | **9.12** | ✓ | 3.38 ✗ |
-| Report stat cards | `--q-error-ink` / `--q-success-ink` on their fills | **5.92 / 5.33** | ✓ | 3.38 / 3.97 ✗ |
-| Cap + partial banners | `--q-warning-ink` on `--q-warning-fill` | **4.56** | ✓ | unchanged |
-| Preconfig hint · studio banner · share callout | `--q-info-ink` on `--q-info-fill` | **7.14** | ✓ | 4.89 |
-| Nav count pill | `--q-paper` on `--q-error` / `--q-warning` / `--q-info` | **4.96 / 5.02 / 5.93** | ✓ | unchanged |
-| Severity text on paper | `--q-error` on `--q-paper` | **4.96** | ✓ | unchanged |
-| Editor diagnostics | `--q-error` on `--q-gray-50` | **4.75** | ✓ | unchanged |
-| Header | `--q-ink` on `--q-sky` | **9.96** | ✓ | unchanged |
-| Primary button | `--q-ink` on `--q-yellow` | **13.03** | ✓ | unchanged |
-| Body | `--q-ink` on `--q-paper` | **18.88** | ✓ | unchanged |
-| Studio rail sub-line | `--q-gray-600` on `--q-yellow-tint` | **7.40** | ✓ | 4.49 ✗ |
-| Combobox type hint | `--q-gray-600` on `--q-gray-100` (hover row) | **7.17** | ✓ | 4.35 ✗ |
-| Preview NULL dash | `--q-gray-500` on `--q-paper` | **4.74** | ✓ | 2.52 ✗ |
-| Share excluded ✗ | `--q-gray-600` on `--q-paper` | **7.81** | ✓ | 2.52 ✗ |
-| Focus ring edge | `--q-ink` on paper / sky / yellow | **18.88 / 9.96 / 13.03** | ✓ | orange alone 2.05 / 1.08 / 1.42 ✗ |
-
-The grid row is the *rendered* pair (`rgb(122,11,20)` on `rgb(253,226,229)`) — data-table alpha-blends the tint, so the
-delivered contrast beats the raw `#9c0006`/`#ffc7ce` token pair's 5.92.
-
-**Keyboard-only journey** (no mouse, focus visible at every stop): Load 15 stops, all named — dropzones, URL fields,
-Fetch, details, preview scroller, Apply corrections, Run QC. Report: skip control → panel column in two keys → Summary
-(one tab stop, roving) → 3 severity toggles → Download QC Report → Re-run QC; ←/→ wrap the panel tabs, Home/End jump.
-Studio: New file → rail toggle → 3 file buttons → Download/Add → rule rows + per-row actions → form (id, enabled,
-type, scope, severity, target chips, CodeMirror, comment) → Test rule → Cancel → Save rule. Escape leaves either grid.
-**Dark-OS check**: `data-dt-color-scheme="light"`, `.dt-root` `rgb(255,255,255)`, body `rgb(255,255,255)` — matched.
-**Favicon at 16px**: bill and eye both survive; also checked on a dark tab strip.
-</details>
+2026-07-25 · P19 · Branding polish + a hard accessibility pass. Shipped: favicons from a committed **Playwright**
+script (not `sharp`), `tests/e2e/a11y.spec.ts` (axe over 3 views + 4 report panels + 3 modals, gated on
+serious/critical — CI already runs `test:e2e`, so that IS axe in CI), `reducedMotion.spec.ts`, and
+`tests/unit/ui/copyDeck.test.ts` (pun containment). Four measured defects: sub-AA severity mid-tones on their own fills
+(new `--q-*-ink` tokens take the workbook's font colours per `qc-report-spec.md` §5, fills frozen so P05's `#ffc7ce`
+e2e stays green), an unpinned `colorScheme` turning the grid dark under a dark OS (`'light'` now pinned at both
+`createDataTable` calls), an invisible focus ring on `--q-sky`, and the placeholder favicon; axe then found seven
+more, the sole **critical** being `<tr role="button">` inside a `<tbody>`. All 19 recomputed §7 pairings live in
+`ui-design.md` §2/§7 — only the annotated cell's RENDERED 9.12 is log-only, since data-table alpha-blends the tint
+and so beats the raw token pair's 5.92. **The keyboard walk found what axe could not (V22)**: data-table is a WCAG 2.1.2
+keyboard trap, mitigated by a `.q-skiplink` (a `<button>` — never an `<a href="#…">`, QuaC routes on the hash) plus
+Escape-to-leave on both grid hosts. Deviations → `phase-19-polish-a11y.md`. **For P20**: that trap is the one thing a
+release audit will flag that QuaC cannot fix in-repo — it wants an upstream issue, and `ui-design.md` §9 should be
+re-checked on any data-table bump.
+548 unit (+3) · 44 browser · 49 e2e (+4) green; entry 37.5 KB gz (was 37.1, budget 300); axe stayed devDep-only.
 
 2026-07-24 · UIX-3 · Interstitial Rule Studio pass on main (post-P18, before P19): the rail collapses and deleting a
-rule asks first. Rail — every band's template now reads `--q-studio-rail` (240→44px on `.q-studio-layout--railclosed`),
-but flipping the variable ALONE hands the freed 196px to the `1.1fr:1fr` split (measured live: work +103 / preview +93
-at 1600 — caught only because the re-measurement ran), so ≥1280 collapsed also pins the work track to its 600px floor.
-Measured preview 623→904 (1600), 547→744 (1440), 474→670 (1366), 388→584 (1280), +196 to both zones at 1024;
-`.q-studio-gridbody` overflow 0px in BOTH states at 1600/1440/1366/1280/1024/768. Collapsed dress lives entirely inside
-`@media (min-width:1024px)` so ≤1023 keeps its horizontal strip and the toggle hides — a stored collapse is remembered
-but not honoured there. Files stay as dots (`.q-filebtn-top::before`, `aria-current` yellow + dirty `*` carried over,
-`title`/`aria-label` added in renderRail), so they stay clickable and every pinned `.q-filebtn` locator survives.
-`syncRailView()` mirrors `syncWorkView()` and is independent of it; state is a plain `let` + the app's FIRST localStorage
-key (`quac.studio.railCollapsed`, both accessors try/caught — architecture.md §5's trivial-UI-prefs carve-out).
-**Correction to a P14-review inference**: the ~4.5 s HESP block is a data-table *creation* cost, not a resize cost —
-`TableContainer`'s ResizeObserver has zero subscribers and column headers are fixed-px, so a width change fires none of
-the 266 visualization observers. One discrete flip measures ~46 ms. The track is still never animated: `minmax(600px,
-1.1fr)`→`600px` is `<flex>`→`<length>`, not interpolable, and CodeMirror's DOMObserver watches the work column. Only the
-rail contents fade (WAAPI 200 ms, expand only, reduced-motion skips). **Height fix (user-reported, same pass)**: the
-sample grid appeared to shrink to a row or two on collapse. The host height was in fact constant — data-table's own
-column-visualization header is 273–306px and GROWS with the pane's width, so widening the preview ate the body out of a
-fixed clamp: 900-tall gave 165px of body → 132px collapsed; 768-tall gave 33px → **0px**. Meanwhile the card used only
-505 of the 710px available. Now ≥1280 `.q-studio-layout` carries `min-height: calc(100dvh - var(--q-studio-chrome))`
-(`--q-studio-chrome: 210px`; min-height so a long rule table still grows the card), `.q-studio-preview` is a flex column
-and `.q-studio-samplegrid` is `flex: 1 1 0` + a 360px floor instead of a clamp → 625px/350px at 900-tall, 805px/530px at
-1080, 493px/218px at 768, and the host height is now IDENTICAL in both rail states (pinned in studio-edit.spec). Visible
-rows at 1600×900: 4 → 10 collapsed, 5 → 11 expanded. The stacked bands (≤1279) keep the clamp — the preview sits under
-the work column there and cannot take "what is left" — with its floor raised 260→360px so it can never hit 0 body again.
-Delete — `confirmDeleteRule` mirrors
-`confirmDiscard` (`Delete rule?`, `.q-panel-note` consequence line, `Cancel` focused explicitly since openModal always
-lands on the header ×) and SUBSUMES the dirty-draft guard when the deleted row is the open draft (one modal at a time);
-`run()`'s shiftDrawerIndex/revert/focus-restore is untouched. Deviation from the approved sketch: none. 545 unit + 44
-browser + 42 e2e green (studio-edit.spec gains the rail block + a 260 ms no-ingest persistence test); entry 37.1 KB gz
-unchanged — all of it lands in the lazy studio chunk.
+rule asks first. Collapse is one `--q-studio-rail` flip plus a pinned 600px work track at ≥1280; a user-reported height
+bug (a fixed clamp starved the sample grid) is fixed by filling the screen at ≥1280 — full contract and measurements
+now in `ui-design.md` §5. Rail state is a plain `let` + `quac.studio.railCollapsed`, the app's FIRST localStorage key
+(`architecture.md` §5's trivial-UI-prefs carve-out). `confirmDeleteRule` mirrors `confirmDiscard` and subsumes the
+dirty-draft guard. **Correction to a P14-review inference** (`phase-14-run-report.md` still reads the old way): the
+~4.5 s HESP block is a data-table *creation* cost, not a resize cost — `TableContainer`'s ResizeObserver has zero
+subscribers and headers are fixed-px, so a width change fires none of the 266 visualization observers. 545 unit + 44
+browser + 42 e2e green; entry 37.1 KB gz unchanged (all in the lazy studio chunk).
 
-2026-07-24 · UIX-2 · Interstitial Rule Studio UI/UX pass on main (9 commits, post-P18, before P19) — the studio worked but
-put four Tier-1 stickers on one screen and split the form from its test result. Now ONE card, three hairline zones (rail ·
-work · preview): the editor REPLACES the rule table in the work column (`syncWorkView()`; ordering contract — it runs before
-every focusGrid/addRuleButton.focus and before form.load, since both the grid header button and CodeMirror are inert inside
-`hidden`), a `← Rules` ghost button routes back through the existing discard guard, and the preview column reads result-first
-(capped scrollable test panel over a shorter but still DEFINITE-height sample grid). Grid trimmed to 7 columns (Type·Scope
-merged) with `.q-rulegrid`-scoped quiet (fill-tinted severity keeping its text label, gray OK badge, gray-700 row glyphs,
-disabled = absent); rule form head is 3 tracks and `enabled` became a normal field, retiring the padding-top:22px hack.
-Sizing is MEASURED: table min-content 628px vs 475px of work column at 1280 → 6px gutters, 130px in-band targets cap and a
-600px work-track floor (240/600-1.1fr/360-1fr) → 0px overflow at 1600/1440/1366/1280/1024/768; ≤1023 the rail becomes a
-horizontal file strip. Two override blocks had to move BELOW the rules they override (specificity ties, source order decides).
-**P19 task 3's Studio empty state is already done** (duck mark + copy, mirroring reportView) — do not redo it. Deviations
-from the approved sketch, all to satisfy its own "no horizontal scroll down to 1280": rail 240px not 260, preview floor 360px
-not 380, work track gained a floor. 545 unit + 44 browser + 41 e2e green; entry 37.1 KB gz unchanged.
+2026-07-24 · UIX-2 · Interstitial Rule Studio UI/UX pass on main (9 commits, post-P18, before P19) — four Tier-1
+stickers on one screen, the form split from its test result. Now ONE card with three hairline zones (rail · work ·
+preview): the editor REPLACES the rule table in the work column (`syncWorkView()`), a `← Rules` ghost routes back
+through the existing discard guard, and the preview reads result-first over a definite-height sample grid. Sizing is
+MEASURED (600px work-track floor, 130px in-band targets cap → 0px overflow at 1600–768; ≤1023 the rail becomes a
+horizontal file strip); the whole layout contract is now `ui-design.md` §5. **P19 task 3's Studio empty state is
+already done** (duck mark + copy, mirroring reportView) — do not redo it. Deviations from the approved sketch, all to
+hold its own "no horizontal scroll down to 1280": rail 240px not 260, preview floor 360px not 380, work track gained a
+floor. 545 unit + 44 browser + 41 e2e green; entry 37.1 KB gz unchanged.
 
-2026-07-24 · P18 · Rule Studio preview/gate/export shipped on main (6 commits): rules become live-testable, saving is gated,
-files round-trip. ruleTest.ts = pure dispatch mirroring engine interpret+applicableTargets over the EXACT sql.ts wrappers with
-PREVIEW_ROW_CAP 20 (counts exact on full `data`; sql corrections pure SELECT count/capture — no CTAS; js sandboxed on the ≤20
-sample only, exact match count from SQL, all-sampled-errored fails; dataset cap+1 idiom; external/missing targets →
-not-testable) — node-tested on qc_fixture incl. the phase file's −2500→2500 capture (fixture-reality deviation: the e2e asserts
-the example dataset's own seeded −1200; −2500 never existed there — recorded in phase notes). previewPane.ts docks a second
-data-table (quac_studio_display over STUDIO_SAMPLE_SQL, 10k sample, __rowid__==__row__ V7) beside the grid (3-col ≥1280px)
-with reportGrid's queue/generation/loadData discipline + RuleTestPanel (per-kind result lines, renderPreviewTable bodies,
-assert expansions in details/code, "Filter preview to matches" gated on validateSQLFilter — the window-free detector).
-Gate: submit iff rule_id valid ∧ last completed lint zero errors (lastLintOk, superseding P17's lint-never-blocks) ∧
-tested-since-last-edit; lint-only (no ctx/external/inapplicable) drops the test leg — data-shaped skips save as "Save
-untested"; any edit/drawer/file-switch resets; tests suspended during runs. Export: "Download rules CSV" in the grid header
-(deviation from the wireframe's drawer row) via shared triggerDownload + exportFileName; dirty * survives download, clears on
-same-name re-import. Import-back seeds bucketStoredIssues on edit-open. Golden journey 5 e2e (studio.spec.ts): compose→Test
-"1 row"→filter narrows→gated Add→correction −1200→1200→Download (BOM)→re-import → 4 files · 24 rules, identical lint state.
-Manual pass via headed-Playwright screenshots (Chrome ext couldn't reach local servers). Unit 545 + browser 44 + e2e 41 green;
-entry 37.1 KB gz (all new UI in the lazy studio chunk). P19 unblocked.
+2026-07-24 · P18 · Rule Studio preview/gate/export shipped on main (6 commits): rules become live-testable, saving is
+gated, files round-trip. `ruleTest.ts` is pure dispatch mirroring the engine's interpret + `applicableTargets` over the
+EXACT `sql.ts` wrappers (`PREVIEW_ROW_CAP` 20, counts still exact on the full `data` view); `previewPane.ts` docks a
+second data-table (`quac_studio_display`, 10k sample, `__rowid__ == __row__` per V7) beside the grid, plus
+`RuleTestPanel`. Gate: submit iff `rule_id` valid ∧ last completed lint clean (`lastLintOk`) ∧ tested-since-last-edit
+— this SUPERSEDES P17's lint-never-blocks; the policy, the "Save untested" carve-out and the fixture-reality deviation
+(the e2e asserts the example dataset's seeded −1200, not the phase file's −2500) are all in
+`phase-18-studio-preview.md`. Export is "Download rules CSV" in the grid header (deviation from the wireframe's drawer
+row); golden journey 5 is `studio.spec.ts`. Unit 545 + browser 44 + e2e 41 green; entry 37.1 KB gz (all new UI in the
+lazy studio chunk). P19 unblocked.
 
-2026-07-24 · P17 · Rule Studio workspace & editor shipped on main (7 commits): lint.ts exports the (type,scope) matrix
-(typeScopeComboError/isValidTypeScope — stage 2 refactored onto them, messages byte-identical) and rules-store grows
-getLintContext() + dirtyFiles + in-session mutators (createRuleFile pristine; update/insert/remove/move/duplicate all
-round-trip serialize→parse so rowNumbers/issues re-derive; same-name re-add clears dirty). views/studio/: studioView.ts stays
-an eager shim (view-level empty ONLY when nothing is loaded — user-approved; rules-without-dataset gets the workspace + info
-banner) route-gating the lazy studioWorkspace chunk (CM never mounts hidden; bundle gate gains the @codemirror/view
-`cm-announced` entry-leak marker beside ExcelJS). Workspace = rail (group/count/lint badge/x-y targets/dirty *) + plain-table
-rule grid (enable toggle, duplicate/delete/↑↓ with the pinned "Row order = correction order" tooltip) + full-width bottom
-editor drawer (user-approved layout; P18 docks preview beside the grid). ruleForm enforces the matrix live (invalid scope
-options disabled with the lint helper's exact text; auto-snap scope→row; type change resets severity default), targetsSelect
-= chips+combobox (unknown targets allowed, warning-tinted), codeEditor.ts is the only @codemirror/* importer (sql/js/text
-compartments, PostgreSQL dialect + schema:{data} + custom feed: functions/__row__/__value__/boosted assertion snippets —
-completionSource.ts pure+node-tested), draft lint = ONE 400 ms debounce → runDraftLint (synthetic one-rule file →
-lintRuleFilesWithDataset verbatim, byField buckets, cross-file duplicate-id w/ self-exclusion) pushed via setDiagnostics +
-mirrored ul.q-editor-diags; paused while the pipeline runs. Catalog: DESCRIBE quac_work (idiom deviation from PRAGMA
-table_info) + session-cached duckdb_functions() via getLintContext() — studio never boots the wasm. Manual keyboard pass done
-(found+fixed a rail focus drop, 47179c2); deferred notes record the pre-existing download.spec flake (VARCHAR-window lint
-race, reproduced on pre-P17 base 4/6 under --repeat-each=6). Unit 525 + browser 44 + e2e 40 green; entry 37.3 KB gz. P18 unblocked.
+2026-07-24 · P17 · Rule Studio workspace & editor shipped on main (7 commits): `lint.ts` now exports the (type,scope)
+matrix (`typeScopeComboError`/`isValidTypeScope`) and rules-store grows `getLintContext()` + `dirtyFiles` + in-session
+mutators that all round-trip serialize→parse. `views/studio/`: `studioView.ts` is an eager shim route-gating the lazy
+`studioWorkspace` chunk (the bundle gate gains a `@codemirror/view` `cm-announced` entry-leak marker beside ExcelJS);
+workspace = rail + rule grid + full-width bottom editor drawer (user-approved; P18 docks the preview beside the grid).
+`codeEditor.ts` is the ONLY `@codemirror/*` importer (`completionSource.ts` pure + node-tested); draft lint is ONE
+400 ms debounce → `runDraftLint` pushed via `setDiagnostics`, paused while the pipeline runs; the catalog reads
+`DESCRIBE quac_work` (idiom deviation from the phase file's `PRAGMA table_info`) + session-cached `duckdb_functions()`,
+so the studio never boots the wasm. Deferred: the PRE-EXISTING `download.spec` flake (VARCHAR-window lint race,
+reproduced on the pre-P17 base 4/6) stays open as a P20 follow-up — mechanism in `phase-17-studio-editor.md`. Unit 525
++ browser 44 + e2e 40 green; entry 37.3 KB gz. P18 unblocked.
 
 2026-07-24 · UIX · Interstitial UI/UX overhaul (10 commits, post-P16, before P17) — one design language on the loved chrome:
 tokens (type/space/radius/border/elevation/z/motion tiers + yellow-tint/sky-deep) → button system (.q-btn secondary base,

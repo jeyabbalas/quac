@@ -1,7 +1,29 @@
 {
   "name": "quac",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Data quality control for tabular data — validate a dataset against a JSON Schema and QC rules, and get a styled five-sheet Excel report. Runs entirely in the browser, or headless on Node.",
+  "keywords": [
+    "data-quality",
+    "data-validation",
+    "json-schema",
+    "csv",
+    "parquet",
+    "excel",
+    "duckdb",
+    "qc",
+    "data-cleaning",
+    "cli"
+  ],
+  "homepage": "https://jeyabbalas.github.io/quac/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeyabbalas/quac.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jeyabbalas/quac/issues"
+  },
+  "license": "MIT",
+  "author": "Jeya Balaji Balasubramanian",
   "type": "module",
   "engines": {
     "node": ">=24"

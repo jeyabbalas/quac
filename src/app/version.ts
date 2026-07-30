@@ -3,7 +3,10 @@
  * (`__QUAC_VERSION__`). Sheet 5 of the Excel report and any future "about"
  * surface read it here rather than duplicating the version string. Falls back
  * to a dev sentinel under Vitest/`vite dev` where the define may be absent.
- * P20 owns bumping the package version.
+ *
+ * One bump in package.json moves everything that shows a version: this
+ * constant, `quac --version`, the summary's `quacVersion`, and Sheet 5 of the
+ * Excel report. Nothing else may hardcode one.
  */
 declare const __QUAC_VERSION__: string | undefined;
 

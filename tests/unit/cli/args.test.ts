@@ -130,6 +130,10 @@ describe('parseCliArgs — short circuits', () => {
     expect(USAGE).toContain('130');
     // The privacy promise is the headline feature; it belongs in --help.
     expect(USAGE).toContain('never leaves this machine');
+    // A URL, not a repo-relative path: `docs/` is not in the published
+    // tarball, so the path this line used to print resolved to nothing on the
+    // machine of every single person who installed the package (P22).
+    expect(USAGE).toMatch(/Docs: https:\/\//);
   });
 });
 

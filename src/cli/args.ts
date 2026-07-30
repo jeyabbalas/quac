@@ -87,7 +87,7 @@ Exit codes
 Your data never leaves this machine. The only network requests QuaC makes are
 for the --schema and --rules URLs you pass it.
 
-Docs: docs/plan/specs/headless.md`;
+Docs: https://github.com/jeyabbalas/quac#headless--cli`;
 
 /** The §5 refusal for a run with nothing to check against. */
 export const NO_CHECKS_MESSAGE =

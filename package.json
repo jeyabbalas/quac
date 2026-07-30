@@ -42,6 +42,7 @@
     "verify": "npm run typecheck && npm run lint && npm test",
     "size": "node scripts/check-bundle-size.mjs",
     "favicons": "node scripts/generate-favicons.mjs",
+    "screenshots": "node scripts/generate-screenshots.mjs",
     "fixtures": "node scripts/generate-fixtures.mjs",
     "fixtures:check": "npm run fixtures && git diff --exit-code -- tests/fixtures && node -e \"const{execSync}=require('node:child_process');const s=execSync('git ls-files --others --exclude-standard -- tests/fixtures').toString().trim();if(s){console.error('untracked fixture files:\\n'+s);process.exit(1)}\""
   },

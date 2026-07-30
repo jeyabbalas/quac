@@ -50,9 +50,11 @@ export function registerDatasetUrlLoader(load: (url: string) => Promise<void>): 
   }
 }
 
-/** `mountShell` runs synchronously before `applyBootConfig` (main.ts), so the
- *  flush branch is unreachable in practice — it resolves immediately and the
- *  ingest it started is simply not awaited. */
+/** `mountShell` mounts the Load view synchronously on every route before
+ *  `applyBootConfig` (main.ts, UIX-19), so the pending branch is unreachable
+ *  in practice — kept as the safety net if that ordering ever changes. A
+ *  flushed-late URL would resolve this promise immediately and the ingest it
+ *  started would simply not be awaited. */
 function loadDataset(url: string): Promise<void> {
   if (datasetUrlLoader) return datasetUrlLoader(url);
   pendingDataUrl = url;

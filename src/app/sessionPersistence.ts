@@ -137,8 +137,9 @@ let pendingRestoreArgs: DatasetRestoreArgs | null = null;
 /**
  * The Dataset card registers its restore loader on mount (mirrors
  * `registerDatasetUrlLoader`, bootConfig.ts) so restore drives the real card
- * UX. If restore beats the mount — a `#/studio` reload never mounts Load
- * first — the args are flushed here when the card arrives.
+ * UX. The shell mounts the Load view eagerly on every route (UIX-19), so the
+ * loader exists before any restore leg runs; the pending flush below is the
+ * safety net if that ordering ever changes.
  */
 export function registerDatasetRestoreLoader(
   load: (args: DatasetRestoreArgs) => Promise<void>,

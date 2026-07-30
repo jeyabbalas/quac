@@ -1,7 +1,10 @@
 /**
  * App shell: header banner (brand · actions · nav tabs), main region swapping
- * the three views, footer privacy line. Views are mounted lazily on first
- * visit and then toggled with `hidden`, preserving their state for P05/P17.
+ * the three views, footer privacy line. The Load view mounts eagerly (hidden
+ * when another route is active) — it hosts the dataset loaders the boot flow
+ * and the session restore drive, and both must work on EVERY route (UIX-19).
+ * Report and Studio mount lazily on first visit. Once mounted, views are
+ * toggled with `hidden`, preserving their state for P05/P17.
  */
 import { clearAllInputs } from './clearInputs';
 import { effect } from './signals';
@@ -166,6 +169,12 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   root.append(header, main, footer);
 
   const mounted = new Set<RouteId>();
+  // The Load view mounts NOW, whatever the route (UIX-19): it registers the
+  // dataset URL and restore loaders (loadView.ts), and a `#/report` or
+  // `#/studio` boot needs both live — a `data=` leg and the session's dataset
+  // used to park until the user happened to visit the Load tab.
+  mounted.add('load');
+  VIEW_MOUNTERS.load(sections.load, ctx);
   effect(() => {
     const current = ctx.router.route.get();
     for (const id of ROUTE_IDS) {

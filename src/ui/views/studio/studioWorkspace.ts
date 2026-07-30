@@ -52,6 +52,7 @@ import { createPreviewPane } from './previewPane';
 import { createRuleForm } from './ruleForm';
 import { runRuleTest } from './ruleTest';
 import type { RuleFormCatalog, TestGateState } from './ruleForm';
+import type { StudioRecord } from '../../../app/sessionSnapshot';
 import type { ShellContext } from '../../../app/shell';
 import type { RulesSlotState } from '../../../core/rules/rules-store';
 import type { QCRule, RuleFileLintResult } from '../../../core/rules/types';
@@ -1152,12 +1153,22 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
 
   // Gate mode tracks the lint context and run state: the context installs
   // after the dataset signal (rulesState republish), runs suspend testing,
-  // and a dataset change can flip testability entirely.
+  // and a dataset change can flip testability entirely. A context CHANGE also
+  // re-lints an open drawer's draft — its SQL checks just became runnable (or
+  // stopped being): a restored drawer otherwise keeps its "pending until a
+  // dataset is loaded" hint forever once the restored dataset lands (UIX-19),
+  // and the same staleness hit a drawer left open across a Load-tab upload.
+  let lastDraftLintCtx = getLintContext();
   effect(() => {
     ctx.store.dataset.get();
     ctx.store.pipeline.get();
     rulesState.get();
     if (drawerTarget !== null) syncGate();
+    const lintCtx = getLintContext();
+    if (lintCtx !== lastDraftLintCtx) {
+      lastDraftLintCtx = lintCtx;
+      scheduleDraftLint(); // no-ops when no drawer is open
+    }
   });
 
   // Completion catalog: re-check on dataset/pipeline/rules-lint changes.
@@ -1206,8 +1217,7 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
   // to the first file, so restoring a different one is a plain re-selection
   // the effect cannot fight. Every guard failure drops silently — a session
   // whose file/row vanished restores as much as still exists.
-  const pending = takePendingStudioRestore();
-  if (pending !== null) {
+  const applySessionRestore = (pending: StudioRecord): void => {
     const files = rulesState.get().files;
     if (
       pending.selectedFile !== null &&
@@ -1239,6 +1249,35 @@ export function mountStudioWorkspace(host: HTMLElement, ctx: ShellContext): void
         syncGate();
         scheduleDraftLint();
       }
+    }
+  };
+  // The boot legs run concurrently, and the Load view mounts eagerly
+  // (shell.ts, UIX-19) — so a restored DATASET can flip studioView's content
+  // gate and mount this workspace before the rules leg has PUBLISHED its
+  // files. A record naming a file the still-loading slot hasn't delivered yet
+  // must wait for that publish, not consume-and-drop: apply as soon as every
+  // named file exists, or the moment the slot settles (whatever exists then
+  // is all there is — the guards drop the rest, as ever).
+  const pending = takePendingStudioRestore();
+  if (pending !== null) {
+    const named: string[] = [];
+    if (pending.selectedFile !== null) named.push(pending.selectedFile);
+    if (pending.drawer !== null) named.push(pending.drawer.fileName);
+    const restorable = (): boolean => {
+      const state = rulesState.get();
+      return (
+        state.phase !== 'loading' ||
+        named.every((name) => state.files.some((f) => f.file.name === name))
+      );
+    };
+    if (restorable()) {
+      applySessionRestore(pending);
+    } else {
+      const unsubscribe = rulesState.subscribe(() => {
+        if (!restorable()) return;
+        unsubscribe();
+        applySessionRestore(pending);
+      });
     }
   }
 }

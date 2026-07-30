@@ -15,7 +15,8 @@ const store = createAppStore();
 // the Run-button state machine reads plain store signals.
 bindSchemaSlot(store.slots.schema);
 bindRulesSlot(store.slots.rules);
-// mountShell renders the default Load view synchronously, so the Dataset card's
-// URL loader is registered before P16's boot flow reads the fragment below.
+// mountShell mounts the Load view synchronously on EVERY route (UIX-19), so
+// the Dataset card's URL and restore loaders are registered before P16's boot
+// flow reads the fragment below — a #/report reload ingests its dataset too.
 mountShell(root, { store, router: startRouter() });
 void applyBootConfig(store);

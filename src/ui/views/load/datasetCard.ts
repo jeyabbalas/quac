@@ -18,6 +18,15 @@ export interface DatasetCardHandle {
    *  Resolves when the ingest settles, so boot can await this leg before it
    *  arms the address-bar sync (UIX-10). */
   fetchUrl: (url: string) => Promise<void>;
+  /** Session-restore ingest (P19b): replay persisted bytes through the real
+   *  card UX — busy-latched like every other entry point, sheet choice pinned
+   *  so the SheetPicker never re-opens. Resolves when the ingest settles. */
+  restoreBlob: (args: {
+    source: Blob;
+    name: string;
+    sheetName?: string;
+    sourceUrl?: string;
+  }) => Promise<void>;
   /** Focus the drop-zone browse control (post-clear-all focus home, UIX-7). */
   focusBrowse: () => void;
 }
@@ -86,6 +95,25 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
     });
   }
 
+  /** The restore twin of run(): same busy latch (a refused call resolves
+   *  immediately, having done nothing), same lazy controller import. */
+  function restoreBlob(args: {
+    source: Blob;
+    name: string;
+    sheetName?: string;
+    sourceUrl?: string;
+  }): Promise<void> {
+    if (busy) return Promise.resolve();
+    setBusy(true);
+    corsHost.replaceChildren(); // clear stale CORS guidance on a fresh attempt
+    return (async () => {
+      const controller = await import('./ingestController');
+      await controller.ingestFromRestore(ctx, args, controllerUi);
+    })().finally(() => {
+      setBusy(false);
+    });
+  }
+
   const dropZone = createDropZone({
     label: 'Drop dataset file (CSV, TSV, JSON, Excel, Parquet) or',
     accept: '.csv,.tsv,.tab,.json,.xlsx,.parquet,.pq',
@@ -149,6 +177,7 @@ export function mountDatasetCard(container: HTMLElement, ctx: ShellContext): Dat
 
   return {
     fetchUrl: (url) => run('url', url),
+    restoreBlob,
     focusBrowse: () => {
       dropZone.el.focus();
     },

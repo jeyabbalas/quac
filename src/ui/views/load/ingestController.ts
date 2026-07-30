@@ -63,6 +63,23 @@ export async function ingestFromUrl(ctx: ShellContext, url: string, ui: IngestUi
   }
 }
 
+/**
+ * Session restore (P19b): replay the persisted original bytes through the real
+ * ingest path, driving the card UX exactly like boot's URL loader — a restored
+ * dataset is indistinguishable from a fresh load (generation mints normally).
+ * The persisted sheet choice rides `pinnedSheet` (restore must never re-prompt
+ * for a decision the session already made) and the persisted `sourceUrl` keeps
+ * hashSync provenance for URL-loaded datasets. Never rejects — runIngest
+ * reports its own errors.
+ */
+export async function ingestFromRestore(
+  ctx: ShellContext,
+  args: { source: Blob; name: string; sheetName?: string; sourceUrl?: string },
+  ui: IngestUi,
+): Promise<void> {
+  await runIngest(ctx, ui, args.source, args.name, undefined, args.sourceUrl, args.sheetName);
+}
+
 async function runIngest(
   ctx: ShellContext,
   ui: IngestUi,
@@ -70,6 +87,7 @@ async function runIngest(
   name: string,
   restoreState = ctx.store.slots.data.get(),
   sourceUrl?: string,
+  pinnedSheet?: string,
 ): Promise<void> {
   const slot = ctx.store.slots.data;
   try {
@@ -88,19 +106,28 @@ async function runIngest(
 
     let sheetName: string | undefined;
     if (format === 'xlsx') {
-      const workbook = await openWorkbook(bytes);
-      if (workbook.sheetNames.length > 1) {
-        const chosen = await pickSheet(workbook.sheetNames);
-        if (chosen === null) {
-          slot.set(restoreState); // user cancelled — nothing changed
-          // UX-06: …so the card must stop advertising the workbook it did not
-          // load. `sourceUrl` is set only by ingestFromUrl, which is exactly
-          // the gate wanted: a cancelled picker on a DROPPED file must not
-          // wipe a field that still describes the loaded dataset.
-          if (sourceUrl !== undefined) ui.onUrlAbandoned?.();
-          return;
+      if (pinnedSheet !== undefined) {
+        // Restore path: the persisted choice. The bytes are the very bytes
+        // that were ingested before, so the sheet exists and the picker (a
+        // decision the session already made) must not re-open. Skipping
+        // openWorkbook also avoids a duplicate exceljs pass — ingestDataset
+        // opens the workbook itself.
+        sheetName = pinnedSheet;
+      } else {
+        const workbook = await openWorkbook(bytes);
+        if (workbook.sheetNames.length > 1) {
+          const chosen = await pickSheet(workbook.sheetNames);
+          if (chosen === null) {
+            slot.set(restoreState); // user cancelled — nothing changed
+            // UX-06: …so the card must stop advertising the workbook it did not
+            // load. `sourceUrl` is set only by ingestFromUrl, which is exactly
+            // the gate wanted: a cancelled picker on a DROPPED file must not
+            // wipe a field that still describes the loaded dataset.
+            if (sourceUrl !== undefined) ui.onUrlAbandoned?.();
+            return;
+          }
+          sheetName = chosen;
         }
-        sheetName = chosen;
       }
     }
 

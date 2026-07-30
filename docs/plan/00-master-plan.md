@@ -73,7 +73,7 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 | [x] 2026-07-24 · ce4e15b | P18 | Rule Studio: preview, gate, export | P17 |
 | [x] 2026-07-25 · a89baa0 | P19 | Branding polish & accessibility | P14, P16, P18 |
 | [x] 2026-07-30 · c8bd3ba | P20 | Headless core: the QC pipeline under Node | P14, P15 |
-| [ ] | P21 | Headless CLI & packaging | P20 |
+| [x] 2026-07-30 · eced604 | P21 | Headless CLI & packaging | P20 |
 | [ ] | P22 | Hardening, perf, docs, release | all |
 
 ## Progress log
@@ -82,6 +82,27 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-07-30 · P21 · **`quac <dataset> --schema … --rules …` — the binary, the library, and a package that
+installs.** `src/cli/{args,progress,summary,quac}.ts` over P20's `runQuac`: `args.ts` is the §5 grammar on
+`node:util` parseArgs and is PURE; `quac.ts` is the only `process.exit` site and sets `process.exitCode`
+rather than exiting, so writes flush and SIGINT lets the bridge's `finally` close DuckDB. Intake finished
+per §8 — schema/rules URLs (`nodeFetchJson` keeps `browserFetchJson`'s thrown-`status` shape, which the
+`$ref` crawler reads), the same-kind rule, and the multi-sheet gate; the dataset stays a local path.
+**Three narrowings of the contract, all now in `headless.md`**: no `quiet` on `RunQuacOptions` (it printed
+nothing); `RunQuacResult` keeps `inputs` + a new `pertinence` (§E.5's first production caller) while §7
+assembly lives in `src/cli/summary.ts` and is re-exported from `headless/index.ts`; and a cancelled run
+writes NO report — `runPipeline` returns partial artifacts rather than throwing, so `run.ts` now checks the
+signal before the workbook. §7's `rowsAffected` was its one non-assembly field and is now an exact
+`FlagStoreSummary` member (union of the store's per-rule row sets, which `recordAggregates` fills
+cap-independently). **V27**: a Vite SSR build copies `publicDir` — `build:cli` was writing the web app's
+100 MB of duckdb-wasm into `dist-cli/` and `npm pack` shipped it (23 MB / 43 entries); `publicDir: false`
+makes it 94 KB / 8. Found by asserting the pack file list, invisible in the build log. Journeys 18–19 are a
+new `cli` vitest project black-boxing the built binary; exits 1/2/3/5/6 each observed on a fixture (4 and
+130 are not fixture-reachable — phase Deferred notes). **For P22**: `dependencies` is still the WEB app's
+list, so `npm install quac` would pull duckdb-wasm, CodeMirror and three fonts — the §9 pack audit, now
+with three concrete options in the phase file.
+Unit 840 → 872, **cli 29 (new tier)**, browser 73 unchanged, e2e 112 unchanged, entry 50.3 KB gz unchanged.
 
 2026-07-30 · P20 · **The whole QC pipeline runs under plain Node — `runQuac()`, no browser, no server.** Four adapters at
 seams that already existed: `headless/nodeBridge.ts` (a `WorkerBridge` facade over `@duckdb/node-api`),

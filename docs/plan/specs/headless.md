@@ -49,11 +49,24 @@ Batching, the sticky flag cap, abort-at-batch-boundary, and `ValidationSummary` 
 runQuac(options: RunQuacOptions): Promise<RunQuacResult>
 // options: { dataset: string; schema?: string[]; rules?: string[]; index?: string;
 //            sheet?: string; out?: string; applyCorrections?: boolean;   // default true
-//            signal?: AbortSignal; onProgress?: (p: RunProgress) => void;
-//            quiet?: boolean }   // paths or URLs per §8
+//            signal?: AbortSignal; onProgress?: (p: RunProgress) => void }
+//          // schema/rules take paths or URLs per §8; `dataset` is a local path
 // result:  { outPath: string; artifacts: RunArtifacts; model: ReportModel;
-//            summary: SummaryJson /* §7, minus exitCode */ }
+//            inputs: { dataset, schema, rules, applyCorrections, pertinence } }
 ```
+
+**P21 amendments to the two lines above.** (a) There is no `quiet` option: `runQuac` prints
+nothing, so the flag only ever meant something to the CLI, and a dead option is worse than an
+absent one. (b) The result carries `inputs` — the resolved dataset info, `{set, digest}`,
+the **unfiltered** `RuleFileLintResult[]` in argument order, `applyCorrections`, and the
+`crossCheckInputs` verdict (§E.5's only production caller; `runQuac` is the sole holder of all
+three column lists) — rather than a `summary`. §7 assembly lives in `src/cli/summary.ts` beside
+its named test, because the summary is a reporting artifact carrying an exit code and a report
+path, neither of which `runQuac` knows; `src/headless/index.ts` re-exports `buildSummary`, so a
+library caller still gets it from one import. (c) A **cancelled run writes no report**: the
+pipeline returns partial artifacts rather than throwing, so `runQuac` checks the signal after
+`runPipeline` and throws instead of emitting a half-validated workbook (§6's exit 130 promises
+no file).
 
 Never calls `process.exit`; throws typed errors (`QuacCliError` with a `kind` mapping onto §6 codes) that `main()` translates. The assembly (all seams existing):
 
@@ -77,7 +90,7 @@ quac --version | quac --help
 `node:util` parseArgs (zero new runtime deps; repeatables via `multiple: true`; positional dataset via `allowPositionals`). No subcommands in v1.
 
 - **Input contract = the app's** (`runReadiness`): dataset mandatory; at least one usable check source. Zero check sources → exit 1, copy echoing the `'no-checks'` sentence ("Provide a JSON Schema (--schema) or a QC rules file (--rules) — either is enough."). All-broken-rules with no schema mirrors `'rules-blocked'`.
-- **stdout is data, stderr is human.** stdout carries ONLY the summary JSON when `--summary -`; stage/progress lines, lint findings, warnings, and the final `quac: report written → <path>` + counts line go to stderr. In-place progress updates only when `process.stderr.isTTY`; one line per stage transition otherwise; no spinners ever. `--quiet` suppresses progress/stage lines, never warnings or errors.
+- **stdout is data, stderr is human.** stdout carries ONLY the summary JSON when `--summary -`; stage/progress lines, lint findings, warnings, and the final `quac: report written → <path>` + counts line go to stderr. In-place progress updates only when `process.stderr.isTTY`; one line per stage transition otherwise; no spinners ever. `--quiet` suppresses progress/stage lines, never warnings or errors. P21 detail: `--quiet` also takes the closing report line and the per-file lint summary, since every number in them is in the summary JSON a quiet run asked for; a `warning:` line always survives.
 - **Warning surfaces (non-fatal, app parity)**: per-file lint summary line + one `warning:` line per excluded rule (the UIX-16 plain-language diagnosis, never a raw binder error); post-run broken rules (`RuleRunStat.status === 'broken'`); missing-variables count; pertinence verdict when `crossCheckInputs` names a suspect; `W_INDEX_BASENAME` when `--index` matched by basename.
 - `--version` prints the build-injected `__QUAC_VERSION__` (same define as the app → Run Info sheet, `--version`, and summary `quacVersion` move together at P22's bump).
 
@@ -130,19 +143,40 @@ Non-prepare `stageErrors` are **not** fatal (the app presents partials): write t
 
 Serialize the two `ReadonlyMap`s via `Object.fromEntries`. Stability: additive changes only within version 1; field removals/renames bump `summarySchemaVersion`.
 
+**P21: the JSON names above are NOT the source field names.** Six renames happen in
+`buildSummary`, each annotated at its site and pinned in `unit/cli/summary.test.ts`:
+`flagsTruncated` ← `FlagStoreSummary.truncated`; `missingVariables[].name` ← `MissingVarRow.variable`;
+and all four `inputs.rules[]` members off `RuleFileLintResult` — `name` ← `file`, `rules` ←
+`ruleCount`, `lintErrors` ← count of error-severity issues, `excludedRuleIds` ← the rule ids those
+errors removed (mirroring `executableRuleFile`, so an error with no `rowNumber` is structural,
+excludes the whole file, and contributes no id).
+
+**`rowsAffected` was the one field that was not pure assembly** — it did not exist on
+`FlagStoreSummary`, and `RuleAggregate.rowsAffected` is per-rule, so summing it double-counts a
+row that several rules flagged. Resolved by adding it to `FlagStoreSummary` as the **union** of
+the store's per-rule row sets. Those sets are recorded in `recordAggregates`, which runs for every
+flag whether or not it is materialized, so the number is **exact past the 200k cap** — the promise
+`countsByRuleId` and `severityTotals` already make, and the one "the Summary panel never lies"
+rests on.
+
+Two more §7 notes: `ValidationSummary.countsByRuleId` is already a plain object (only the
+FlagStore's two are `ReadonlyMap`s), and `StageError.cause` is an arbitrary thrown value that must
+never reach `JSON.stringify` — the summary maps stage errors to `{stage, message}`.
+
 ## 8. Intake semantics
 
 - **Dataset**: one positional path; format by `sniffFormat` (all five: csv/tsv/json/xlsx/parquet — all four routes produce identical flag digests on the HESP fixtures **[spike]**). Guardrails per `ingestion.md` §5 in Node too: warn ≥ 100 MB (stderr), hard-stop > 500 MB → exit 2 (PapaParse still buffers the whole text). `--sheet <name>` for xlsx: single-sheet proceeds; multi-sheet without `--sheet` → exit 2 listing `workbook.sheetNames` (the CLI's SheetPickerModal — a pipeline must not guess); unknown name → exit 2 with the same list.
 - **Schema** (`--schema`, repeatable): a **dir** → recursive walk (skip dotfiles), `relativePath` = POSIX path relative to the dir, `raw` = file text — every file, no extension filter (manifest ordering hints and graceful `not-json` ignores work exactly as the browser folder drop; `stripCommonRoot` then behaves identically, so `setId` matches the browser for the same tree). A **file** → `{relativePath: basename, raw}`. A **URL** → mirror `loadSchemaUrls`: fetch via the existing `FetchJson` port (`browserFetchJson` is plain `fetch` — Node-clean; the `$ref` crawler fetches transitive refs), `relativePath`/`retrievalUri` = final URL. **Same-kind rule**: `BuildOptions.origin` is a single `'upload' | 'url'` — mixing local and URL `--schema` values is exit 1. `--index` → `indexParam` (§A.4 ladder); `needsRootChoice` still true → exit 3 per §6.
 - **Rules** (`--rules`, repeatable): files or URLs; **arg order = load order = cross-file correction order** (document in `--help`). Lint per §4 step 4; issues to stderr; exclusions never fatal while another check source survives.
-- **URL fetches**: Node's global fetch, no CORS (a browser concept) — note in docs that URL configs which need CORS headers in the browser work headless regardless; 30 s timeout parity with `fetchArtifact`.
+- **URL fetches**: Node's global fetch, no CORS (a browser concept) — note in docs that URL configs which need CORS headers in the browser work headless regardless; 30 s timeout parity with `fetchArtifact`. P21 shape: `nodeFetchJson` (in `headless/intake.ts`) mirrors `browserFetchJson` **including throwing an `Error` carrying `status`**, because `buildSchemaSet` hands the port to the `$ref` crawler, which reads that field to choose between the two `E_FETCH` messages (`ref-graph.ts:221-227`). Top-level `--schema`/`--rules` URLs are fetched by the intake itself and their failures become `QuacCliError('input')` → **exit 2**, per §6's row 2, rather than becoming a fatal `E_FETCH` in the set and surfacing as exit 3. Rules URLs ride the existing `fetchArtifact`, whose CORS hint is deliberately dropped on the way out. Known cosmetic wart: a failed **transitive** `$ref` fetch still takes its copy from `fetchCorsMessage`, which mentions CORS — shared browser copy, left alone rather than forked.
+- **The dataset is a local path** (P21): §5's grammar has no URL form for it, and the CLI refuses `http(s)://` by name with exit 1 rather than half-handling it. `--schema` and `--rules` are where URLs belong.
 
 ## 9. Build, packaging & distribution
 
-- **Build**: `vite build --config vite.cli.config.ts` — SSR entry build, the mechanism the spike proved (51-module graph, no worker-plugin interference; the dead `new Worker(new URL(...))` in `validation-run.ts` is harmless). NOT esbuild — Vite 8 ships rolldown; esbuild is not in the tree. Two entries: `src/cli/quac.ts` → `dist-cli/quac.mjs` (with `#!/usr/bin/env node` banner) and `src/headless/index.ts` → `dist-cli/index.mjs`. `target: 'node22'`, ESM, deps external (SSR default — keeps QuickJS's `import.meta.url` wasm resolution and the native duckdb binding in `node_modules`), `define: { __QUAC_VERSION__: JSON.stringify(pkg.version) }`. `dist-cli/` is gitignored, never committed, disjoint from `dist/` (web build, Pages artifact, and the 300 KB entry gate untouched by construction).
+- **Build**: `vite build --config vite.cli.config.ts` — SSR entry build, the mechanism the spike proved (60-module graph, no worker-plugin interference; the dead `new Worker(new URL(...))` in `validation-run.ts` is harmless). NOT esbuild — Vite 8 ships rolldown; esbuild is not in the tree. Two entries: `src/cli/quac.ts` → `dist-cli/quac.mjs` (with `#!/usr/bin/env node` banner) and `src/headless/index.ts` → `dist-cli/index.mjs`. `target: 'node22'`, ESM, deps external (SSR default — keeps QuickJS's `import.meta.url` wasm resolution and the native duckdb binding in `node_modules`), `define: { __QUAC_VERSION__: JSON.stringify(pkg.version) }`. **`publicDir: false` (P21, required):** `publicDir` defaults to `public/`, which vite COPIES into `outDir` — that is the web app's ~100 MB of self-hosted duckdb-wasm, which the Node CLI (native binding) never touches. Left on, every build copied it and `npm pack` shipped it: a 23 MB tarball for a 300 KB program. With it off the tarball is 94 KB over 8 entries. `dist-cli/` is gitignored, never committed, disjoint from `dist/` (web build, Pages artifact, and the 300 KB entry gate untouched by construction). The build emits shared chunks beside the two entries, so the packaging test matches `dist-cli/*.mjs` rather than an exact file list.
 - **Dev loop**: `npm run cli -- <args>` = `npm run build:cli --silent && node dist-cli/quac.mjs` — the build is ~50 ms **[spike]**; no tsx/vite-node dependency needed.
 - **package.json (P21)**: `"bin": {"quac": "dist-cli/quac.mjs"}`; `"exports": {".": {"types": "./types/quac.d.ts", "default": "./dist-cli/index.mjs"}}` (inert for the web app — nothing imports the package by name); `"files": ["dist-cli", "types", "README.md", "LICENSE"]`; `"prepack": "npm run build:cli"`; promote `@duckdb/node-api` devDependencies → dependencies (precedent: exceljs in P15). Hand-maintained `types/quac.d.ts` (~40 lines: `RunQuacOptions`, `RunQuacResult`, summary shape) — no dts toolchain in a noEmit repo.
-- **Distribution posture**: P21 makes the package *publishable* and proves it (`npm pack` + install-from-tarball smoke — `npm pack` works while `"private": true`); the repo-clone path (`npm ci && npm run build:cli && node dist-cli/quac.mjs`, or `npm link`) works from P21 day one. **P22 executes the publish decision**: check npm name `quac` (fallback `@jeyabbalas/quac` — `bin` keeps the command name either way), flip `private`, audit `npm pack` contents (note: the `xlsx` dependency installs from a sheetjs CDN tarball URL — verify acceptable for installers), publish, verify `npx` on a clean environment. Version bumps remain P22-only (working-protocol rule 7).
+- **Distribution posture**: P21 makes the package *publishable* and proves it (`npm pack`, whose file list is asserted exactly, then extracted and run — **not** a network `npm install <tgz>`, which would refetch the native duckdb binding and the SheetJS CDN tarball on every CI run; the unpacked tree gets the repo's `node_modules` symlinked beside it, since Node resolves bare specifiers from the importing file, not the cwd. `npm pack` works while `"private": true`); the repo-clone path (`npm ci && npm run build:cli && node dist-cli/quac.mjs`, or `npm link`) works from P21 day one. **P22 executes the publish decision**: check npm name `quac` (fallback `@jeyabbalas/quac` — `bin` keeps the command name either way), flip `private`, audit `npm pack` contents (note: the `xlsx` dependency installs from a sheetjs CDN tarball URL — verify acceptable for installers), publish, verify `npx` on a clean environment. Version bumps remain P22-only (working-protocol rule 7).
 - **Node floor**: `main()` refuses `process.versions.node` major < 20 with a friendly line, warns < 24 (declared engines), continues otherwise.
 
 ## 10. Parity & test map

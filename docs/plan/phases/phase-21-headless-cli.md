@@ -31,4 +31,45 @@ P20.
 - **UI/UX:** n/a (no browser surface — journeys 18–19 live in the CLI tier). `npm run build && npm run size` — entry KB gz unchanged; `npm run test:e2e` untouched and green.
 
 ## Deferred notes
-*(agent fills in)*
+
+**The published package would install the whole WEB app's dependency tree — P22 must decide this.**
+`src/core/**` imports `quoteIdentifier` from `@jeyabbalas/data-table` in six places
+(`bridge/tables`, `ingest/ingest`, `schema/casting`, `schema/validation-run`, `rules/sql`,
+`rules/assertions`, plus `headless/nodeBridge`), so the CLI bundle carries a real runtime import of
+a browser library — and `dependencies` also holds duckdb-wasm, exceljs, xlsx, eight CodeMirror
+packages and three `@fontsource` fonts, none of which a headless run touches. The **tarball** is
+fine (94 KB, `files`-limited); the **install** is not. Three ways out, in ascending cost: mark the
+web-only packages `optionalDependencies`; add `noExternal: ['@jeyabbalas/data-table']` to
+`vite.cli.config.ts` so the one helper is inlined (needs checking that data-table's entry does not
+drag duckdb-wasm in with it); or lift `quoteIdentifier` into `src/core/` and drop the import
+entirely. This is exactly the "audit `npm pack` contents" item §9 already assigns to P22.
+
+**Exit 4 is not observed by any test.** Journey 19 pins 1, 2, 3, 5 and 6 on committed fixtures, and
+0 several times, but nothing in `src/headless/**` ever throws `kind: 'run'` except the new
+cancellation guard — exit 4 is the top-level catch for a prepare-stage failure, a DuckDB init
+failure, or an unexpected exception, none of which a fixture can provoke without contriving a
+broken engine. Same for **130**: SIGINT needs a signal delivered mid-run to a child process, which
+is a flaky shape for CI (the run has to still be in the pipeline when the signal lands). Both paths
+are straight-line code in `main()` and were exercised by hand; a fault-injection seam would be the
+honest fix if either ever matters more.
+
+**The xlsx dataset is parsed twice** — once by the intake to enumerate sheet names for the gate,
+once inside `ingestDataset`. A CLI process handles one dataset, so the cost is one extra SheetJS
+read; threading the opened workbook through `IngestInput` would remove it but widen a shipped
+browser-path signature for no browser benefit.
+
+**Progress copy is mirrored, not shared.** `src/cli/progress.ts` re-declares the five
+`PROGRESS_LABELS` strings and the three §E.5 `SUSPECT` sentences because both live in DOM modules
+(`ui/components/duckProgress.ts`, `ui/views/load/preview/previewModel.ts`) that must not enter a
+Node bundle. Nothing tests that the two copies agree. Lifting the pure string tables into
+`core/` beside `RULE_STATUS_LABELS` — which the CLI *does* share — is the obvious P22 tidy.
+
+**Not done, deliberately (all listed as out of scope):** `--strict` lint gating, a count-based
+`--fail-on`, xlsx-to-stdout, corrected-data file export. Two of those interact with `nodeHarden`:
+per `harden.ts`, a corrected-data export would have to run before the harden or relax
+`enable_external_access` on purpose.
+
+**A note for whoever adds the next flag:** `args.ts` is pure and `main()` is the only
+`process.exit` site, so a new flag is three edits (grammar, `USAGE`, the `runQuac` call) plus a row
+in `unit/cli/args.test.ts`. Keep refusals as `QuacCliError('usage')` — the exit-code table in
+`headless/errors.ts` maps them without `main()` learning anything new.

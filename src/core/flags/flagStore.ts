@@ -37,6 +37,14 @@ export interface FlagStoreSummary {
   correctionsCount: number;
   countsByRuleId: ReadonlyMap<string, number>;
   countsByColumn: ReadonlyMap<string, number>;
+  /**
+   * Distinct rows carrying at least one flag, across every rule — the
+   * dataset-level counterpart of `RuleAggregate.rowsAffected`, and NOT their
+   * sum (one row flagged by three rules counts once). Exact past the cap: the
+   * row sets behind it are recorded for every flag, materialized or merely
+   * counted (headless.md §7).
+   */
+  rowsAffected: number;
   /** Sheet-4 ordering: count desc, then ruleId asc. */
   perRule: RuleAggregate[];
 }
@@ -265,6 +273,8 @@ export function createFlagStore(opts: { cap?: number } = {}): FlagStore {
           };
         })
         .sort((a, b) => (a.count !== b.count ? b.count - a.count : a.ruleId < b.ruleId ? -1 : 1));
+      const flaggedRows = new Set<number>();
+      for (const rows of rowsByRule.values()) for (const row of rows) flaggedRows.add(row);
       return {
         totalCount,
         materializedCount: entries.size,
@@ -273,6 +283,7 @@ export function createFlagStore(opts: { cap?: number } = {}): FlagStore {
         correctionsCount,
         countsByRuleId: new Map(countsByRuleId),
         countsByColumn: new Map(countsByColumn),
+        rowsAffected: flaggedRows.size,
         perRule,
       };
     },

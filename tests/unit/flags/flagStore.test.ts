@@ -140,6 +140,20 @@ describe('flagStore aggregates', () => {
     // Sheet-4 ordering: count desc, then ruleId asc.
     expect(summary.perRule.map((r) => r.ruleId)).toEqual(['schema:prop:age:value', 'Q010', 'Q047']);
   });
+
+  it('counts a row flagged by several rules once in the dataset-level rowsAffected', () => {
+    const store = createFlagStore();
+    store.add([
+      cell(0, 'age', 'A'),
+      cell(0, 'score', 'B', { message: 'b' }), // same row, second rule
+      cell(1, 'age', 'A'),
+      { source: 'rules', ruleId: 'D', scope: 'dataset', severity: 'info', message: 'no row' },
+    ]);
+    const summary = store.summary(10);
+    // Per-rule sums to 3; the union is 2 — rowsAffected is the union.
+    expect(summary.perRule.reduce((n, r) => n + r.rowsAffected, 0)).toBe(3);
+    expect(summary.rowsAffected).toBe(2);
+  });
 });
 
 describe('flagStore cap', () => {
@@ -170,6 +184,11 @@ describe('flagStore cap', () => {
     expect(summary.severityTotals).toEqual({ error: 2, warning: 3, info: 3 });
     expect(summary.countsByRuleId.get('W3')).toBe(1);
     expect(summary.countsByRuleId.get('I3')).toBe(1);
+    // rowsAffected is a summary field the report and the CLI both quote, so it
+    // must survive eviction too: rows 0–7 each carry a flag, and only four of
+    // those flags are still materialized.
+    expect(summary.rowsAffected).toBe(8);
+    expect(store.all()).toHaveLength(4);
   });
 
   it('an error still displaces a warning when only warnings remain', () => {

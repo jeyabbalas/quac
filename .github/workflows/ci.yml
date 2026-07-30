@@ -19,6 +19,11 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run fixtures:check
+      # The headless CLI tier. Its pre-script builds dist-cli/, which needs no
+      # browsers and no duckdb-asset copying, so it runs before the Playwright
+      # steps and fails cheap. dist-cli/ is disjoint from dist/, leaving the
+      # bundle gate and the Pages artifact untouched by construction.
+      - run: npm run test:cli
       - name: Resolve Playwright version
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"

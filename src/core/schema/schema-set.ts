@@ -253,14 +253,20 @@ export function intakeEntry(
 export function intakeFiles(
   entries: readonly IntakeEntry[],
   origin: 'upload' | 'url',
+  preserveIntakePaths = false,
 ): IntakeResult {
   const normalized = entries.map((e) => ({ ...e, relativePath: normalizePath(e.relativePath) }));
   // Uploads only (§A.2.1): the strip is a webkitRelativePath artefact. A URL's
   // first `/`-delimited segment is its scheme, so stripping it ate `http:` —
   // and messages built here (E_PARSE, E_DUP_ID, the whole ref graph) are frozen
-  // before relativizeUrlPaths repairs the stored path (UX-10).
+  // before relativizeUrlPaths repairs the stored path (UX-10). Session restore
+  // sets `preserveIntakePaths`: its entries were stripped once already, and a
+  // second pass would strip ANOTHER level whenever the stripped paths still all
+  // share a leading directory (nested-only sets), changing fileIds/setId and
+  // breaking the stored index pin.
   const paths = normalized.map((e) => e.relativePath);
-  const stripped = origin === 'upload' ? stripCommonRoot(paths) : paths;
+  const stripped =
+    origin === 'upload' && !preserveIntakePaths ? stripCommonRoot(paths) : paths;
   const sorted = normalized
     .map((e, i) => ({ ...e, relativePath: stripped[i] ?? e.relativePath }))
     .sort((a, b) =>
@@ -321,6 +327,10 @@ export interface BuildOptions {
   fetchJson?: FetchJson;
   /** §A.4 `index=` value (P16 passes it); a match always suppresses the modal. */
   indexParam?: string;
+  /** Session restore (P19b): entries were stripped at their ORIGINAL intake —
+   *  skip `stripCommonRoot` so replay cannot strip a second level and change
+   *  fileIds/setId out from under the stored index pin. */
+  preserveIntakePaths?: boolean;
   caps?: { maxFiles?: number; maxDepth?: number };
 }
 
@@ -334,7 +344,7 @@ export async function buildSchemaSet(
   entries: readonly IntakeEntry[],
   options: BuildOptions,
 ): Promise<SchemaSet> {
-  const acc = intakeFiles(entries, options.origin);
+  const acc = intakeFiles(entries, options.origin, options.preserveIntakePaths === true);
   const graph = await resolveRefGraph({
     intake: acc,
     origin: options.origin,

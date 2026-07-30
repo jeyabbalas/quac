@@ -6,11 +6,13 @@ import {
   chooseRoot,
   loadSchemaEntries,
   loadSchemaUrls,
+  needsRootChoice,
   resetSchemaSlot,
+  restoreSchemaEntries,
   schemaState,
   summarizeSlot,
 } from '../../../src/core/schema/schema-store';
-import type { FetchJson } from '../../../src/core/schema/types';
+import type { FetchJson, SchemaSet } from '../../../src/core/schema/types';
 import { entry } from './helpers';
 
 const ARRAY_SCHEMA = {
@@ -97,6 +99,149 @@ describe('summarizeSlot during the load window (UX-04)', () => {
 
   it('an untouched slot is still empty', () => {
     expect(summarizeSlot(schemaState.get())).toEqual({ status: 'empty', detail: '' });
+  });
+});
+
+// Session restore (P19b): replay persisted entries offline; provenance and the
+// stored root choice must come back exactly — restore is indistinguishable from
+// the original load.
+describe('restoreSchemaEntries', () => {
+  const loadedSet = (): SchemaSet => {
+    const set = schemaState.get().set;
+    if (set === null) throw new Error('expected a loaded schema set');
+    return set;
+  };
+
+  it('upload round-trip: same setId/fileIds, root back, no prompt', async () => {
+    await loadSchemaEntries([
+      entry('pkg/core/index.schema.json', {
+        type: 'array',
+        items: { $ref: './person.schema.json' },
+      }),
+      entry('pkg/core/person.schema.json', {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+      }),
+    ]);
+    const original = loadedSet();
+    // The original intake stripped `pkg/`, leaving a nested-only set — the
+    // exact shape a second strip would rename.
+    expect(original.files.map((f) => f.relativePath)).toEqual([
+      'core/index.schema.json',
+      'core/person.schema.json',
+    ]);
+
+    await restoreSchemaEntries({
+      entries: original.files.map((f) => ({ relativePath: f.relativePath, raw: f.raw })),
+      origin: 'upload',
+      sourceUrls: [],
+      ...(original.root.indexFileId !== undefined
+        ? { chosenIndexFileId: original.root.indexFileId }
+        : {}),
+    });
+    const state = schemaState.get();
+    expect(state.phase).toBe('ready');
+    expect(state.sourceUrls).toEqual([]);
+    const restored = loadedSet();
+    expect(restored.setId).toBe(original.setId);
+    expect(restored.files.map((f) => f.fileId)).toEqual(original.files.map((f) => f.fileId));
+    expect(restored.root.rootFileId).toBe(original.root.rootFileId);
+    expect(needsRootChoice(restored)).toBe(false);
+  });
+
+  it('URL round-trip: entries replay by fileId offline, provenance republished', async () => {
+    const remote: Record<string, unknown> = {
+      'https://host.test/schemas/index.json': {
+        type: 'array',
+        items: { $ref: './person.json' },
+      },
+      'https://host.test/schemas/person.json': {
+        type: 'object',
+        properties: { a: { type: 'string' } },
+      },
+    };
+    const fetchJson: FetchJson = (url) => {
+      const json = remote[url];
+      if (json === undefined) return Promise.reject(new Error(`unexpected fetch ${url}`));
+      return Promise.resolve({ finalUrl: url, text: JSON.stringify(json) });
+    };
+    await loadSchemaUrls(['https://host.test/schemas/index.json'], fetchJson);
+    const original = loadedSet();
+    expect(original.files).toHaveLength(2); // the crawl pulled person.json
+
+    // Persist shape for URL sets: replay by fileId (the retrieval URL), which
+    // relativizeUrlPaths then re-renders into the same display paths.
+    await restoreSchemaEntries({
+      entries: original.files.map((f) => ({
+        relativePath: f.fileId,
+        raw: f.raw,
+        retrievalUri: f.retrievalUri,
+      })),
+      origin: 'url',
+      sourceUrls: ['https://host.test/schemas/index.json'],
+      ...(original.root.indexFileId !== undefined
+        ? { chosenIndexFileId: original.root.indexFileId }
+        : {}),
+    });
+    const state = schemaState.get();
+    expect(state.phase).toBe('ready');
+    expect(state.sourceUrls).toEqual(['https://host.test/schemas/index.json']);
+    const restored = loadedSet();
+    expect(restored.setId).toBe(original.setId);
+    expect(restored.files.map((f) => f.fileId)).toEqual(original.files.map((f) => f.fileId));
+    expect(restored.files.map((f) => f.relativePath)).toEqual(
+      original.files.map((f) => f.relativePath),
+    );
+    expect(restored.root.rootFileId).toBe(original.root.rootFileId);
+  });
+
+  it('an ambiguous set restores pinned through chosenIndexFileId', async () => {
+    const twoRoots = [
+      entry('a.schema.json', { type: 'array', items: { type: 'object' } }),
+      entry('b.schema.json', { type: 'array', items: { type: 'object' } }),
+    ];
+    await loadSchemaEntries(twoRoots);
+    expect(needsRootChoice(loadedSet())).toBe(true);
+    chooseRoot('b.schema.json');
+    const original = loadedSet();
+    expect(original.root.indexFileId).toBe('b.schema.json');
+
+    await restoreSchemaEntries({
+      entries: twoRoots,
+      origin: 'upload',
+      sourceUrls: [],
+      chosenIndexFileId: 'b.schema.json',
+    });
+    const restored = loadedSet();
+    expect(restored.root.rootFileId).toBe('b.schema.json');
+    expect(needsRootChoice(restored)).toBe(false);
+  });
+
+  it('a pending root choice restores pending and re-prompts', async () => {
+    // Persisted before any choice: chosenIndexFileId is simply absent.
+    await restoreSchemaEntries({
+      entries: [
+        entry('a.schema.json', { type: 'array', items: { type: 'object' } }),
+        entry('b.schema.json', { type: 'array', items: { type: 'object' } }),
+      ],
+      origin: 'upload',
+      sourceUrls: [],
+    });
+    const restored = loadedSet();
+    expect(schemaState.get().phase).toBe('ready');
+    expect(needsRootChoice(restored)).toBe(true);
+  });
+
+  it('a reset landing mid-restore discards the stale completion', async () => {
+    const pending = restoreSchemaEntries({
+      entries: [entry('schema.json', ARRAY_SCHEMA)],
+      origin: 'upload',
+      sourceUrls: [],
+    });
+    expect(schemaState.get().phase).toBe('loading');
+    resetSchemaSlot();
+    await pending;
+    expect(schemaState.get()).toMatchObject({ phase: 'empty', set: null, sourceUrls: [] });
   });
 });
 

@@ -60,6 +60,44 @@ export async function loadSchemaEntries(entries: readonly IntakeEntry[]): Promis
 }
 
 /**
+ * Session restore (P19b): replay persisted intake entries, offline by design.
+ * The entries were shaped from `set.files` at persist time (upload sets keep
+ * their already-stripped relativePaths, URL sets replay
+ * `{relativePath: fileId, raw, retrievalUri}`), so `preserveIntakePaths` keeps
+ * fileIds/setId byte-identical to the original load. No fetch port: a ref that
+ * once resolved over the network surfaces as E_UNRESOLVED_REF (fail open). The
+ * stored root choice rides `indexParam`, which resolves for BOTH origins
+ * (`computeIndexFileId` = declaredId ?? fileId/relativePath), so a set whose
+ * root was chosen never flashes the IndexPickerModal; a session persisted with
+ * the choice still pending restores pending and legitimately re-prompts.
+ */
+export async function restoreSchemaEntries(args: {
+  entries: readonly IntakeEntry[];
+  origin: 'upload' | 'url';
+  /** Republished verbatim so hashSync provenance survives the restore. */
+  sourceUrls: readonly string[];
+  /** `set.root.indexFileId` captured at persist time, whenever resolved. */
+  chosenIndexFileId?: string;
+}): Promise<void> {
+  const token = ++loadToken;
+  const sourceUrls = [...args.sourceUrls];
+  schemaState.set({ phase: 'loading', set: null, sourceUrls });
+  try {
+    const set = await buildSchemaSet(args.entries, {
+      origin: args.origin,
+      preserveIntakePaths: true,
+      ...(args.chosenIndexFileId !== undefined ? { indexParam: args.chosenIndexFileId } : {}),
+    });
+    if (token !== loadToken) return; // superseded by a reset or a newer load
+    schemaState.set({ phase: 'ready', set, sourceUrls });
+  } catch (err) {
+    if (token !== loadToken) return; // the failure belongs to a discarded load
+    schemaState.set({ phase: 'empty', set: null, sourceUrls: [] });
+    throw err;
+  }
+}
+
+/**
  * Load one or more schema URLs. Top-level fetch failures become E_FETCH
  * findings on the resulting set (never a rejection); the ref-graph crawl gets
  * the same fetch port for transitive refs.

@@ -60,6 +60,50 @@ describe('stripCommonRoot', () => {
   });
 });
 
+// Session restore (P19b) replays entries whose paths were stripped at their
+// ORIGINAL intake. On a nested-only set the stripped paths still share a
+// leading directory, so a second strip would rename every file — different
+// fileIds, different setId, and a stored index pin that no longer resolves.
+describe('preserveIntakePaths (session restore)', () => {
+  const nestedOnly = [
+    entry('core/a.schema.json', { type: 'array', items: { $ref: './b.schema.json' } }),
+    entry('core/b.schema.json', { type: 'object', properties: { x: { type: 'string' } } }),
+  ];
+
+  it('skips the upload strip so replay cannot strip a second level', () => {
+    expect(intakeFiles(nestedOnly, 'upload').files.map((f) => f.fileId)).toEqual([
+      'a.schema.json',
+      'b.schema.json',
+    ]);
+    expect(intakeFiles(nestedOnly, 'upload', true).files.map((f) => f.fileId)).toEqual([
+      'core/a.schema.json',
+      'core/b.schema.json',
+    ]);
+  });
+
+  it('replaying once-stripped entries reproduces fileIds and setId byte-identically', async () => {
+    const original = await buildSchemaSet(
+      [
+        entry('pkg/core/a.schema.json', { type: 'array', items: { $ref: './b.schema.json' } }),
+        entry('pkg/core/b.schema.json', { type: 'object', properties: { x: { type: 'string' } } }),
+      ],
+      { origin: 'upload' },
+    );
+    // One strip happened at intake (`pkg/` gone), leaving a nested-only set.
+    expect(original.files.map((f) => f.relativePath)).toEqual([
+      'core/a.schema.json',
+      'core/b.schema.json',
+    ]);
+    const replayed = await buildSchemaSet(
+      original.files.map((f) => ({ relativePath: f.relativePath, raw: f.raw })),
+      { origin: 'upload', preserveIntakePaths: true },
+    );
+    expect(replayed.files.map((f) => f.fileId)).toEqual(original.files.map((f) => f.fileId));
+    expect(replayed.setId).toBe(original.setId);
+    expect(replayed.root.rootFileId).toBe(original.root.rootFileId);
+  });
+});
+
 describe('computeSetId', () => {
   const a = entry('a.json', '{"type":"array"}');
   const b = entry('b.json', '{"type":"object"}');

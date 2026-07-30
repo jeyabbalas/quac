@@ -13,7 +13,30 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      // The perf gate is a stopwatch; it must not run here, where it would be
+      // sharing the machine with every other worker.
+      testIgnore: /perf\.smoke/,
+    },
+    {
+      // P22 task 2. Still part of the default `npm run test:e2e` — "gated in
+      // CI" has to mean the default command — but ALONE: `fullyParallel:false`
+      // plus `dependencies` means it starts only after the whole chromium
+      // project has finished, so the 60 s measurement is of the app rather
+      // than of five competing workers. `retries: 1` because a single
+      // stopwatch reading on shared CI hardware is not evidence of a
+      // regression; two consecutive ones are.
+      name: 'perf',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /perf\.smoke/,
+      dependencies: ['chromium'],
+      fullyParallel: false,
+      retries: 1,
+    },
+  ],
   webServer: [
     {
       // CI builds before running e2e; locally rebuild so tests never hit a stale dist/.

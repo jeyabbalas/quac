@@ -105,18 +105,18 @@ from. Link-like controls underline instead: they have no box to tint or ring.
 
 ## 3. Layout & navigation
 
-Header banner (sky background, black bottom stroke): logo (40px) + wordmark "QuaC" + subtitle "in-browser data quality control" · right: **Share** button, GitHub link (`github-logo.svg`). Primary nav = 3 tabs: **Load** · **QC Report** · **Rule Studio** (Report tab shows a severity-count pill after a run). Persistent slim privacy line under the header on Load: "Your data never leaves this browser. No uploads, no servers, no storage."
+Header banner (sky background, black bottom stroke): logo (40px) + wordmark "QuaC" + subtitle "Privacy-preserving data quality control" · right: **Reset** button (P19b, secondary), **Share** button, GitHub link (`github-logo.svg`). Primary nav = 3 tabs: **Load** · **QC Report** · **Rule Studio** (Report tab shows a severity-count pill after a run). Persistent slim privacy line (footer): "Your data never leaves this browser. No uploads, no servers — your session is saved only on this device."
 
 ## 4. Wireframes
 
 **Load (`#/load`)** — the first-run hero recedes once any slot fills (or the session came pre-configured from a link); the run bar is sticky at the viewport bottom so the CTA is always in reach (`html { scroll-padding-bottom }` keeps scrolled-to targets clear of it).
 ```
 +------------------------------------------------------------------------------+
-| [duck] QuaC  in-browser data quality control            [Share] [GitHub]     |
+| [duck] QuaC  Privacy-preserving data quality control  [Reset][Share][GitHub] |
 |  Load   |   QC Report (•12)   |   Rule Studio                                |
 +------------------------------------------------------------------------------+
-|  Files stay in this tab and are gone on reload — re-upload then, or load    |
-|  by URL and let QuaC re-fetch for you.                                       |
+|  Files stay in this browser and your session resumes on reload — Reset in   |
+|  the header starts fresh.                                                    |
 |  +==========================================================================+ |
 |  | (duck)  New here? Take QuaC for a spin.         [ Load example files ]  | |  <- first-run hero
 |  |         One click loads the bundled HESP example…                       | |     (Tier 1 sticker)
@@ -322,11 +322,18 @@ dialog **subsumes** the `Discard changes?` guard when the deleted row is the ope
 modal at a time, and once you've agreed to delete the rule the discard question is moot.
 
 **UIX-7 copy additions (pinned):** the clear confirms share `confirmDialog` (`app/clearInputs.ts` — `openModal`, question `<p>`, `.q-panel-note`, `.q-modal-actions` with Cancel-then-verb, focus opens on Cancel, exactly the `Delete rule?` recipe). Confirmation only when work would be lost; clear-all always asks. The three dialogs:
-- **Clear all inputs?** / `Remove the dataset, the JSON Schema, and the QC rules from this session?` / note `The QC report resets too. Your files stay on your computer.` (with unsaved Studio work, prepend `Unsaved Rule Studio edits in {names} will be lost — download the rules CSV first if you want a copy. `) / verb `Clear all inputs`.
+- **Clear all inputs?** / `Remove the dataset, the JSON Schema, and the QC rules from this session?` / note `The QC report resets too. Your files stay on your computer. The session saved in this browser is removed.` (P19b appended the last sentence — extend-only; with unsaved Studio work, prepend `Unsaved Rule Studio edits in {names} will be lost — download the rules CSV first if you want a copy. `) / verb `Clear all inputs`. Since P19b the header **Reset** opens this same dialog from every route.
 - **Clear the QC rules?** (unsaved work only) / `Remove all loaded QC rules files from this session?` / note `Unsaved Rule Studio edits in {names} will be lost. Download the rules CSV first if you want a copy.` / verb `Clear rules`.
 - **Remove this rules file?** (that file unsaved only) / `Remove {name} from this session?` / note `It has unsaved edits from Rule Studio that will be lost. Download the rules CSV first if you want a copy.` / verb `Remove file`.
 
 Feedback is one polite toast per action — the only announcement path AT users get (badges are not live regions): `Dataset cleared.` / `JSON Schema cleared.` / `QC rules cleared.` / `` `Removed ${name}.` `` / `All inputs cleared.`, each with hint `The QC report was reset.` iff a run existed at entry. "Unsaved Studio work" means `dirtyFiles` ∪ the open drawer draft (`app/rulesDraftProbe.ts` — an unsaved draft is invisible to `dirtyFiles`).
+
+**Session persistence copy additions (P19b, pinned):**
+- Header **Reset** button: text `Reset`, `title` `Clear all inputs and the saved session`; secondary `.q-btn`, placed BEFORE Share in `.q-actions`, on every route; disabled exactly like Share (the shared `anyLoaded` effect — disabled means unfocusable, so the first-run tab order `nav.spec` pins is unchanged). Click → `clearAllInputs` (the always-confirming dialog above; both it and the run-bar `Clear all inputs`, which stays, purge the persisted session).
+- Footer privacy line: `Your data never leaves this browser. No uploads, no servers — your session is saved only on this device.` (replaces the "no storage" line; pinned by `smoke.spec`/`nav.spec`).
+- Load hint: `Files stay in this browser and your session resumes on reload — Reset in the header starts fresh.`
+- Restore toast (after any IDB restore leg; never on a pure-URL refetch): `Restored your previous session.` + hint `Reset in the header starts fresh.`
+- Save-failure toast (≤1/session, error kind): `Couldn't save your session for resume — it may not survive a reload.`
 
 ## 6. Duck usage & copy deck (rationed — "lean into the joke, but sparingly")
 

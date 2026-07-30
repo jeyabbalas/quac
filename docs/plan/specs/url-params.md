@@ -5,10 +5,19 @@
 
 ## 1. Principles
 
-- All configuration lives in the **hash fragment** — nothing after `#` is ever sent to any server (no server logs, no Referer leakage) and it survives reloads. This is the app's only persistence.
+- All configuration lives in the **hash fragment** — nothing after `#` is ever sent to any server (no server logs, no Referer leakage) and it survives reloads. Since P19b it is the app's only **shareable** persistence: the device-local IndexedDB session (`ingestion.md §6`, `architecture.md §8.5`) resumes uploads and Studio work on THIS device, but a link carries only the fragment.
 - The fragment is **bidirectional** (UIX-10): it is not just read at boot but rewritten from the live session on every load, replace, upload-over and clear, so a reload always restores what is on screen. One writer owns this — `app/hashSync.ts` — and it computes the same live-provenance rule the Share modal does (`buildShareModel`), so the address bar and the Share link can never disagree.
-- Loading from params NEVER auto-runs QC (user consent to compute). Partial configs are first-class: a rules-only link leaves the Dataset slot highlighted: "Rules are pre-loaded. Add your dataset to run QC."
+- Loading from params NEVER auto-runs QC (user consent to compute) — session restore included. Partial configs are first-class: a rules-only link leaves the Dataset slot highlighted: "Rules are pre-loaded. Add your dataset to run QC."
 - Only URL-loaded artifacts are shareable; uploads cannot travel in a link (UX in §4) — and an upload **over** a URL-loaded slot drops that slot's param, for the same reason.
+
+**Boot decision table** (P19b, `decideBoot` in `app/sessionSnapshot.ts` — pure, node-tested). The fragment is arbitrated against the stored session; rows in order, and order matters (an uploads-only session has an EMPTY synced config, so row 2 must precede the equality row):
+
+| # | Condition | Decision |
+|---|---|---|
+| 1 | no stored session, or stored empty of slots (empty ≡ absent) | `ignore-stored` — today's boot verbatim |
+| 2 | fragment empty of config | `restore-stored` — full restore from IDB; hashSync then rewrites the bar from live provenance, so restored URL-origin slots **self-heal back to refetch semantics** on the next reload |
+| 3 | canonical slot keys equal (schema[]/rules[]/data, compared after `config=` expansion; passthrough and the `index=` pin excluded — the refetch leg honors the current link's `index=` regardless, so a stale pin must not demote the refresh and drop the uploads) | `refresh-with-upload-restore` — URL-provenance slots refetch through today's legs ("URLs reload themselves" stays true); upload-provenance slots restore from IDB; the rules slot moves as a WHOLE from IDB iff any stored file is an upload (cross-file correction order is a contract) |
+| 4 | differs (someone else's link) | `ignore-stored` — the link boots wholesale; the write-through overwrites the old session on its first change |
 
 ## 2. Grammar
 

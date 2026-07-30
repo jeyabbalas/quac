@@ -74,6 +74,33 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-30 · P19b · **IndexedDB session persistence & app-wide Reset (owner-directed spec amendment).**
+Users close the tab expecting to come back to their review, and until now the hash fragment was the only thing that
+survived — uploads, Rule Studio work and the toggle died with the tab. This deliberately amends the standing "no
+storage" rule (`architecture.md` §8.5, `ingestion.md` §6, the footer line): the session now persists to ONE
+IndexedDB database (`quac-session`) on this device — inputs only, never the report, and restore never auto-runs
+(consent to compute stands). Core stance: **persist original inputs, replay the existing loaders** — the dataset's
+already-retained source Blob re-ingests through the real card path with the sheet choice pinned (no SheetPicker),
+schema sets rebuild from persisted intake entries (`preserveIntakePaths` stops the upload strip from eating a second
+directory level; the chosen root rides `indexParam`, so no IndexPicker either), rules round-trip the §7 serializer
+with per-file provenance and dirty marks, and the Studio drawer draft comes back DIRTY so the discard guard stays
+armed. Boot is arbitrated by a four-row decision table (`url-params.md` §1): empty fragment → full restore (hashSync
+then self-heals restored URL slots back to refetch semantics); equal config → the normal refresh with upload slots
+from IDB (the rules slot moves whole iff any file is an upload — correction order is a contract); a different link
+wins wholesale. One judgment call against the plan's row-3 letter, recorded in `decideBoot`'s doc comment: the
+`index=` pin is EXCLUDED from the equality key (the refetch leg honors the current link's pin regardless, so a stale
+pin demoting the refresh would only drop the uploads it protects). The write-through is one effect over the live
+stores — loading slots never flush (a hung fetch persists nothing), dataset immediate, slots 500 ms, studio 1 s,
+hidden-tab flush, meta rewritten by the bar's own writer, all-empty clears the DB outright (a purge empties the DB
+rather than deleting it — a blocked `deleteDatabase` is not worth the open-connection gymnastics). Header `Reset`
+(before Share, enabled like Share) drives the same always-confirming clear-all, which now also purges. Two known
+fidelity losses documented in §6 (Ignored-files list, partly-failed-fetch findings); a link boot persists nothing
+until the first user change (markers seed from live state — also what stops a restore echo-saving itself). P20 still
+owns the README privacy rewording. Verified by hand in the real browser on the built preview: cold start → example →
+run (39/13/10/6, pill 62) → reload → restore toast → run → identical counts; Reset → first-run with `quac-session`
+emptied; two-tab last-write-wins; console QuaC-silent throughout.
+Unit 762 → 803, browser 60 → 73, e2e 101 → 111, entry JS 46.9 → 50.2 KB gz.
+
 2026-07-27 · UIX-18 · **A schema parse error names a file you can paste, and says it once — UX-10.**
 Reproduced first in the real browser, exactly as filed and confirmed at the character level: the finding read
 `` Error: `/localhost:4199/synthetic/mixed/notes.txt` is not valid JSON: Unexpected token 'T', "This file "... is not

@@ -36,17 +36,19 @@ import { executableRuleFile } from '../core/rules/executable';
 import { lintRuleFilesWithDataset } from '../core/rules/lint';
 import { parseRuleFile } from '../core/rules/parse';
 import { loadJSSandbox } from '../core/rules/sandbox-loader';
+import { crossCheckInputs } from '../core/pertinence';
 import { applyCastPlan, buildCastPlan, describeColumns } from '../core/schema/casting';
 import { columnDigest } from '../core/schema/column-meta';
 import { buildSchemaSet } from '../core/schema/schema-set';
 import { runSchemaValidation } from '../core/schema/validation-run';
 import { QuacCliError } from './errors';
 import { nodeHarden } from './harden';
-import { readDatasetInput, readRuleFiles, readSchemaEntries } from './intake';
+import { nodeFetchJson, readDatasetInput, readRuleFiles, readSchemaEntries } from './intake';
 import { createNodeBridge } from './nodeBridge';
 import { createInProcessValidationWorker } from './validationWorker';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import type { IngestFormat } from '../core/ingest/sniff';
+import type { CrossCheck } from '../core/pertinence';
 import type { RunArtifacts, RunProgress, RunStage } from '../core/pipeline';
 import type { ReportDataRow, ReportRowSource } from '../core/report/excelWriter';
 import type { ReportModel, RunInfoInput } from '../core/report/reportModel';
@@ -82,6 +84,7 @@ export interface RunQuacDatasetInfo {
   path: string;
   name: string;
   format: IngestFormat;
+  /** The worksheet actually read (verified against the workbook), else null. */
   sheet: string | null;
   rows: number;
   columns: number;
@@ -105,6 +108,13 @@ export interface RunQuacResult {
     /** Lint results for EVERY rules file, in argument order (not filtered). */
     rules: RuleFileLintResult[];
     applyCorrections: boolean;
+    /**
+     * Do the inputs look like they describe the same data
+     * (`json-schema-subsystem.md` §E.5)? Computed here because this is the only
+     * place holding all three column lists at once. With a single check source
+     * `edges` is short and `suspect` stays null — triangulation needs all three.
+     */
+    pertinence: CrossCheck;
   };
 }
 
@@ -118,9 +128,12 @@ async function resolveSchema(
   index: string | undefined,
 ): Promise<{ set: SchemaSet; digest: ColumnDigest } | null> {
   if (paths.length === 0) return null;
-  const entries = await readSchemaEntries(paths);
+  const { origin, entries } = await readSchemaEntries(paths);
   const set = await buildSchemaSet(entries, {
-    origin: 'upload',
+    origin,
+    // The crawler needs the port to follow transitive `$ref`s off the network;
+    // a local set has nothing to fetch and passes none (as the browser does).
+    ...(origin === 'url' ? { fetchJson: nodeFetchJson } : {}),
     ...(index === undefined ? {} : { indexParam: index }),
   });
 
@@ -169,6 +182,22 @@ async function syncTypedTables(
   await refreshDataView(bridge);
 }
 
+/**
+ * Distinct target columns of the rules that will actually run — the third
+ * vertex of the §E.5 triangle. Target-less rules (dataset scope, external) are
+ * skipped: they name nothing to compare the dataset against.
+ */
+function executableTargets(files: readonly RuleFile[]): string[] {
+  const targets = new Set<string>();
+  for (const file of files) {
+    for (const rule of file.rules) {
+      if (!rule.enabled || rule.ruleType === 'external') continue;
+      for (const target of rule.targetVariables) targets.add(target);
+    }
+  }
+  return [...targets];
+}
+
 /** QuickJS loads only when the run will actually execute a js correction. */
 const needsJsSandbox = (files: readonly RuleFile[], applyCorrections: boolean): boolean =>
   applyCorrections &&
@@ -213,7 +242,7 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
 
   // Read every input before opening a database: a typo in a path should not
   // cost a DuckDB instance, and the refusals below are cheaper to reach.
-  const dataset = await readDatasetInput(options.dataset);
+  const dataset = await readDatasetInput(options.dataset, options.sheet);
   const ruleInputs = await readRuleFiles(rulePaths);
   if (schemaPaths.length === 0 && ruleInputs.length === 0) {
     throw new QuacCliError(
@@ -229,7 +258,8 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
       name: dataset.name,
       bytes: dataset.bytes,
       format: dataset.format,
-      ...(options.sheet === undefined ? {} : { sheetName: options.sheet }),
+      // Already resolved and verified against the workbook by the intake.
+      ...(dataset.sheet === null ? {} : { sheetName: dataset.sheet }),
     });
 
     // ---- 2. Schema ----
@@ -292,6 +322,13 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
       },
     });
 
+    // A cancelled run has no report to write (§6: exit 130 leaves no file).
+    // The pipeline returns partial artifacts rather than throwing, so without
+    // this the abort path would still emit a half-validated workbook.
+    if (options.signal?.aborted === true || artifacts.cancelled) {
+      throw new QuacCliError('run', 'The QC run was cancelled — no report was written.');
+    }
+
     // ---- 8. Report (reportExport.ts parity, field for field) ----
     const root = schema?.set.files.find((f) => f.fileId === schema.set.root.rootFileId);
     const runInfo: RunInfoInput = {
@@ -349,7 +386,7 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
           path: dataset.path,
           name: dataset.name,
           format: dataset.format,
-          sheet: options.sheet ?? null,
+          sheet: dataset.sheet,
           rows: ingest.rowCount,
           columns: ingest.columns.length,
           sizeVerdict: dataset.sizeVerdict,
@@ -357,6 +394,18 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
         schema,
         rules: lintResults,
         applyCorrections,
+        pertinence: crossCheckInputs({
+          datasetColumns: ingest.columns,
+          ...(schema === null
+            ? {}
+            : {
+                schemaColumns: schema.digest.meta.map((m) => ({
+                  name: m.name,
+                  required: m.required,
+                })),
+              }),
+          ...(ruleFiles.length === 0 ? {} : { ruleTargets: executableTargets(ruleFiles) }),
+        }),
       },
     };
   } finally {

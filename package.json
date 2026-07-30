@@ -6,16 +6,36 @@
   "engines": {
     "node": ">=24"
   },
+  "bin": {
+    "quac": "dist-cli/quac.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/quac.d.ts",
+      "default": "./dist-cli/index.mjs"
+    }
+  },
+  "files": [
+    "dist-cli",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "predev": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
     "dev": "vite",
     "prebuild": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
     "build": "vite build",
+    "build:cli": "vite build --config vite.cli.config.ts",
+    "cli": "npm run build:cli --silent && node dist-cli/quac.mjs",
     "preview": "vite preview",
     "test": "vitest run --project unit",
     "pretest:browser": "node scripts/copy-duckdb-assets.mjs",
     "test:browser": "vitest run --project browser",
+    "pretest:cli": "npm run build:cli",
+    "test:cli": "vitest run --project cli",
     "test:e2e": "playwright test",
+    "prepack": "npm run build:cli",
     "typecheck": "tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -35,6 +55,7 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
+    "@duckdb/node-api": "1.5.5-r.1",
     "@fontsource/boogaloo": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -51,7 +72,6 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@duckdb/node-api": "1.5.5-r.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^24.10.13",

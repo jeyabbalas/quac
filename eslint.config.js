@@ -8,6 +8,8 @@ export default defineConfig(
   globalIgnores([
     'node_modules',
     'dist',
+    // the headless build output (vite.cli.config.ts) — built, never authored
+    'dist-cli',
     'playwright-report',
     'test-results',
     'coverage',

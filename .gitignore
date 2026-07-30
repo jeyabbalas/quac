@@ -2,6 +2,7 @@
 *.DS_Store
 node_modules/
 dist/
+dist-cli/
 public/duckdb/
 playwright-report/
 test-results/
@@ -13,3 +14,4 @@ blob-report/
 .vitest-attachments/
 __screenshots__/
 public/examples/
+*.tgz

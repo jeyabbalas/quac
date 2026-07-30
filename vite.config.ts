@@ -60,6 +60,19 @@ export default defineConfig({
           },
         },
       },
+      {
+        extends: true,
+        test: {
+          // The built-binary tier (headless.md §10): every case shells out to
+          // dist-cli/quac.mjs, which `pretest:cli` builds. Each one is a real
+          // DuckDB run over the committed fixtures, hence the timeout.
+          name: 'cli',
+          environment: 'node',
+          include: ['tests/cli/**/*.test.ts'],
+          testTimeout: 180_000,
+          hookTimeout: 180_000,
+        },
+      },
     ],
   },
 });

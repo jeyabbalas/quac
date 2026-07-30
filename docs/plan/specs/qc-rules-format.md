@@ -1,6 +1,6 @@
 # Spec: QC Rules File Format (`*.quac.csv`)
 
-> Audience: P02 (fixtures), P10 (parser/lint), P11–P13 (engine), P17–P18 (Studio), P20 (README user guide derives from this).
+> Audience: P02 (fixtures), P10 (parser/lint), P11–P13 (engine), P17–P18 (Studio), P21 (CLI `--help` points here), P22 (README user guide derives from this).
 > Depends on: `architecture.md` (QCFlag, `__row__`, view `data`). Engine semantics in `qc-rules-engine.md`.
 > This spec doubles as the source for end-user documentation of the format.
 

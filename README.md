@@ -7,4 +7,4 @@ tabular data — your data never leaves the browser.
 - Implementation plan: [docs/plan/00-master-plan.md](docs/plan/00-master-plan.md)
 - Deployed shell: https://jeyabbalas.github.io/quac/
 
-Full README arrives in P20.
+Full README arrives in P22.

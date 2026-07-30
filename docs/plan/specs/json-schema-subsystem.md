@@ -1,6 +1,6 @@
 # Spec: JSON-Schema Validation Subsystem
 
-> Audience: P06 (loading & root detection), P07 (digests & pertinence), P08 (FlagStore & translator), P09 (validation engine), P14 (integration).
+> Audience: P06 (loading & root detection), P07 (digests & pertinence), P08 (FlagStore & translator), P09 (validation engine), P14 (integration), P20 (headless in-process validator — §F protocol, §C casting; contract in `headless.md` §3).
 > Depends on: `architecture.md` (canonical `__row__`, `quac_raw`/`quac_typed`, QCFlag), `data-table-api.md`.
 > Ground truth calibration target: `tests/fixtures/hesp/json_schema/` — 14 files, draft 2020-12, `$id`s under
 > `https://schemas.example.org/hesp/...`, root `core/core.schema.json` = `type:"array"`, `items` = `allOf`[12 category

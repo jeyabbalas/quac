@@ -7,7 +7,7 @@
 - **Vanilla TypeScript + Vite**, no UI framework. Core engine (`src/core/**`) is framework-free and DOM-free (node-testable); the UI layer is direct DOM construction + a tiny signals module. If templating ever hurts, the sanctioned fallback is a tagged-template `html()` helper — never a framework.
 - **Plain CSS + design tokens** (`--quac-*`), mirroring data-table's `--dt-*` idiom. See `ui-design.md`.
 - **One DuckDB** for everything, via `@jeyabbalas/data-table`'s `WorkerBridge` (see `data-table-api.md`). WASM **self-hosted** at build time.
-- Libraries (verified July 2026): Ajv 8 (`Ajv2020`), SheetJS CE (read xlsx), exceljs (write xlsx, lazy), PapaParse, CodeMirror 6 (`@codemirror/lang-sql` PostgreSQL dialect + `@codemirror/lint`), `quickjs-emscripten` (JS rule sandbox, lazy), Vitest 4 (node + browser via `@vitest/browser-playwright`), `@duckdb/node-api` (test-only SQL parity), Playwright.
+- Libraries (verified July 2026): Ajv 8 (`Ajv2020`), SheetJS CE (read xlsx), exceljs (write xlsx, lazy), PapaParse, CodeMirror 6 (`@codemirror/lang-sql` PostgreSQL dialect + `@codemirror/lint`), `quickjs-emscripten` (JS rule sandbox, lazy), Vitest 4 (node + browser via `@vitest/browser-playwright`), `@duckdb/node-api` (node-test SQL parity; from P20 also the headless runtime engine — `headless.md`), Playwright.
 - Deploy: GitHub Pages, `base: '/quac/'`, target `https://jeyabbalas.github.io/quac/`.
 
 ## 2. Source tree
@@ -49,6 +49,9 @@ src/
   ui/
     views/load/  views/report/  views/studio/
     components/               # SlotCard, DropZone, UrlField, DuckProgress, Badge, Modal variants, ...
+  headless/                   # P20–P21 (headless.md): Node-only runtime — nodeBridge (node-api WorkerBridge facade),
+                              # validationWorker (in-process §F engine), harden, intake, run (runQuac), index (library entry)
+  cli/                        # P21 (headless.md §5): args, progress, summary, quac (bin main; the only process.exit site)
   styles/
     tokens.css base.css primitives.css   # only app-wide files; component/view CSS is co-located (ui-design.md §5)
 public/
@@ -58,7 +61,7 @@ scripts/
   generate-fixtures.mjs  copy-duckdb-assets.mjs  check-bundle-size.mjs
 ```
 
-Import rule: nothing under `src/core/` imports from `src/app/` or `src/ui/`.
+Import rule: nothing under `src/core/` imports from `src/app/` or `src/ui/`. Headless extension (P20): `src/headless/` and `src/cli/` import `src/core/**` and npm packages only; nothing under `src/app/` or `src/ui/` imports them, and no headless/cli module may reach the web entry graph (the bundle gate proves it — entry KB gz unchanged).
 
 ## 3. Row identity (canonical)
 
@@ -143,7 +146,7 @@ Threat model: **shared rule URLs make rule SQL/JS untrusted code** running again
 1. **DuckDB network exfiltration** (httpfs URL reads, extension fetches): closed at the **platform level**, not via SQL. The DuckDB worker ships as a generated `quac-*.worker.js` (hardening prelude + upstream source, built by `scripts/copy-duckdb-assets.mjs`) whose prelude removes network access from the worker scope: sync-XHR/fetch pass only for the exact same-origin vendored files (boot wasm + parquet/icu/json extensions); everything else is refused locally with no request made. Active from bridge creation — before any data exists — and neither reachable nor reversible from SQL. `core/bridge/harden.ts` (run at prepare) applies app-level `SET`s, pre-loads the vendored extensions, and disables extension auto-install/auto-load. The SQL gates this item originally specified are unusable in duckdb-wasm (`enable_external_access=false` kills the COPY/loadData round trip and is one-way; `lock_configuration` breaks data-table's per-load `SET TimeZone`) — verdict and evidence in Verified facts V6.
 2. **Rule SQL is single-statement**: lint rejects top-level `;` (string/comment-aware scan) so a cell cannot smuggle a second statement into the engine's wrappers. Rule text is never `eval`ed and never interpolated anywhere except the documented SQL wrappers and QuickJS.
 3. **JS rules run only in QuickJS-WASM** (lazy chunk): no fetch/DOM by construction; ~128 MB memory cap; interrupt budget ~2 s/chunk, 30 s/rule. Values cross as JSON.
-4. **WASM + fonts self-hosted** — after page load QuaC makes **zero third-party requests** (README claim, asserted by a Playwright network test in P20). Only user-initiated fetches of user-provided URLs (schema/rules/data) leave the origin, and schema-ref auto-crawl fetches schemas only, never data.
+4. **WASM + fonts self-hosted** — after page load QuaC makes **zero third-party requests** (README claim, asserted by a Playwright network test in P22). Only user-initiated fetches of user-provided URLs (schema/rules/data) leave the origin, and schema-ref auto-crawl fetches schemas only, never data. This item is browser-scoped; the headless runtime's equivalent posture (local Node process, `enable_external_access=false` after prepare, fetches only user-passed URLs) is `headless.md` §1–§2.
 5. **Device-local persistence, inputs only** (P19b, owner-directed amendment of the original "no persistence" rule): the session survives reload in ONE IndexedDB database, `quac-session` (v1, one object store, string keys `meta`/`dataset`/`schema`/`rules`/`studio`/`prefs`). What persists is the INPUTS — the dataset's original bytes, schema/rules text, Studio work (selection, drawer draft, dirty marks), the Apply-corrections toggle — never the QC report, and restore never auto-runs (consent to compute stands: the user clicks Run QC). Privacy substance is unchanged: nothing ever leaves the browser; it is now also saved on this device only, until the header `Reset` or the run-bar `Clear all inputs` wipes it (the all-empty state clears the DB outright — empty ≡ absent). Storage is best-effort and fail-open: IDB unavailable/corrupt/foreign-versioned means today's boot verbatim. `localStorage` stays trivial-prefs-only, plus the one-byte session presence hint (`quac.session.hint`) the boot path reads synchronously so the first-run hero cannot flash while the async IDB read resolves.
 6. Residual risk (documented in README): malicious SQL can still DoS the tab (cross-join explosion). Mitigations: warning banner when rules come from URLs, cooperative cancellation, and the caps in `qc-rules-engine.md`.
 

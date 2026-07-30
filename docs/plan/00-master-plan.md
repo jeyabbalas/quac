@@ -15,6 +15,8 @@ annotated interactive grid (`@jeyabbalas/data-table` on DuckDB-WASM), and export
 Configurations are shareable via URL hash params so data stewards can validate privately in their own browsers.
 Privacy is the headline feature: **data never leaves the browser**. A **Rule Studio** lets users compose/edit rules
 with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck branding, used sparingly.
+The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQuac()` API for data pipelines
+(P20–P21, contract in `specs/headless.md`); the browser app is unchanged by it.
 
 ## Document map
 
@@ -30,6 +32,7 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 | `specs/url-params.md` | Hash-fragment grammar, `config=` manifest, ShareModal, CORS host table |
 | `specs/ui-design.md` | Tokens/palette, wireframes, component inventory, duck copy deck, a11y checklist |
 | `specs/testing-strategy.md` | Test tiers, golden journeys, fixtures strategy, named test files, CI, budgets |
+| `specs/headless.md` | Headless Node runtime & CLI contract: node-api bridge adapter, in-process validation, typed-sync mirror, `runQuac()` API, CLI grammar, exit codes, summary JSON, build/packaging, parity & test map |
 
 ## Working protocol for CC agents (binding)
 
@@ -39,13 +42,14 @@ with CodeMirror + live preview. Hosted on GitHub Pages at `/quac/`. Playful duck
 4. If reality contradicts a spec (especially ⏳ items in `architecture.md → Verified facts`): spend ≤30 min confirming, then implement the documented fallback, and record the deviation in **Verified facts** AND the progress log. Later agents trust Verified facts over any other statement.
 5. On completion: all named verifications pass; tick your phase in the checklist below (`[x]`, date, commit/PR); append a 3–5-line progress-log entry (what shipped, deviations, notes for successors).
 6. Fixtures are append-only for other phases' expectations. Changing `scripts/generate-fixtures.mjs` output requires re-running `fixtures:check` and a progress-log note.
-7. Commit style: conventional-ish, imperative subject; do not bump versions or tag except in P20.
+7. Commit style: conventional-ish, imperative subject; do not bump versions or tag except in P22.
 
 ## Phase index & status
 
 Sizing: one focused CC session each (~0.5–2 human-days); the repo ends every phase green and deployable.
 Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P06, P08, P10 can interleave after P01
 (P02 after P01; P06–P09 after P04; the listed `Depends` is binding, the ordering otherwise advisory).
+Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release phase (previously numbered P20) goes last.
 
 | Status | Phase | Title | Depends on |
 |---|---|---|---|
@@ -68,7 +72,9 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 | [x] 2026-07-24 · 47179c2 | P17 | Rule Studio: workspace & editor | P12, P05 |
 | [x] 2026-07-24 · ce4e15b | P18 | Rule Studio: preview, gate, export | P17 |
 | [x] 2026-07-25 · a89baa0 | P19 | Branding polish & accessibility | P14, P16, P18 |
-| [ ] | P20 | Hardening, perf, docs, release | all |
+| [ ] | P20 | Headless core: the QC pipeline under Node | P14, P15 |
+| [ ] | P21 | Headless CLI & packaging | P20 |
+| [ ] | P22 | Hardening, perf, docs, release | all |
 
 ## Progress log
 
@@ -76,6 +82,18 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-07-30 · plan · **QuaC grows a headless mode — P20/P21 inserted, the release phase renumbered P20 → P22.** Owner-directed
+amendment for pipeline users who need ingest → schema validation → rules + corrections → Excel report under plain Node
+(no Studio, no UI). Contract in the new `specs/headless.md`; phases: P20 (node-api bridge adapter + extracted
+validation core + typed-sync mirror + exact-count fixture proof), P21 (`quac` CLI + `runQuac()` + packaging), P22
+(release, publish executed there). A scratchpad-only spike proved the whole wiring this session: full pipeline on
+Node v22 via a 5-member WorkerBridge facade over `@duckdb/node-api`, all 23 `seeded-violations.json` injections at
+their cells, `mini_expected_flags.json` deep-equal (browser-pinned manifest), identical double-run digests, identical
+digests across csv/xlsx/json/parquet routes, HESP full run ≈ 1.3 s. Two findings future agents must not relearn:
+(1) the rules lint dry-run needs `typedSync`'s cast applied first or 12 HESP rules lint-fail on all-VARCHAR and are
+excluded; (2) the CLI build is a Vite SSR build — esbuild is NOT in the tree (Vite 8 = rolldown). **`P20` in entries
+below this line means the release phase, now P22.** Unit 803, browser 73, e2e 112, entry 50.3 KB gz — all unchanged (docs-only).
 
 2026-07-30 · UIX-19 · **A reload restores the session on whatever tab it lands — no Load-tab visit needed** (reverses
 P19b's "deliberate quirk" note). Mount order, not persistence: both dataset loaders (`registerDatasetUrlLoader` P16,
@@ -542,7 +560,7 @@ BASE_URL is '/' in node env) and V10 (Pages actions at v6/v5/v5, not spec's v5/v
 
 | BRIEF requirement | Where |
 |---|---|
-| Client-side TS app, GitHub Pages, no data leaves browser | `architecture.md` §1/§8; P01, P20 (network-isolation test) |
+| Client-side TS app, GitHub Pages, no data leaves browser | `architecture.md` §1/§8; P01, P22 (network-isolation test — browser-scoped; the headless leg's posture is `headless.md` §1) |
 | Inputs: dataset JSON/CSV/TSV/Excel(sheet choice, default 1)/Parquet | `ingestion.md` §2; P05 (SheetPickerModal) |
 | JSON Schema single file or multi-file network; auto-detect main file; modal on ambiguity | `json-schema-subsystem.md` §A; P06 |
 | Selected index file id included in share URL | `json-schema-subsystem.md` §A.4 + `url-params.md` §2; P06, P16 |
@@ -561,6 +579,7 @@ BASE_URL is '/' in node env) and V10 (Pages actions at v6/v5/v5, not spec's v5/v
 | Compose/edit/serialize rules with live effects (data-table) + CodeMirror completion/intelligence + check-before-save | `qc-rules-engine.md` §8 + `ui-design.md` studio; P17–P18 |
 | Early phase creates example inputs: mock HESP data (valid+invalid) + rules CSVs | `testing-strategy.md` §3; P02 |
 | Duck branding, sparing puns, duck loading bar, white main area, logo palette | `ui-design.md`; P04, P19 |
-| README encourages JSON Schema for schema validation rules | P20 README task |
+| README encourages JSON Schema for schema validation rules | P22 README task |
 | Unit tests + UI/UX checks per phase | every phase file §Verification; `testing-strategy.md` |
 | Out of scope for v1 (documented): external-source/linkage rules execution (loaded & listed, not run), case auto-mapping, dark mode, in-app row add/delete corrections | `qc-rules-format.md` §3, `json-schema-subsystem.md` §E.5, `ui-design.md` §2 |
+| *(Owner amendment 2026-07-30 — extends BRIEF's "client-side web app" scope, does not revoke it)* Headless Node.js QC runs for data pipelines: same inputs, same report, no browser, no server | `specs/headless.md`; P20–P21; P22 README/changelog/publish |

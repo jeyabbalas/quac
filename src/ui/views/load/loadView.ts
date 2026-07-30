@@ -31,8 +31,11 @@ interface ExampleIndex {
 export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   const hint = document.createElement('p');
   hint.className = 'q-load-hint';
+  // P19b: reload resumes the session now — the hint sells that and names the
+  // way out (the old line promised inputs die with the tab, which is no
+  // longer true).
   hint.textContent =
-    'Files stay in this tab and are gone on reload — re-upload then, or load by URL and let QuaC re-fetch for you.';
+    'Files stay in this browser and your session resumes on reload — Reset in the header starts fresh.';
 
   // ---- First-run hero (P14 demo affordance): one click fills all 3 slots.
   // Recedes the moment any slot holds something (or a link pre-configured

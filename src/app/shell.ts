@@ -3,6 +3,7 @@
  * the three views, footer privacy line. Views are mounted lazily on first
  * visit and then toggled with `hidden`, preserving their state for P05/P17.
  */
+import { clearAllInputs } from './clearInputs';
 import { effect } from './signals';
 import { initToasts } from './toast';
 import { openModal } from './modal';
@@ -76,6 +77,19 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
 
   const actions = document.createElement('div');
   actions.className = 'q-actions';
+  // P19b: the explicit session reset — refresh used to be the reset, and now
+  // it resumes. Drives the same always-confirming flow as the run-bar's
+  // `Clear all inputs` (which stays); both wipe the persisted session.
+  // Reachable from every route, unlike the run-bar button.
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'q-btn';
+  reset.textContent = 'Reset';
+  reset.disabled = true; // enabled with Share (same anyLoaded effect below)
+  reset.title = 'Clear all inputs and the saved session';
+  reset.addEventListener('click', () => {
+    void clearAllInputs(ctx);
+  });
   const share = document.createElement('button');
   share.type = 'button';
   share.className = 'q-btn q-btn--primary';
@@ -97,7 +111,7 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   githubIcon.width = 46;
   githubIcon.height = 46;
   github.append(githubIcon);
-  actions.append(share, github);
+  actions.append(reset, share, github);
 
   const nav = document.createElement('nav');
   nav.className = 'q-tabs';
@@ -143,8 +157,10 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
   const footer = document.createElement('footer');
   footer.className = 'q-footer';
   const privacyLine = document.createElement('p');
+  // P19b: the session now survives reload in IndexedDB, so "no storage" would
+  // be a lie — the privacy substance (nothing leaves the browser) is intact.
   privacyLine.textContent =
-    'Your data never leaves this browser. No uploads, no servers, no storage.';
+    'Your data never leaves this browser. No uploads, no servers — your session is saved only on this device.';
   footer.append(privacyLine);
 
   root.append(header, main, footer);
@@ -169,13 +185,15 @@ export function mountShell(root: HTMLElement, ctx: ShellContext): void {
     pill.update(run?.flagsSummary ?? { errors: 0, warnings: 0, infos: 0 });
   });
 
-  // Share becomes available once any slot has content (nothing to share when
-  // every slot is empty — keeps the keyboard "disabled Share skipped" contract).
+  // Share and Reset become available once any slot has content (nothing to
+  // share or reset when every slot is empty — and disabled means unfocusable,
+  // which keeps the keyboard "disabled controls skipped" tab order intact).
   effect(() => {
     const anyLoaded = (['data', 'schema', 'rules'] as const).some(
       (id) => ctx.store.slots[id].get().status !== 'empty',
     );
     share.disabled = !anyLoaded;
+    reset.disabled = !anyLoaded;
   });
 
   // P14 re-run semantics (architecture §6): replacing the dataset invalidates

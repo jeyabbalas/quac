@@ -20,7 +20,9 @@ test('default view is Load with the privacy line and hidden siblings', async ({ 
   await expect(page.getByText('Load a dataset to compose rules against it')).toBeHidden();
   // Exactly one instance in the DOM (strict mode) — it lives in the footer.
   await expect(
-    page.getByText('Your data never leaves this browser. No uploads, no servers, no storage.'),
+    page.getByText(
+      'Your data never leaves this browser. No uploads, no servers — your session is saved only on this device.',
+    ),
   ).toBeVisible();
 });
 

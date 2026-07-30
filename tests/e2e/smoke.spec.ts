@@ -13,7 +13,9 @@ test('shell serves under /quac/ with header, logo, and favicon', async ({ page }
   await expect(page.getByRole('heading', { name: 'QuaC', exact: true })).toBeVisible();
   await expect(page.getByText('Privacy-preserving data quality control')).toBeVisible();
   await expect(
-    page.getByText('Your data never leaves this browser. No uploads, no servers, no storage.'),
+    page.getByText(
+      'Your data never leaves this browser. No uploads, no servers — your session is saved only on this device.',
+    ),
   ).toBeVisible();
 
   // .q-logo: the header gained a second img (GitHub icon) in P04 — keep strict mode happy

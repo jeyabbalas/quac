@@ -17,7 +17,7 @@ a DuckDB engine compiled to WebAssembly, and written back out as a download. The
 send it to. The `quac` CLI is the same pipeline under Node, for the times a report belongs in a
 pipeline rather than on a screen.
 
-![The Load view: dataset, JSON Schema and QC rules loaded, with a consistency check and a preview](docs/images/load.png)
+![The Load view: dataset, JSON Schema and QC rules loaded, with a consistency check and a preview](https://raw.githubusercontent.com/jeyabbalas/quac/main/docs/images/load.png)
 
 ---
 
@@ -194,7 +194,7 @@ The full grammar, the exact SQL each assertion expands to, and the `js` correcti
 
 ## The report
 
-![The QC report: stat cards, findings panels, and the dataset grid with flagged cells highlighted](docs/images/report.png)
+![The QC report: stat cards, findings panels, and the dataset grid with flagged cells highlighted](https://raw.githubusercontent.com/jeyabbalas/quac/main/docs/images/report.png)
 
 On screen you get counts, four panels (Summary, Missing vars, Findings, Offenders) and the dataset
 itself with every flagged cell coloured by severity. **Download QC Report (.xlsx)** writes five
@@ -214,7 +214,7 @@ The report is generated fresh each time and never stored anywhere.
 
 ## Rule Studio
 
-![Rule Studio: the rule editor with a syntax-highlighted SQL condition and a live data preview](docs/images/studio.png)
+![Rule Studio: the rule editor with a syntax-highlighted SQL condition and a live data preview](https://raw.githubusercontent.com/jeyabbalas/quac/main/docs/images/studio.png)
 
 Rule Studio is where rules get written rather than merely run. It gives you a form per rule with a
 CodeMirror editor for the condition and the update expression, SQL and JavaScript syntax

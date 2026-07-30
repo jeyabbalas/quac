@@ -11,7 +11,7 @@ test('shell serves under /quac/ with header, logo, and favicon', async ({ page }
   await expect(page).toHaveTitle('QuaC');
   // exact: the Load view's first-run hero heading also mentions QuaC.
   await expect(page.getByRole('heading', { name: 'QuaC', exact: true })).toBeVisible();
-  await expect(page.getByText('in-browser data quality control')).toBeVisible();
+  await expect(page.getByText('Privacy-preserving data quality control')).toBeVisible();
   await expect(
     page.getByText('Your data never leaves this browser. No uploads, no servers, no storage.'),
   ).toBeVisible();

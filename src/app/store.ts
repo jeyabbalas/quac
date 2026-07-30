@@ -96,7 +96,9 @@ export type ArtifactProvenance = 'upload' | { url: string };
 
 /**
  * The ingested dataset (P05+). Source bytes stay in memory for the session
- * only (re-ingest on schema change; never persisted — ingestion.md §6).
+ * (re-ingest on schema change) and are what the P19b write-through persists
+ * to IndexedDB — restore replays them through the real ingest path
+ * (ingestion.md §6).
  */
 export interface DatasetSession {
   name: string;
@@ -136,7 +138,10 @@ export interface AppStore {
   /** "Apply corrections" run toggle (qc-rules-engine.md §2); false = assess-only. */
   applyCorrections: Signal<boolean>;
   shareables: Signal<readonly ArtifactProvenance[]>;
-  /** True once the boot flow (P16) loaded any slot from a URL/config= link. */
+  /** True once the boot flow loaded any slot from a URL/config= link (P16)
+   *  or seeded it from the stored session (P19b restore — set optimistically
+   *  from the presence hint before the async IDB read, so the first-run hero
+   *  cannot flash, and dropped again if the hint lied). */
   preconfigured: Signal<boolean>;
 }
 

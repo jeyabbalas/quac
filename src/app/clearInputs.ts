@@ -26,6 +26,7 @@ import { syncHashFromStores } from './hashSync';
 import { openModal } from './modal';
 import { invalidateRun } from './runInvalidation';
 import { peekRulesDraftFile } from './rulesDraftProbe';
+import { purgeSession } from './sessionPersistence';
 import { signal } from './signals';
 import { showToast } from './toast';
 import { clearRuleFiles, removeRuleFile, rulesState } from '../core/rules/rules-store';
@@ -298,11 +299,18 @@ export async function removeRulesFile(ctx: ShellContext, name: string): Promise<
  * Clear every input. ALWAYS confirms (owner decision 3). Ordering pinned —
  * the signals have no batching, so the preconfigured flag drops FIRST (the
  * example-hero/preconfig nudge must not flash mid-clear), then rules, schema,
- * dataset, and ONE hash sync at the end.
+ * dataset, ONE hash sync, and the session purge (P19b) at the end. The
+ * write-through's empty≡delete rule already clears the backend on the slot
+ * writes above; the explicit purge additionally cancels pending flush timers
+ * and drops the presence hint, and it covers a clear that lands during the
+ * boot window, before that effect is armed. Both the run-bar `Clear all
+ * inputs` and the header `Reset` route here.
  */
 export async function clearAllInputs(ctx: ShellContext): Promise<void> {
   const unsaved = unsavedRuleWork();
-  const baseNote = 'The QC report resets too. Your files stay on your computer.';
+  const baseNote =
+    'The QC report resets too. Your files stay on your computer. ' +
+    'The session saved in this browser is removed.';
   const ok = await confirmDialog({
     title: 'Clear all inputs?',
     question: 'Remove the dataset, the JSON Schema, and the QC rules from this session?',
@@ -320,5 +328,6 @@ export async function clearAllInputs(ctx: ShellContext): Promise<void> {
   clearSchemaSlot();
   await clearDatasetCore(ctx, false);
   syncHashFromStores(ctx.store);
+  await purgeSession();
   announceClear('All inputs cleared.', hadRun);
 }

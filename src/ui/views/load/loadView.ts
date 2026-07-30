@@ -10,6 +10,7 @@ import { clearAllInputs, isDatasetUiBusy } from '../../../app/clearInputs';
 import { reportError } from '../../../app/errors';
 import { assetUrl } from '../../../app/urlBase';
 import { registerDatasetUrlLoader } from '../../../app/bootConfig';
+import { registerDatasetRestoreLoader } from '../../../app/sessionPersistence';
 import { addRuleUrls } from '../../../core/rules/rules-store';
 import { loadSchemaUrls } from '../../../core/schema/schema-store';
 import { mountDatasetCard } from './datasetCard';
@@ -103,6 +104,8 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
 
   // P16: the boot flow drives the Dataset card's own URL loader (real progress).
   registerDatasetUrlLoader(dataCard.fetchUrl);
+  // P19b: session restore replays the persisted bytes through the same card.
+  registerDatasetRestoreLoader(dataCard.restoreBlob);
 
   // P16 partial-config UX: a pre-configured link that filled Schema/Rules but
   // not the Dataset highlights the empty slot with a nudge (never auto-runs).
@@ -146,9 +149,13 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   toggleLabel.className = 'q-runbar-toggle';
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';
-  toggle.checked = ctx.store.applyCorrections.get();
   toggle.addEventListener('change', () => {
     ctx.store.applyCorrections.set(toggle.checked);
+  });
+  // Effect, not a one-shot read: the P19b session restore writes this signal
+  // (possibly after mount), and a restored `false` must not render checked.
+  effect(() => {
+    toggle.checked = ctx.store.applyCorrections.get();
   });
   toggleLabel.append(toggle, document.createTextNode(' Apply corrections'));
   toggleLabel.title = 'Off = assess-only: schema and validation rules run on the untouched data.';

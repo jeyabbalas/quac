@@ -74,6 +74,38 @@ Critical path: **P01 → P03 → P05 → P09/P11 → P14 → P15**. P02, P04, P0
 
 > Append-only. Newest entries at the top. Format: `YYYY-MM-DD · PNN · <3–5 lines>`
 
+2026-07-30 · UIX-19 · **A reload restores the session on whatever tab it lands — the Load visit is no longer part of the deal.**
+Filed by the owner against shipped P19b: refresh on `#/report` or `#/studio` and the work does not reload until the
+Load tab is clicked. The mechanism was mount order, not persistence: both dataset entry points —
+`registerDatasetUrlLoader` (P16) and `registerDatasetRestoreLoader` (P19b) — are registered by the Load VIEW at
+mount, and the shell mounted views lazily on first visit, so any boot landing elsewhere parked its dataset leg in
+the pending seam (schema/rules never parked — store-level loaders — which is why Studio looked half-restored:
+files present, dataset and completions missing). The P19b log recorded the `#/report` half as a pre-existing quirk
+mirrored deliberately; the owner has now ruled, and the ruling covers the URL leg too. Fix in one move: the shell
+mounts the Load view eagerly — hidden — before `applyBootConfig` runs, on every route; Report and Studio stay
+lazy. That makes main.ts's "loader registered before boot reads the fragment" comment true everywhere instead of
+only on `#/load`, un-parks both dataset legs, keeps `data=` in the bar on a `#/report` reload instead of
+transiently dropping it (`url-params.md` §2), and puts the dataset clear UI behind header Reset on routes that
+never visited Load. The pending seams stay as safety nets. Checked before choosing eager mount: the Load subtree
+is measurement-safe hidden (plain tables, no CodeMirror) and every heavy import stays behind data-arrival effects,
+so a cold boot fetches nothing new — entry 50.2 → 50.3 KB gz is the mount call and comments. Two consequences
+handled in the Studio chunk: (1) with the dataset leg live, a restored dataset can flip studioView's content gate
+and mount the workspace BEFORE the rules leg publishes, and the mount-time `takePendingStudioRestore` would
+consume-and-drop a record naming files merely late, not gone — the restore now applies as soon as every named file
+exists, or the moment the slot settles (one-shot `rulesState.subscribe`), restoring whatever still exists as ever;
+(2) a restored drawer opened before the lint context installs kept "SQL checks are pending until a dataset is
+loaded" beside a 101-row live preview — found in the manual pass, and the same staleness always hit a drawer left
+open across a Load-tab upload — so the gate-tracking effect now re-lints the open draft when `getLintContext()`
+changes identity. e2e: the mixed crown asserts the dataset badge and an ENABLED Run through the hidden Load view
+before any tab click (clicking Load first would mask the parking bug), and a new `#/studio` pass reloads a
+dataset+rules+draft session in place — drawer and draft back, rules badge landing `Warning` (not pending-data
+`Valid`) because the restored context reached the restored rules, and the draft hint gone. Verified by hand in
+Chrome on the built preview, both filed repros: example → QC Report → reload lands on `#/report` with the grid
+inspectable, all badges settling Valid, Run enabled, `data=` kept, zero toasts (all-URL refetch claims no
+restore); Studio → Q011 drawer → typed draft → reload on `#/studio` → drawer, draft, 3 files, 101-row preview all
+back with no Load visit, and the pending-data hint clears when the context lands. Console QuaC-silent.
+Unit 803 unchanged, browser 73 unchanged, e2e 111 → 112, entry JS 50.2 → 50.3 KB gz.
+
 2026-07-30 · P19b · **IndexedDB session persistence & app-wide Reset (owner-directed spec amendment).**
 Users close the tab expecting to come back to their review, and until now the hash fragment was the only thing that
 survived — uploads, Rule Studio work and the toggle died with the tab. This deliberately amends the standing "no

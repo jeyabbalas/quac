@@ -32,4 +32,66 @@ New features. File follow-up issues instead (list them in the progress log).
 - **UI/UX:** `perf.smoke.spec.ts` + `network-isolation` green; manual: walk the README top-to-bottom on the live Pages URL doing exactly what it says (fresh browser profile) — every instruction works verbatim, including the headless section on a clean Node 24 (`npx` or clone path).
 
 ## Deferred notes
-*(agent fills in — the v1.1 seed list)*
+
+The v1.1 seed list. Each entry is something P22 measured and consciously did not do, with enough
+detail that the next agent does not have to re-derive it.
+
+**Filed as follow-ups, with the evidence already gathered**
+
+1. **The CSV route cannot reach the perf gate — at all, not marginally.** `perf.smoke.spec.ts` uses
+   Parquet because V20's delimited ceiling is `rows × cols × rowJsonBytes ≈ 10⁹` and 100k × 20 is
+   ~380× past it. The PapaParse → wrapped-JSON → `json_extract_string` route is the bottleneck, and
+   it is the route most users' first file takes. A streaming CSV ingest (DuckDB's own `read_csv`
+   over a registered file buffer, skipping the JSON hop entirely) is the obvious fix and would
+   change the ceiling by orders of magnitude. Sized, not attempted: it rewrites the one path every
+   other ingest format is defined against.
+2. **`quoteIdentifier` is now duplicated between QuaC and `@jeyabbalas/data-table`.** P22 lifted it
+   (`src/core/sql-identifier.ts`) so the CLI's `dependencies` could drop the grid, and
+   `tests/unit/core/sql-identifier.test.ts` holds the two copies to character-for-character
+   agreement. That test is the only thing keeping them honest; it will fail loudly rather than
+   drift silently, but the real fix is upstream publishing the helper as a zero-dependency
+   subpath export (`@jeyabbalas/data-table/sql`) that a Node program can import without the grid.
+3. **`xlsx` installs from `cdn.sheetjs.com`, not the npm registry** (`headless.md §9`). Pinned and
+   integrity-checked, so the exposure is availability and policy rather than substitution — but an
+   air-gapped installer, a corporate registry mirror, or an allowlisting proxy fails the install
+   with a fetch error. There is no fix that keeps the capability: the registry's copy stopped at
+   0.18.5 and predates the API this code uses. The real decision, when it comes, is whether Excel
+   input is worth a non-registry dependency, and that is a product call rather than a technical one.
+4. **A GitHub Actions cache for `public/duckdb/extensions/`.** Phase-03 bundled this with the hash
+   pinning; P22 answered them separately, because the pinning changes what executes and the cache is
+   CI-only wall-clock on a step measured in seconds. The exact recipe is recorded in
+   `scripts/copy-duckdb-assets.mjs`'s docstring, and it is now SAFE to add — a cache hit gets the
+   same SHA-256 check a cold download does, and keying on the script's own hash invalidates the
+   cache whenever `DUCKDB_CORE_VERSION` or the hash table changes.
+5. **`jeyabbalas/data-table#84` — the keyboard trap (V22).** Filed with the 900-press evidence and
+   the note that axe cannot detect a WCAG 2.1.2 violation. The diagnostic list was re-run at the
+   pinned 0.5.1 and is unchanged. QuaC's mitigations (skip control, Escape hatch) stay until a fixed
+   version ships; re-check `ui-design.md §9` on any upgrade.
+
+**Known gaps in coverage, stated rather than implied**
+
+6. **Exit codes 4 and 130 are not observed by any test.** 4 is "the run could not execute", which no
+   fixture can provoke without breaking the engine on purpose; 130 is SIGINT, which needs a spawn
+   the test interrupts mid-run. `tests/cli/exitCodes.test.ts`'s docstring says so explicitly rather
+   than implying a closed set. What *is* pinned is the boundary between 4 and 5: the exit-5 case
+   succeeds at the run and fails only at the write.
+7. **Chromium is the only browser with automated coverage**, and there is no in-app support
+   detection — an incapable browser fails with a generic error rather than a clear message. Both
+   Playwright projects and the Vitest browser tier are Chromium. A WebKit/Firefox project is cheap
+   to add and would probably find something; nobody has looked.
+8. **The 265-column spot-check is opt-in** (`QUAC_PERF_WIDE=1`). It is typechecked and linted on
+   every run but executed on demand, because width costs schema-translation time the 60 s gate is
+   not about and the phase asked for the number, not a second gate.
+
+**Small, real, and cheap**
+
+9. **`APP_VERSION` renders nowhere in the DOM.** It reaches the Excel Run Info sheet and
+   `quac --version` and nothing else, which is why P22's Pages check compares deployment SHAs rather
+   than reading a version off the page. A footer version string would make "is the deployed site the
+   tagged build?" answerable by looking at it.
+10. **Zenodo's row in `CORS_HOSTS` is more conservative than today's measurement.** Re-verified
+    2026-07-30: both `zenodo.org/api/records/<id>` and the file-content endpoint returned
+    `Access-Control-Allow-Origin: *`, which is not what "file server unreliable — treat as blocked"
+    claims. One probe is not grounds to flip a recommendation in a release commit, so the table was
+    left alone and the README says what was measured. Worth a handful of probes over a few days
+    before changing the verdict either way.

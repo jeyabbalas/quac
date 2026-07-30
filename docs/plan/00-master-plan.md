@@ -22,7 +22,7 @@ The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQua
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V26) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V29) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -74,7 +74,7 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 | [x] 2026-07-25 · a89baa0 | P19 | Branding polish & accessibility | P14, P16, P18 |
 | [x] 2026-07-30 · c8bd3ba | P20 | Headless core: the QC pipeline under Node | P14, P15 |
 | [x] 2026-07-30 · eced604 | P21 | Headless CLI & packaging | P20 |
-| [ ] | P22 | Hardening, perf, docs, release | all |
+| [x] 2026-07-30 · 44d21b4 | P22 | Hardening, perf, docs, release | all |
 
 ## Progress log
 
@@ -82,6 +82,40 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-07-30 · P22 · **v1.0.0 — hardened, measured, documented, packaged.** Twelve commits, each green and each
+pushed with CI watched before the next. **Hardening:** every one of the 21 lint codes and 15 schema-load codes now
+has a test proving its message is designed prose rather than leaked engine text (`tests/unit/support/designedMessage.ts`
+is the two-policy predicate — `pure` and `framed`; `errorPaths.spec.ts` is the browser leg; `exitCodes.test.ts` grew
+the CLI leg). It found a real leak: a truncated Parquet or JSON put `Invalid Input Error: No magic bytes found at end
+of file 'quac_ingest_tmp.parquet'` in front of a user. `ingest.ts` now wraps both `loadTmp` call sites in a
+route-keyed `loadFailure()`; verified by stashing the fix and watching the leak return verbatim. **Perf:** the 100k × 20
+gate runs in the DEFAULT `npm run test:e2e` as its own serial Playwright project (`dependencies: ['chromium']`,
+`fullyParallel:false`) — **5,103 ms on CI hardware against 60,000**, 45 MB peak heap; locally 3,439 ms. Parquet, not
+CSV, and that is a finding: V20's delimited ceiling puts 100k × 20 ~380× out of reach, filed as deferred note 1. The
+headless leg is **14.6 s** for the same data including an 11.8 MB workbook, counts identical to the browser's
+(24,000 errors, 9,000 corrections, nothing truncated). `ROW_CAP_PER_RULE_DEFAULT` reshaped the fixture — one rule
+cannot emit more than 10,000 flags, so the violations are spread over three rules of 8,000. **Privacy, as a test:**
+`network-isolation.spec.ts` asserts both halves — zero off-origin requests across a journey touching every lazy
+chunk, AND that the recorder actually saw the wasm binary, the hardened worker and a vendored extension, because a
+test that records nothing passes the negative half trivially. **Packaging:** `dependencies` was still the web app's
+list, so `npm i -g quac` pulled 143 MB of duckdb-wasm plus CodeMirror and three fonts. It is now exactly the eight the
+built binary imports, proved by `tests/cli/dependencies.test.ts` parsing the emitted `dist-cli/*.mjs` with
+`es-module-lexer` and asserting set equality **both** ways — the undeclared-import direction fails on a stranger's
+machine and nowhere else. `quoteIdentifier` was lifted to `src/core/sql-identifier.ts` (V29 lets the agreement test
+stay in the fast tier); `optionalDependencies` was the obvious escape and does not work (**V28**). The six vendored
+DuckDB extensions — the one input to the deployed site not covered by `package-lock.json` — are now pinned by
+SHA-256, checked on cache hits as well as downloads. **Docs:** the real README, with `scripts/generate-screenshots.mjs`
+so its three images are regenerable rather than folklore; CHANGELOG split by product; `release.yml` publishes on a
+`v*` tag via OIDC trusted publishing, with no token in the repo. **Debt discharged, not deferred:** `store.shareables`
+deleted; the `download.spec` VARCHAR-window flake pinned at its cause (`summarizeSlot` reads `valid` on both sides of
+the typed rebuild — the settled summary text is the only gate, now shared by `exampleSession.ts` and the screenshot
+script); the `/quac/duckdb/*` all-200 assertion enumerates from disk so a version bump fails it; the keyboard trap
+filed as `jeyabbalas/data-table#84` after re-confirming the list is unchanged at 0.5.1; the TS `~6.0.3` pin re-measured
+and kept — typescript-eslint 8.65.0 still caps `<6.1.0` while TypeScript's latest moved to 7.0.2, so the gap widened.
+Ten deferred notes in the phase file are the v1.1 seed list.
+Unit 872 → **1199**, cli 29 → **43**, browser 73 unchanged, e2e 112 → **124** (+1 opt-in), entry 50.3 KB gz unchanged,
+package 8 entries / 103.9 kB.
 
 2026-07-30 · P21 · **`quac <dataset> --schema … --rules …` — the binary, the library, and a package that
 installs.** `src/cli/{args,progress,summary,quac}.ts` over P20's `runQuac`: `args.ts` is the §5 grammar on

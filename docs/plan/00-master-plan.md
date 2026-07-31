@@ -114,7 +114,7 @@ script); the `/quac/duckdb/*` all-200 assertion enumerates from disk so a versio
 filed as `jeyabbalas/data-table#84` after re-confirming the list is unchanged at 0.5.1; the TS `~6.0.3` pin re-measured
 and kept — typescript-eslint 8.65.0 still caps `<6.1.0` while TypeScript's latest moved to 7.0.2, so the gap widened.
 Ten deferred notes in the phase file are the v1.1 seed list.
-**Published as `@jeyabbalas/quac`, not `quac`** — the registry refused the unscoped name at the PUT ("too similar to existing package cac"), which neither `npm view` nor `npm publish --dry-run` predicts (**V30**); `bin` names the command, so it still installs `quac`, and a scoped package needs `publishConfig.access: public`, both now pinned by `dependencies.test.ts`.
+**Published as `@jeyabbalas/quac`, not `quac`** — the registry refused the unscoped name at the PUT ("too similar to existing package cac"), which neither `npm view` nor `npm publish --dry-run` predicts (**V30**); `bin` names the command, so it still installs `quac`, and a scoped package needs `publishConfig.access: public`, both now pinned by `dependencies.test.ts`. Clean-environment verification on Node 26 with a throwaway cache: `--version`, a real run, and an `.xlsx` run all pass, and the browser-only set is provably absent from the installed tree — **160 MB installed, of which 115.7 MB is the DuckDB native binding**, down from ~320 MB before the split.
 Unit 872 → **1199**, cli 29 → **45**, browser 73 unchanged, e2e 112 → **124** (+1 opt-in), entry 50.3 KB gz unchanged,
 package 8 entries / 104.0 kB.
 

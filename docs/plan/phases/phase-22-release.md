@@ -89,7 +89,20 @@ detail that the next agent does not have to re-derive it.
    `quac --version` and nothing else, which is why P22's Pages check compares deployment SHAs rather
    than reading a version off the page. A footer version string would make "is the deployed site the
    tagged build?" answerable by looking at it.
-10. **Zenodo's row in `CORS_HOSTS` is more conservative than today's measurement.** Re-verified
+10. **The dependency split halved the install, and the remaining half is the DuckDB
+    native binding.** Measured on the published package from a clean `npx` with a throwaway
+    cache (Node 26): **160 MB** on disk, of which **115.7 MB is
+    `@duckdb/node-bindings-darwin-arm64`**, 22 MB is exceljs and 7.8 MB is xlsx. The
+    browser-only set that P22 removed was ~160 MB, so an installer used to get ~320 MB and
+    now gets 160 — and the split is provably complete (duckdb-wasm, `@codemirror/*`,
+    `@fontsource/*`, data-table, `@lezer/*` and json-schema-data-dictionary are all absent
+    from the installed tree). The binding is platform-specific, so npm fetches exactly one.
+    No further reduction is available without giving up the embedded engine, which is the
+    product. Recorded so nobody re-opens "why is the CLI 160 MB" expecting a packaging bug.
+    Also observed: the first install prints six deprecation warnings (rimraf, inflight,
+    fstream, lodash.isequal, glob, uuid), all transitive through exceljs → archiver. Noise,
+    not risk — but it is the first thing a new user sees, and an exceljs bump would clear it.
+11. **Zenodo's row in `CORS_HOSTS` is more conservative than today's measurement.** Re-verified
     2026-07-30: both `zenodo.org/api/records/<id>` and the file-content endpoint returned
     `Access-Control-Allow-Origin: *`, which is not what "file server unreliable — treat as blocked"
     claims. One probe is not grounds to flip a recommendation in a release commit, so the table was

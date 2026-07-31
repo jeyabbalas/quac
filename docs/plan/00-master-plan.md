@@ -22,7 +22,7 @@ The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQua
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V29) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V30) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -114,8 +114,9 @@ script); the `/quac/duckdb/*` all-200 assertion enumerates from disk so a versio
 filed as `jeyabbalas/data-table#84` after re-confirming the list is unchanged at 0.5.1; the TS `~6.0.3` pin re-measured
 and kept — typescript-eslint 8.65.0 still caps `<6.1.0` while TypeScript's latest moved to 7.0.2, so the gap widened.
 Ten deferred notes in the phase file are the v1.1 seed list.
-Unit 872 → **1199**, cli 29 → **43**, browser 73 unchanged, e2e 112 → **124** (+1 opt-in), entry 50.3 KB gz unchanged,
-package 8 entries / 103.9 kB.
+**Published as `@jeyabbalas/quac`, not `quac`** — the registry refused the unscoped name at the PUT ("too similar to existing package cac"), which neither `npm view` nor `npm publish --dry-run` predicts (**V30**); `bin` names the command, so it still installs `quac`, and a scoped package needs `publishConfig.access: public`, both now pinned by `dependencies.test.ts`.
+Unit 872 → **1199**, cli 29 → **45**, browser 73 unchanged, e2e 112 → **124** (+1 opt-in), entry 50.3 KB gz unchanged,
+package 8 entries / 104.0 kB.
 
 2026-07-30 · P21 · **`quac <dataset> --schema … --rules …` — the binary, the library, and a package that
 installs.** `src/cli/{args,progress,summary,quac}.ts` over P20's `runQuac`: `args.ts` is the §5 grammar on

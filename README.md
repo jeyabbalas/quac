@@ -34,7 +34,7 @@ into one of the other two slots, press **Run QC**, then **Download QC Report (.x
 **On the command line.**
 
 ```sh
-npm i -g quac
+npm i -g @jeyabbalas/quac
 
 quac data.csv \
   --schema schemas/ \
@@ -42,6 +42,7 @@ quac data.csv \
   --out reports/ --summary - --fail-on error
 ```
 
+The package is scoped; **the command is not**. Installing `@jeyabbalas/quac` gives you `quac`.
 Node ≥ 24. See [Headless / CLI](#headless--cli) below.
 
 ---
@@ -311,7 +312,8 @@ The same pipeline under plain Node, for data pipelines that want the QC report w
 ingest → schema validation → QC rules and corrections → the styled five-sheet `.xlsx`.
 
 ```sh
-npm i -g quac        # or run it once with: npx quac ...
+npm i -g @jeyabbalas/quac              # installs the `quac` command
+npx @jeyabbalas/quac data.csv --rules qc.quac.csv   # or run it once, without installing
 ```
 
 ```
@@ -372,7 +374,7 @@ fields may be added within a version, never removed or renamed.
 ### As a library
 
 ```js
-import { runQuac, buildSummary } from 'quac';
+import { runQuac, buildSummary } from '@jeyabbalas/quac';
 
 const result = await runQuac({
   dataset: 'data.csv',
@@ -408,7 +410,7 @@ npm run dev
 
 > **Do not install with `--omit=dev`.** The published package's `dependencies` are only the eight
 > the CLI actually imports; the entire web toolchain — Vite, duckdb-wasm, CodeMirror, the data grid
-> — lives in `devDependencies` deliberately, so that `npm i -g quac` does not download a browser app
+> — lives in `devDependencies` deliberately, so that installing the CLI does not download a browser app
 > onto a server. Building the web app needs them.
 
 | Command                 | What it does                                          |

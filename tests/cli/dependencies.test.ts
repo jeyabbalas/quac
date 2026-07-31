@@ -2,7 +2,7 @@
  * The packaging gate (P22): `dependencies` is exactly what the built binary
  * imports — no more, no less.
  *
- * **Why "no more" matters.** `npm i -g quac` installs the transitive closure
+ * **Why "no more" matters.** `npm i -g @jeyabbalas/quac` installs the transitive closure
  * of `dependencies`. Before this commit that closure included duckdb-wasm,
  * eight CodeMirror packages, three webfonts and a browser data grid: ~100 MB
  * of browser assets downloaded onto a machine running a Node program that
@@ -32,6 +32,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { REPO } from './support';
 
 interface PackageJson {
+  name?: string;
+  bin?: Record<string, string>;
+  publishConfig?: { access?: string };
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -134,6 +137,27 @@ describe('dependencies match the built binary', () => {
       expect(dev.has(name), `${name} should be a devDependency`).toBe(true);
       expect(imported.has(name), `${name} must not reach dist-cli`).toBe(false);
     }
+  });
+});
+
+describe('a scoped package publishes publicly, and still installs `quac`', () => {
+  it('declares publishConfig.access = public', () => {
+    // The registry refused the unscoped name `quac` at publish time — "too
+    // similar to existing package cac" — which `npm view quac` (a 404) does
+    // not predict, because the similarity check runs on PUT. Scoping is the
+    // fix, and it drags a second rule in with it: a scoped package defaults
+    // to RESTRICTED, so without this field `npm publish` either fails on a
+    // free account or quietly publishes a private package. Declared here
+    // rather than passed as `--access=public`, so the release workflow gets
+    // it too and no invocation can forget.
+    expect(pkg.name).toBe('@jeyabbalas/quac');
+    expect(pkg.publishConfig?.access).toBe('public');
+  });
+
+  it('keeps the command itself unscoped', () => {
+    // `bin` names the command, not the package. The README promises that
+    // installing `@jeyabbalas/quac` gives you `quac`, and this is that promise.
+    expect(Object.keys(pkg.bin ?? {})).toEqual(['quac']);
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * The public library entry (headless.md §4) — what `import … from 'quac'`
+ * The public library entry (headless.md §4) — what `import … from '@jeyabbalas/quac'`
  * resolves to, built to `dist-cli/index.mjs`.
  *
  * Deliberately small. `runQuac` does the work and returns everything it

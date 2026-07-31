@@ -4,7 +4,7 @@
  *
  * **Why it is here rather than imported.** This one nine-line function was the
  * single reason the headless CLI's dependency graph reached the data-table
- * package at all: seven `src/core/**` modules imported it, so `npm i -g quac`
+ * package at all: seven `src/core/**` modules imported it, so installing the CLI
  * pulled in a browser grid — CodeMirror, its worker, its stylesheet, all of
  * duckdb-wasm behind it — to build a `"quoted"` string in a program that never
  * renders a table. Lifting it lets `dependencies` shrink to the eight packages

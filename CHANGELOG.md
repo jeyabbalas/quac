@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 QuaC ships as two products from one repository, and they version together:
 
 - **the web app**, deployed to <https://jeyabbalas.github.io/quac/>
-- **the `quac` npm package**, a CLI and a `runQuac()` API
+- **the `@jeyabbalas/quac` npm package** — the `quac` CLI and a `runQuac()` API
 
 Entries below say which half they apply to.
 
@@ -111,7 +111,7 @@ From 1.0.1 onward, pushing a `v*` tag publishes to npm through
 [`.github/workflows/release.yml`](.github/workflows/release.yml) using **OIDC
 trusted publishing** — no token exists in the repository, and provenance is
 attached automatically. The one setting a human owns lives on npmjs.com:
-package `quac` → Settings → Trusted Publisher → GitHub Actions, org
+package `@jeyabbalas/quac` → Settings → Trusted Publisher → GitHub Actions, org
 `jeyabbalas`, repo `quac`, workflow `release.yml`, no environment.
 
 [1.0.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.0.0

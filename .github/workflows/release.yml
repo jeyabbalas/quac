@@ -79,12 +79,12 @@ jobs:
         id: published
         run: |
           v=$(node -p "require('./package.json').version")
-          if npm view "quac@$v" version >/dev/null 2>&1; then
+          if npm view "@jeyabbalas/quac@$v" version >/dev/null 2>&1; then
             echo "already=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::quac@$v is already published — skipping publish."
+            echo "::notice::@jeyabbalas/quac@$v is already published — skipping publish."
           else
             echo "already=false" >> "$GITHUB_OUTPUT"
-            echo "quac@$v is not on the registry yet — will publish."
+            echo "@jeyabbalas/quac@$v is not on the registry yet — will publish."
           fi
 
       # `prepack` builds dist-cli/. Provenance is attached automatically under

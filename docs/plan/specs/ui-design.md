@@ -401,10 +401,14 @@ Feedback is one polite toast per action — the only announcement path AT users 
     `--q-text-xs`. This bit once: a disabled rule's muted row painted its target chips `--q-gray-500` on
     `--q-gray-100`, which is 4.35:1 — `tokens.css:23` already said gray-500 is text on WHITE or gray-50. Scan the
     panel only once the lazy highlighter has landed, or the spans are not on screen to be checked.
-  - **Getting past the grid.** data-table exposes ~1600 focusable controls on the 266-column example AND traps Tab
-    (see §9). The Report view therefore carries a `.q-skiplink` before the grid — a `<button>`, never an
-    `<a href="#…">`, because QuaC routes on the hash — and both grid hosts let **Escape** move focus out, announced
-    by a `.q-sr-only` line since nothing else would say so.
+  - **Getting past the grid.** Under data-table 0.5.1 this was a rescue: ~1600 focusable controls on the
+    266-column example, and Tab trapped outright. 0.6.0 fixed both (see §9) — the whole `.dt-root` is five tab
+    stops at any column count, and Tab leaves it unaided. What remains is the `.q-skiplink` before the Report
+    grid — a `<button>`, never an `<a href="#…">`, because QuaC routes on the hash — kept as a convenience, since
+    the grid is still the largest thing between the run bar and Download QC Report. **The Escape hatch is gone**,
+    along with the `.q-sr-only` line that announced it: Escape is the library's key now (drop the cursor, leave F2
+    controls mode, cancel a `Shift+F2` layout gesture) and it stops propagation whenever it owns the press, so a
+    hatch would catch only the strays and throw focus off the grid for a key meant for it.
 - **ARIA**: `role="dialog"` + `aria-modal` on modals; labelled slots and URL fields; the annotation popover is
   data-table's (already `role="tooltip"`).
   - Toasts share one polite region (`app/toast.ts`).
@@ -435,27 +439,34 @@ favicon set — `public/favicon.svg` + `favicon-32.png` + `apple-touch-icon.png`
 `index.html` and all three committed (§6; `smoke.spec.ts` asserts zero 404s, so each must land in `dist/`). Fonts
 under `node_modules/@fontsource/*` imported in `base.css`.
 
-## 9. Third-party accessibility debt (upstream, P19 measured)
+## 9. Third-party accessibility debt (upstream; P19 measured, cleared at the 0.7.0 upgrade)
 
 QuaC does not author this markup and cannot fix it from here. It is excluded from the axe gate and reported by
-`a11y.spec.ts`'s diagnostic pass on every run, so the list stays current rather than forgotten. Re-check on any
-`@jeyabbalas/data-table` upgrade.
+`a11y.spec.ts`'s diagnostic pass on every run, so the list stays current rather than forgotten.
 
-**`@jeyabbalas/data-table` 0.5.1 (`.dt-root`)**
-- **Keyboard trap** — WCAG 2.1.2, Level A, and the most serious of these. Focus `.dt-root` and neither Tab nor
-  Shift+Tab moves it again; `document.querySelector('.dt-root :focus')` stays null through any number of presses,
-  while ~1600 focusable controls sit inside (266 columns × header buttons). QuaC mitigates with the skip control and
-  the Escape hatch of §7; it cannot cure it. *Not* reported by axe — only a keyboard walk finds it.
-- `aria-required-children` (critical) on `.dt-root`.
-- `color-contrast` (serious) on `.dt-col-stats > .dt-stats-line1/2` and `.dt-hidden-chip-name`.
-- `scrollable-region-focusable` (serious) on `.dt-body-scroll`.
+**`@jeyabbalas/data-table` 0.7.0 (`.dt-root`) — the list is now EMPTY.** The upgrade from 0.5.1 cleared all four
+entries this section used to carry. Measured in a real browser on the 266-column HESP example, 2026-09-01:
 
-**CodeMirror 6 (`.cm-editor`)** — clean; no violations at any severity.
+- **Keyboard trap: cured.** `.dt-root` holds **5 tabbable elements** — the filter bar, `.dt-grid`, the two scroll
+  regions, the hidden-columns gutter — out of 6,923 focusable candidates. Six Tab presses walk from `.q-skiplink`
+  through all five and out the far side; six `Shift+Tab` retrace exactly. The issue-#84 probe,
+  `document.querySelector('.dt-root :focus')`, now resolves to `.dt-grid` with a visible ring where it used to stay
+  null. Verify this with a **keyboard walk**, never with axe — axe cannot see a 2.1.2 violation, which is why the
+  original sat unnoticed behind a green suite.
+- **`aria-required-children`, `color-contrast`, `scrollable-region-focusable`: all cleared.** `a11y.spec.ts`'s
+  diagnostic pass reports `.dt-root` **clean** in both the QC Report and Rule Studio contexts.
 
-**P22 re-check (2026-07-30, still `@jeyabbalas/data-table` 0.5.1).** The diagnostic pass was re-run against the
-pinned version and **the list is unchanged** — the same three axe findings on `.dt-root` in both the QC Report and
-the Rule Studio contexts, and CodeMirror still clean. The keyboard trap is now filed upstream as
-[jeyabbalas/data-table#84](https://github.com/jeyabbalas/data-table/issues/84), with the 900-press evidence, the
-note that axe cannot detect a 2.1.2 violation, and the three axe findings above carried along so they are in one
-place. Discharges phase-19's V22 obligation; the mitigations (skip control, Escape hatch) stay, because filing an
-issue is not a fix.
+**CodeMirror 6 (`.cm-editor`)** — clean; no violations at any severity. Unchanged throughout.
+
+**History.** 0.5.1 was a hard keyboard trap (WCAG 2.1.2, Level A) plus three axe findings — `aria-required-children`
+on `.dt-root`, `color-contrast` on `.dt-col-stats > .dt-stats-line1/2` and `.dt-hidden-chip-name`, and
+`scrollable-region-focusable` on `.dt-body-scroll`. QuaC mitigated with a skip control and an Escape hatch and could
+not cure it. P22 (2026-07-30) re-checked, found the list unchanged, and filed
+[jeyabbalas/data-table#84](https://github.com/jeyabbalas/data-table/issues/84) with the 900-press evidence.
+Upstream fixed it in **0.6.0** — `.dt-root` sheds its role and `tabindex` to an inner
+`.dt-grid[role="grid"]`, the filter bar and hidden-columns gutter become roving-tabindex toolbars, and a
+colour-token sweep clears the contrast bars. 0.6.0 also moves the filter bar **above** the column headers and
+adds `Shift+F2` keyboard column resize/reorder. On the QuaC side the upgrade removed the Escape hatch and its
+`.q-sr-only` announcement (§7) — both had become false — and kept the skip control.
+
+**Re-check this section on any `@jeyabbalas/data-table` upgrade**, with the keyboard walk as well as the axe pass.

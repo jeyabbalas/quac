@@ -33,10 +33,10 @@ import type { SeverityToggles } from './reportGrid';
 
 export interface PanelHooks {
   onSeverityChange: (severity: SeverityToggles) => void;
-  /** Best-effort offender focus; resolves false when the grid was left
-   *  unfiltered (not filterable, or filterable but matching no rows — the
-   *  view says which). The panel discards the value. */
-  onOffenderFocus: (condition: string, label: string) => Promise<boolean>;
+  /** Focus the grid on the rows a rule flagged. Resolves false when the grid
+   *  was left unfiltered (the view says why); the panel uses the value to
+   *  decide whether the row becomes the active one. */
+  onOffenderFocus: (rows: readonly number[], label: string) => Promise<boolean>;
   onClearOffenderFocus: () => void;
   onRerun: () => void;
 }
@@ -135,6 +135,11 @@ export function mountReportPanels(
 ): void {
   host.className = 'q-report-panels';
   const severity = signal<SeverityToggles>({ error: true, warning: true, info: true });
+  // The offender whose rows the grid is currently showing, or null. A plain
+  // variable, NOT a signal: the panels re-render from one effect, and making
+  // this reactive would rebuild all four of them on every focus click. The
+  // click repaints the marker itself; a re-render reads the variable back.
+  let focusedRuleId: string | null = null;
 
   // Deduped run predicate: pipeline progress ticks set the signal every few
   // ms — panels only care about the boolean edge.
@@ -470,25 +475,38 @@ export function mountReportPanels(
       exactByRule.get(ruleId) ?? fallback;
     const ranked = rankOffenders(summary.perRule, exactByRule);
 
-    // Grid-filterable = a validate row/longitudinal rule with a SQL condition;
-    // one predicate decides both the hint's presence and each row's button
-    // (a schema-only run has zero filterable rows — no hint for a click that
-    // can't happen).
-    const filterableRule = (rule: QCRule | undefined): rule is QCRule =>
-      rule !== undefined &&
-      rule.ruleType !== 'correct' &&
-      (rule.ruleScope === 'row' || rule.ruleScope === 'longitudinal');
+    // Focusable = the rule flagged at least one individual row. That is the
+    // whole test now: focus is by row identity (rowFocus.ts), so a schema
+    // rule, a column-scope assertion, a correction and a window-function rule
+    // all qualify — where the old SQL-condition focus admitted only
+    // row/longitudinal `validate` rules, and then refused most of those.
+    // What stays out is the finding that names no row: a schema `$comment`
+    // advisory, a duplicate-records dataset check.
     const rows = ranked.map((aggregate) => ({ aggregate, rule: findRule(aggregate.ruleId) }));
+    const anyFocusable = rows.some(({ aggregate }) => aggregate.rowsAffected > 0);
 
-    if (rows.some(({ rule }) => filterableRule(rule))) {
+    // Rendered rows, so a click can repaint the active marker without going
+    // through the store (which would re-render all four panels).
+    const painted = new Map<string, { row: HTMLTableRowElement; button: HTMLButtonElement }>();
+    const paintFocus = (): void => {
+      for (const [ruleId, { row, button }] of painted) {
+        const active = ruleId === focusedRuleId;
+        row.classList.toggle('is-focused', active);
+        button.setAttribute('aria-pressed', String(active));
+      }
+    };
+
+    if (anyFocusable) {
       const hint = document.createElement('p');
       hint.className = 'q-panel-note';
-      hint.textContent = 'Click a row-level SQL rule to focus matching grid rows (best effort).';
+      hint.textContent = 'Click a rule to focus the rows it flagged.';
       const clear = document.createElement('button');
       clear.type = 'button';
       clear.className = 'q-btn q-btn--small';
       clear.textContent = 'Clear focus';
       clear.addEventListener('click', () => {
+        focusedRuleId = null;
+        paintFocus();
         hooks.onClearOffenderFocus();
       });
       hint.append(' ', clear);
@@ -521,14 +539,16 @@ export function mountReportPanels(
           : [schemaRuleTargets(aggregate.ruleId)],
       );
       const exact = exactOf(aggregate.ruleId, aggregate.count);
-      const filterable = filterableRule(rule);
+      const focusable = aggregate.rowsAffected > 0;
 
       // Rule cell: breakable mono id + the source as a muted sub-tag (its own
-      // column wasted width on a two-value fact). When the rule can drive the
-      // grid filter, the id becomes a real <button>. It used to be the whole
+      // column wasted width on a two-value fact). When the rule flagged rows,
+      // the id becomes a real <button>. It used to be the whole
       // <tr role="button" tabindex="0"> — which put a `button` inside a
       // `rowgroup` and broke aria-required-children, axe's only CRITICAL
-      // finding in the app. A row stays a row; the action lives in a cell.
+      // finding in the app. A row stays a row; the action lives in a cell —
+      // and the <tr> click listener below is a plain mouse convenience, with
+      // no role, so that fix stands.
       const ruleCell = document.createElement('td');
       const ruleId = document.createElement('span');
       ruleId.className = 'q-offenders-ruleid';
@@ -536,18 +556,47 @@ export function mountReportPanels(
       const source = document.createElement('span');
       source.className = 'q-offenders-source';
       source.textContent = aggregate.source;
-      if (filterable) {
+      if (focusable) {
         const focusButton = document.createElement('button');
         focusButton.type = 'button';
         focusButton.className = 'q-offender-focus';
-        focusButton.title = 'Focus matching rows in the grid';
-        focusButton.setAttribute('aria-label', `Focus grid rows matching ${aggregate.ruleId}`);
+        const rowWord = aggregate.rowsAffected === 1 ? 'row' : 'rows';
+        focusButton.title = `Focus the ${num(aggregate.rowsAffected)} ${rowWord} this rule flagged`;
+        focusButton.setAttribute('aria-label', `Focus the rows ${aggregate.ruleId} flagged`);
+        focusButton.setAttribute('aria-pressed', String(aggregate.ruleId === focusedRuleId));
         focusButton.append(ruleId);
         focusButton.addEventListener('click', () => {
-          void hooks.onOffenderFocus(rule.condition, aggregate.ruleId);
+          hooks
+            .onOffenderFocus(artifacts.flagStore.rowsOf(aggregate.ruleId), aggregate.ruleId)
+            .then((applied) => {
+              focusedRuleId = applied ? aggregate.ruleId : null;
+              paintFocus();
+            })
+            // A rejection here used to be a bare `void` — an unhandled
+            // rejection, and a click that looked like it did nothing.
+            .catch((err: unknown) => {
+              reportError(err, { fallbackCode: 'BRIDGE_FAILED' });
+            });
         });
         ruleCell.append(focusButton, source);
+        painted.set(aggregate.ruleId, { row, button: focusButton });
+        row.classList.add('is-focusable');
+        if (aggregate.ruleId === focusedRuleId) row.classList.add('is-focused');
+        // Mouse convenience: the whole row tints on hover, so the whole row
+        // should take the click. Two presses must NOT reach the button — one
+        // that already landed on it (the synthetic click below bubbles back
+        // here), and the mouseup that ends a drag-select, because rule ids are
+        // exactly the kind of thing people highlight to copy.
+        row.addEventListener('click', (event) => {
+          if (event.target instanceof Node && focusButton.contains(event.target)) return;
+          const selection = window.getSelection();
+          if (selection !== null && !selection.isCollapsed) return;
+          focusButton.click();
+        });
       } else {
+        // Column- and dataset-scope findings both land here: they name a
+        // column or the file, never a row, so there is nothing to focus.
+        ruleId.title = 'Not tied to individual rows — nothing to focus.';
         ruleCell.append(ruleId, source);
       }
 
@@ -586,6 +635,9 @@ export function mountReportPanels(
   // artifact-less branches, so progress ticks never thrash the panels).
   effect(() => {
     const artifacts = ctx.store.runArtifacts.get();
+    // A run invalidation strips the grid's offender filter (reportView's own
+    // effect), so the marker it belonged to has to go with it.
+    if (artifacts === null) focusedRuleId = null;
     ctx.store.dataset.get();
     schemaState.get();
     rulesState.get();

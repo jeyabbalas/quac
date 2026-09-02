@@ -55,6 +55,13 @@ export interface FlagStore {
   byCell(row: number, column: string): readonly FlagEntry[];
   byColumn(column: string): readonly FlagEntry[];
   byRule(ruleId: string): readonly FlagEntry[];
+  /**
+   * Distinct rows this rule flagged, ascending. Exact past the cap — the row
+   * sets are recorded for every flag, materialized or merely counted, the same
+   * guarantee `RuleAggregate.rowsAffected` (their size) carries. Empty for a
+   * rule whose flags are all dataset-scope, and for an unknown ruleId.
+   */
+  rowsOf(ruleId: string): readonly number[];
   datasetScope(): readonly FlagEntry[];
   /** Every materialized entry in deterministic order (annotations, export). */
   all(): readonly FlagEntry[];
@@ -244,6 +251,13 @@ export function createFlagStore(opts: { cap?: number } = {}): FlagStore {
     byRule(ruleId: string): readonly FlagEntry[] {
       ensureIndexes();
       return ruleIndex.get(ruleId) ?? [];
+    },
+
+    rowsOf(ruleId: string): readonly number[] {
+      // Straight off the cap-free aggregate (recordAggregates), NOT off
+      // ruleIndex: the materialized entries are what the cap evicts.
+      const rows = rowsByRule.get(ruleId);
+      return rows === undefined ? [] : [...rows].sort((a, b) => a - b);
     },
 
     datasetScope(): readonly FlagEntry[] {

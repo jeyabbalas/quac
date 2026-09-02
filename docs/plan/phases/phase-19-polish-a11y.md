@@ -52,14 +52,18 @@ New features; dark mode (documented as out of scope).
    `favicon.svg` too, placing the artwork by measured minimal enclosing circle. Rationale and constants:
    `ui-design.md §6`.
 
-**Upstream to-do (third-party, from `a11y.spec.ts`'s non-gating diagnostic pass)**
+**Upstream to-do (third-party, from `a11y.spec.ts`'s non-gating diagnostic pass) — CLEARED 2026-09-01**
 
-Recorded in `ui-design.md §9`, which is the durable home — successors should read it there. In brief:
-`@jeyabbalas/data-table` 0.5.1 is a **keyboard trap** (WCAG 2.1.2 Level A — Tab and Shift+Tab both stop moving once
-focus reaches `.dt-root`; axe does not detect this, only a keyboard walk does), plus `aria-required-children`
-(critical), `color-contrast` on `.dt-col-stats`/`.dt-hidden-chip-name`, and `scrollable-region-focusable` on
-`.dt-body-scroll`. CodeMirror's `.cm-editor` is clean. QuaC mitigates the trap with a skip control and an Escape
-hatch; it cannot cure it.
+Recorded in `ui-design.md §9`, which is the durable home — successors should read it there. As measured in this
+phase, `@jeyabbalas/data-table` 0.5.1 was a **keyboard trap** (WCAG 2.1.2 Level A — Tab and Shift+Tab both stop
+moving once focus reaches `.dt-root`; axe does not detect this, only a keyboard walk does), plus
+`aria-required-children` (critical), `color-contrast` on `.dt-col-stats`/`.dt-hidden-chip-name`, and
+`scrollable-region-focusable` on `.dt-body-scroll`. CodeMirror's `.cm-editor` was clean.
+
+The trap was filed upstream as [#84](https://github.com/jeyabbalas/data-table/issues/84) and **fixed in 0.6.0**;
+the 0.5.1 → 0.7.0 upgrade cleared all four entries. `.dt-root` is now 5 tab stops, crossed in six presses either
+way, and axe-clean in both contexts. QuaC's Escape hatch and its `.q-sr-only` announcement went with the trap; the
+skip control stays. Full measurement in `ui-design.md §9`.
 
 **Genuinely deferred (found, judged out of scope, not done)**
 

@@ -236,3 +236,55 @@ describe('flagStore lifecycle', () => {
     expect(calls).toBe(2);
   });
 });
+
+describe('flagStore rowsOf', () => {
+  it('returns the rule\u2019s distinct rows ascending, however they arrived', () => {
+    const store = createFlagStore();
+    store.add([
+      cell(5, 'age', 'Q001'),
+      cell(1, 'age', 'Q001'),
+      // Same row, second target column: one row, not two.
+      cell(1, 'score', 'Q001'),
+      cell(3, 'age', 'Q002'),
+    ]);
+    expect(store.rowsOf('Q001')).toEqual([1, 5]);
+    expect(store.rowsOf('Q002')).toEqual([3]);
+  });
+
+  it('is empty for a rule with only dataset-scope flags, and for an unknown id', () => {
+    const store = createFlagStore();
+    store.add([
+      {
+        source: 'schema',
+        ruleId: 'schema:dataset:duplicate-records',
+        scope: 'dataset',
+        severity: 'error',
+        message: 'duplicates found',
+      },
+    ]);
+    expect(store.rowsOf('schema:dataset:duplicate-records')).toEqual([]);
+    expect(store.rowsOf('never-ran')).toEqual([]);
+  });
+
+  it('survives the cap: rows are recorded for counted-only flags too', () => {
+    // Two materialized entries max, but every flag still records its row — the
+    // focus filter must show every row the run flagged, not the few the cap
+    // left behind.
+    const store = createFlagStore({ cap: 2 });
+    const flags: QCFlag[] = [];
+    for (let row = 0; row < 20; row++) {
+      flags.push(cell(row, 'age', 'Q001', { message: `m${String(row)}` }));
+    }
+    store.add(flags);
+    expect(store.summary().truncated).toBe(true);
+    expect(store.byRule('Q001').length).toBeLessThan(20);
+    expect(store.rowsOf('Q001')).toEqual([...Array(20).keys()]);
+  });
+
+  it('clear() drops the row sets with everything else', () => {
+    const store = createFlagStore();
+    store.add([cell(7, 'age', 'Q001')]);
+    store.clear();
+    expect(store.rowsOf('Q001')).toEqual([]);
+  });
+});

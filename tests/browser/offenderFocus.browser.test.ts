@@ -1,19 +1,21 @@
 /**
- * UX-03 regression: an Offenders focus click must never empty the grid.
+ * Offenders focus, at the tier where a real DuckDB and a real DataTable are
+ * both in the room.
  *
- * `validateSQLFilter` answers two questions at once — is the condition
- * parseable against the display table, and how many of its rows does it
- * match. QuaC used to read only the first, so a condition that parsed, ran,
- * and matched nothing was applied anyway: the grid dropped to `0 / N rows`
- * with no explanation, on the one click whose whole purpose is "show me the
- * rows behind this number". `tryFilterByCondition` now reports which of the
- * three things happened, and applies a filter only for the first.
+ * Focus is by ROW IDENTITY: the ids a rule flagged, filtered over data-table's
+ * own `__rowid__`, which the display export makes equal to QuaC's `__row__`
+ * (V7). What that replaced — re-running the rule's SQL condition against the
+ * grid's copy — is the UX-03 failure this file was opened for: a condition
+ * that parsed, ran, and matched nothing was applied anyway, dropping the grid
+ * to `0 / N rows` on the one click whose whole purpose is "show me the rows
+ * behind this number". Row ids cannot miss, so the case is gone rather than
+ * merely reported; what remains to prove is that the ids land on the rows they
+ * name, and that a focus never stacks on the one before it.
  *
- * Driven through the production module (renderGrid → tryFilterByCondition),
- * so the shared-bridge build path is the one under test. The DataTable
- * instance is reportGrid-private by design, so the filter state is read where
- * the user reads it: data-table's own `.dt-filter-chip` bar, whose title is
- * `SQL <label>`.
+ * Driven through the production module (renderGrid → focusRows), so the
+ * shared-bridge build path is the one under test. The DataTable instance is
+ * reportGrid-private by design, so filter state is read where the user reads
+ * it: data-table's own `.dt-filter-chip` bar, whose title is `SQL <label>`.
  */
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { getBridge, terminateBridge } from '../../src/core/bridge/bridge';
@@ -21,18 +23,16 @@ import { QUAC_TYPED, QUAC_WORK, ctas, refreshDataView } from '../../src/core/bri
 import {
   clearOffenderFilter,
   disposeGrid,
+  focusRows,
   renderGrid,
-  tryFilterByCondition,
 } from '../../src/ui/views/report/reportGrid';
 import { waitFor } from './support';
 
 const ROWS = 6;
-/** One row (r = 0) carries the sentinel; the rest do not. */
-const MATCHING = "note = 'bad'";
-/** Parses and runs against the same table — and matches nothing. */
-const NO_MATCH = "note = 'nothing here matches this'";
-/** `__row__` is EXCLUDED from the display export, so this cannot bind. */
-const UNPARSEABLE = '__row__ > 0 AND no_such_column IS NULL';
+/** Row 0 carries the sentinel; the rest do not. One rule's flagged rows. */
+const FLAGGED = [0];
+/** Non-contiguous, so the SQL takes both the IN and the BETWEEN branch. */
+const FLAGGED_MANY = [0, 2, 3, 4];
 
 let host: HTMLElement;
 
@@ -41,6 +41,13 @@ function chipTitles(): string[] {
   return [...document.querySelectorAll('.q-report-grid .dt-filter-chip')].map(
     (chip) => chip.getAttribute('title') ?? '',
   );
+}
+
+/** The `note` value of every row the grid is currently showing. */
+function visibleNotes(): string[] {
+  return [...document.querySelectorAll('.q-report-grid .dt-cell')]
+    .map((cell) => cell.textContent)
+    .filter((text) => text === 'bad' || text === 'ok');
 }
 
 beforeAll(async () => {
@@ -68,34 +75,41 @@ afterAll(async () => {
   host.remove();
 });
 
-test('a condition that matches rows is applied, once', async () => {
-  await expect(tryFilterByCondition(MATCHING, 'R001')).resolves.toBe('applied');
+test('flagged rows are applied, once, and are the rows that show', async () => {
+  await expect(focusRows(FLAGGED, 'R001')).resolves.toEqual({ kind: 'applied', shown: 1 });
   expect(chipTitles()).toEqual(['SQL R001']);
+  // __rowid__ 0 is QuaC's __row__ 0 — the one row carrying the sentinel. This
+  // is the identity the whole feature rests on (and annotations with it).
+  await waitFor(() => visibleNotes().length === 1, 'the grid to narrow to one row');
+  expect(visibleNotes()).toEqual(['bad']);
 
   // Re-focusing the same rule replaces its filter rather than stacking one.
-  await expect(tryFilterByCondition(MATCHING, 'R001')).resolves.toBe('applied');
+  await expect(focusRows(FLAGGED, 'R001')).resolves.toEqual({ kind: 'applied', shown: 1 });
   expect(chipTitles()).toEqual(['SQL R001']);
 
   clearOffenderFilter();
-  await expect(tryFilterByCondition(MATCHING, 'R001')).resolves.toBe('applied');
+  await expect(focusRows(FLAGGED, 'R001')).resolves.toEqual({ kind: 'applied', shown: 1 });
   expect(chipTitles()).toEqual(['SQL R001']);
 });
 
-test('a condition that matches nothing is reported, not applied', async () => {
+test('a mixed run/singleton id set resolves to exactly those rows', async () => {
+  await expect(focusRows(FLAGGED_MANY, 'R002')).resolves.toEqual({ kind: 'applied', shown: 4 });
+  expect(chipTitles()).toEqual(['SQL R002']);
+  await waitFor(() => visibleNotes().length === 4, 'the grid to narrow to four rows');
+
+  clearOffenderFilter();
+  await waitFor(() => chipTitles().length === 0, 'the focus to clear');
+});
+
+test('a rule that flagged no rows is reported, and clears the stale focus', async () => {
   // Precondition: a previous rule's focus is live — the state in which the
-  // review met this, and the reason the failure must also CLEAR.
-  await expect(tryFilterByCondition(MATCHING, 'R001')).resolves.toBe('applied');
+  // review met UX-03, and the reason a refusal must also CLEAR.
+  await expect(focusRows(FLAGGED, 'R001')).resolves.toEqual({ kind: 'applied', shown: 1 });
   expect(chipTitles()).toEqual(['SQL R001']);
 
-  await expect(tryFilterByCondition(NO_MATCH, 'R002')).resolves.toBe('no-match');
-  // Neither R002's filter nor R001's stale one: the grid is back to whole.
+  // A dataset-scope finding: no row ids, so nothing to focus.
+  await expect(focusRows([], 'R003')).resolves.toEqual({ kind: 'no-rows' });
+  // Neither R003's filter nor R001's stale one: the grid is back to whole.
   expect(chipTitles()).toEqual([]);
-});
-
-test('a condition that cannot bind is reported, not applied', async () => {
-  await expect(tryFilterByCondition(MATCHING, 'R001')).resolves.toBe('applied');
-  expect(chipTitles()).toEqual(['SQL R001']);
-
-  await expect(tryFilterByCondition(UNPARSEABLE, 'R003')).resolves.toBe('unfilterable');
-  expect(chipTitles()).toEqual([]);
+  await waitFor(() => visibleNotes().length === ROWS, 'the grid to come back whole');
 });

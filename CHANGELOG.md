@@ -11,6 +11,107 @@ QuaC ships as two products from one repository, and they version together:
 
 Entries below say which half they apply to.
 
+## [1.1.0] — 2026-09-02
+
+A dependency sweep, the accessibility debt it let us discharge, and a report
+panel that now does what it always claimed to. Nothing breaking: the CLI flags,
+the exit codes and the `runQuac()` surface are untouched.
+
+### Fixed — web app
+
+- **Clicking a rule in the Offenders panel focuses the grid on its rows.** The
+  panel lists every rule that fired, and clicking one is meant to filter the grid
+  to the rows behind its Count. On the bundled example the panel lists 28 rules
+  and 3 of them did that. Focus worked by re-running the rule's SQL condition,
+  which silently excluded everything that has no SQL condition to re-run — every
+  schema finding, every column assertion, every dataset check, every correction.
+  Of the few that were clickable, two used window functions (illegal in a `WHERE`
+  clause) and one re-cast a column the report's own view types as text, matching
+  nothing. None of this was a regression; the feature worked exactly as built,
+  and as built it almost never fired.
+
+  Focus is by row identity now. Every flag already records the row it came from
+  and the grid already carries the same identity, so nothing is re-evaluated on
+  click. **21 of the 28 focus.** The seven that do not are the findings that name
+  no row at all — schema advisories and dataset-level checks — and they now say
+  so in a tooltip instead of being a click that does nothing.
+
+- **The data grid no longer traps keyboard focus.** `@jeyabbalas/data-table`
+  0.6.0 fixes the WCAG 2.1.2 violation reported against 0.5.1
+  ([data-table#84](https://github.com/jeyabbalas/data-table/issues/84)). The
+  grid's root is five tab stops now rather than a wall of several thousand:
+  <kbd>Tab</kbd> walks in and out of it and <kbd>Shift</kbd>+<kbd>Tab</kbd>
+  retraces. Three axe findings against the grid go with it. This was the last
+  item on QuaC's third-party accessibility list, which is now empty.
+
+  Worth recording alongside the fix: the trap sat unnoticed behind a green suite
+  for a whole release, because axe structurally cannot see a keyboard trap. A
+  passing accessibility scan is not evidence about 2.1.2 — only a keyboard walk
+  is.
+
+### Changed — web app
+
+- **The Offenders panel now reads as clickable.** A focusable rule id is
+  underlined at rest rather than only on hover, the whole row takes the click,
+  and the row currently focusing the grid is marked — data-table's own filter
+  chip sits a column away and is easy to miss.
+- data-table 0.6.0 moves the grid's filter bar above the column headers and adds
+  <kbd>Shift</kbd>+<kbd>F2</kbd> keyboard column resize and reorder. Both grid
+  hosts — the QC report and Rule Studio's preview — absorb the move.
+
+### Removed — web app
+
+- **The grid's <kbd>Escape</kbd> hatch, and the screen-reader line announcing
+  it.** Both existed only to mitigate the 0.5.1 keyboard trap, and with the trap
+  gone both had become false statements, read aloud to exactly the users who most
+  need them to be true. <kbd>Escape</kbd> is the grid's own key now — it drops
+  the cursor and cancels a layout gesture — so the hatch could only ever fire on
+  presses the grid had already ignored, throwing focus out of the grid for a key
+  aimed at it. The skip link stays, as a convenience rather than a rescue.
+
+### Changed — dependencies
+
+- **Swept to latest.** `@jeyabbalas/data-table` 0.5.1 → 0.7.0 is the headline;
+  alongside it `@duckdb/node-api` 1.5.5-r.4 and `papaparse` 5.7.0, plus vite,
+  vitest, playwright, eslint, typescript-eslint, axe and three CodeMirror
+  patches.
+- **Two versions are held back deliberately.** TypeScript stays on 6.0.x because
+  typescript-eslint declares `<6.1.0` and no release supports 7 yet — bumping
+  breaks `npm run lint`. `@types/node` stays on 24 to match the `engines` floor,
+  so a Node-26-only API cannot typecheck clean here and then fail on the oldest
+  runtime QuaC claims to support.
+
+### Security
+
+- `fast-uri` 3.1.4 → 3.1.6 under `ajv` — a host-confusion fix in URI parsing,
+  which is the `$ref`-resolution path. Four other transitive patches came with
+  it, taking `npm audit` from 6 findings to 2. The remaining two are `uuid` under
+  `exceljs`, whose only offered remedy is a downgrade to `exceljs` 3.4.0 —
+  declined.
+
+### Numbers
+
+| Measure                            | 1.0.0          | 1.1.0    |
+| ---------------------------------- | -------------- | -------- |
+| Entry JS (gzipped, 300 KB budget)  | 50.3 KB        | 48.7 KB  |
+| Unit tests                         | 1,199          | 1,211    |
+| Browser tests                      | 73             | 73       |
+| CLI tests                          | 43             | 45       |
+| End-to-end tests                   | 124            | 124      |
+| `npm audit` findings               | 6              | 2        |
+| Third-party a11y items open        | 1 (WCAG 2.1.2) | 0        |
+| Offenders rows that focus the grid | 3 of 28        | 21 of 28 |
+
+### Known limitations
+
+Carried over from 1.0.0 unchanged, minus the data grid keyboard trap, which is
+resolved. Still true: `external` rules are listed rather than executed; a
+rules-only run leaves every column `VARCHAR`; column names are matched
+case-sensitively; the Excel data sheet stops at 1,048,575 rows; the on-screen
+grid paints at most 20,000 cell highlights; Chromium is the only browser with
+automated coverage; and `xlsx` installs from `cdn.sheetjs.com` rather than the
+npm registry.
+
 ## [1.0.0] — 2026-07-30
 
 First stable release. Both halves are feature-complete against
@@ -114,4 +215,5 @@ attached automatically. The one setting a human owns lives on npmjs.com:
 package `@jeyabbalas/quac` → Settings → Trusted Publisher → GitHub Actions, org
 `jeyabbalas`, repo `quac`, workflow `release.yml`, no environment.
 
+[1.1.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.0.0

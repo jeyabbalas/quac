@@ -1,6 +1,6 @@
 {
   "name": "@jeyabbalas/quac",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Data quality control for tabular data — validate a dataset against a JSON Schema and QC rules, and get a styled five-sheet Excel report. Runs entirely in the browser, or headless on Node.",
   "keywords": [
     "data-quality",

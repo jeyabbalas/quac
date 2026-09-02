@@ -118,17 +118,13 @@ export function createPreviewPane(): PreviewPane {
     progress.setProgress(PROGRESS_LABELS.gridPrep, null);
     const gridHost = document.createElement('div');
     gridHost.className = 'q-studio-samplegrid';
-    // Same keyboard trap as the report grid — see reportView.ts for the
-    // measurement. Escape lands on the pane, from which Shift+Tab reaches the
-    // work column normally.
-    gridHost.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return;
-      el.focus();
-    });
-    const escapeNote = document.createElement('p');
-    escapeNote.className = 'q-sr-only';
-    escapeNote.textContent = 'The sample grid captures Tab. Press Escape to leave it.';
-    sampleWrap.replaceChildren(progress.el, escapeNote, gridHost);
+    // No Escape hatch here (nor in reportView.ts): data-table 0.6.0 fixed the
+    // keyboard trap both grids used to carry, so Tab walks out on its own —
+    // see ui-design.md §9 for the measurement. Escape is now the LIBRARY's
+    // key (drop the cursor, leave F2 controls mode, cancel a Shift+F2 layout
+    // gesture), and it stops propagation whenever it owns the press; a hatch
+    // here would only catch the strays, silently yanking focus off the grid.
+    sampleWrap.replaceChildren(progress.el, gridHost);
     try {
       await destroyTable();
       const source = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);

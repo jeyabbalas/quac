@@ -86,12 +86,14 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   const panelHost = document.createElement('aside');
   panelHost.tabIndex = -1; // programmatic focus target for the skip control
 
-  // WCAG 2.4.1 (bypass blocks). Measured on the HESP example: the grid puts
-  // ~1600 focusable controls (266 columns × header buttons) between the nav and
-  // the panel column, so Download QC Report and Re-run QC were unreachable by
-  // keyboard in any practical sense. The count is data-table's; the DOM order
-  // is ours, and reordering would divorce focus order from reading order
-  // (2.4.3) — so: a skip control, visible only when focused.
+  // WCAG 2.4.1 (bypass blocks) — a convenience now, not a rescue. Under
+  // data-table 0.5.1 the grid put ~1600 focusable controls (266 columns ×
+  // header buttons) between the nav and the panel column AND trapped Tab
+  // outright; 0.6.0 fixed both, and the whole `.dt-root` now contributes five
+  // tab stops at any column count (ui-design.md §9). Five is not a bypass-block
+  // failure, but the grid is still the largest thing between the run bar and
+  // Download QC Report, and the DOM order is ours to keep matching reading
+  // order (2.4.3) rather than reshuffle — so the skip control stays.
   //
   // A <button>, NOT an <a href="#…">: QuaC routes on the hash, and an in-page
   // anchor would rewrite it and navigate the app.
@@ -104,22 +106,13 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     panelHost.scrollIntoView({ block: 'nearest' });
   });
 
-  // …and an escape hatch, because the grid is also a hard keyboard TRAP
-  // (WCAG 2.1.2, Level A). Measured: focus `.dt-root` and neither Tab nor
-  // Shift+Tab moves it — `document.querySelector('.dt-root :focus')` stays
-  // null through any number of presses. That is data-table's own doing and is
-  // logged as an upstream to-do; from here the fix is to give Escape a way
-  // out. It only fires for keydowns originating INSIDE the grid, so the
-  // annotation popover's own Escape (pinned in runQc.spec, pressed while focus
-  // is elsewhere) is untouched.
-  const gridEscapeNote = document.createElement('p');
-  gridEscapeNote.className = 'q-sr-only';
-  gridEscapeNote.textContent = 'The data grid captures Tab. Press Escape to leave it.';
-  gridHost.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    panelHost.focus();
-  });
-  gridArea.append(capBanner, progressWrap, runStatus, skipGrid, gridEscapeNote, gridHost);
+  // The Escape hatch that used to sit here is gone with the trap it existed
+  // for. Escape is data-table's own key now — drop the cursor, leave F2
+  // controls mode, cancel a Shift+F2 layout gesture — and the library stops
+  // propagation whenever it owns the press. A hatch would therefore catch only
+  // the presses the grid ignored, silently throwing focus to the panel column
+  // for a key the user meant for the grid.
+  gridArea.append(capBanner, progressWrap, runStatus, skipGrid, gridHost);
 
   layout.append(gridArea, panelHost);
   container.append(empty, layout);

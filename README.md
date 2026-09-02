@@ -198,8 +198,9 @@ The full grammar, the exact SQL each assertion expands to, and the `js` correcti
 ![The QC report: stat cards, findings panels, and the dataset grid with flagged cells highlighted](https://raw.githubusercontent.com/jeyabbalas/quac/main/docs/images/report.png)
 
 On screen you get counts, four panels (Summary, Missing vars, Findings, Offenders) and the dataset
-itself with every flagged cell coloured by severity. **Download QC Report (.xlsx)** writes five
-sheets:
+itself with every flagged cell coloured by severity. Clicking a rule in **Offenders** focuses the
+grid on the rows that rule flagged; a finding that names no particular row — a schema advisory, a
+dataset-level check — says so instead. **Download QC Report (.xlsx)** writes five sheets:
 
 | Sheet                 | What is in it                                                                                            |
 | --------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -467,9 +468,6 @@ Worth knowing before you rely on it:
   on-screen grid additionally paints at most 20,000 cell highlights, with a banner saying how many
   there were; the Excel report is not limited by that figure. Every cap in force is written into the
   Run Info sheet.
-- **Keyboard navigation of the data grid can trap focus.** The grid is a third-party component and in
-  some states <kbd>Tab</kbd> does not leave it — an upstream issue, and not one automated
-  accessibility tooling can detect. Reload if you get stuck.
 - **`xlsx` installs from a CDN, not from npm.** SheetJS stopped publishing to the npm registry, so
   installing `quac` fetches one pinned, hash-verified tarball from `cdn.sheetjs.com`. Behind a
   registry mirror or an allowlisting proxy, that install step will fail.

@@ -83,6 +83,27 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
 
+2026-09-01 · deps · **`@jeyabbalas/data-table` 0.5.1 → 0.7.0, plus 14 other packages to latest.** Runtime:
+`@duckdb/node-api` 1.5.5-r.1→r.4, `papaparse` 5.5.4→5.7.0. Dev: `vite` 8.2.2, `vitest`/`@vitest/browser-playwright`
+4.1.11, `playwright` 1.62.1, `eslint` 10.9.1, `typescript-eslint` 8.69.0, `@axe-core/playwright` 4.13.0, plus
+`globals`, `es-module-lexer` and three `@codemirror/*` patches. `npm audit fix` took five in-range transitive
+patches — including `fast-uri` 3.1.4→3.1.6 under `ajv`, a host-confusion fix that sits in the `$ref`-resolution
+path; audit 6 findings → 2 (both `uuid`-under-`exceljs`, whose only "fix" is a downgrade to exceljs 3.4.0 — declined).
+**Two deliberate holds:** `typescript` stays `~6.0.3` (typescript-eslint still declares `<6.1.0`; no release supports
+TS 7 — the same cap P01 recorded), and `@types/node` stays `^24` because `engines` says `>=24` and CI runs Node 24,
+so the 26 line would let Node-26-only APIs typecheck clean and fail at the supported minimum.
+**V22 is discharged:** 0.6.0 fixed the keyboard trap filed as data-table #84, so `ui-design.md` §9's upstream list
+is now empty and QuaC's Escape hatch plus its `.q-sr-only` announcement are removed (they had become false claims);
+the `.q-skiplink` stays as a convenience. Re-walked by keyboard: `.dt-root` is 5 tab stops of 6,923 focusable
+candidates, crossed in six Tab and six Shift+Tab, `.dt-root :focus` resolves where it used to stay null, and the axe
+diagnostic pass reports it clean in both contexts. One code change forced by tooling: typescript-eslint 8.69
+extended `no-meaningless-void-operator` to non-call expressions, so `duckProgress.ts`'s forced reflow is now
+`el.getBoundingClientRect()` rather than `void el.offsetWidth` (same flush; the repo carries no `eslint-disable`).
+Also verified in-browser: annotations, popovers, header tooltips, offender focus, Studio rule test. 0.6.0 moves
+data-table's filter bar **above** the column headers — both grid hosts absorbed it, and the Studio's chrome above
+the body actually shrank (273–306px → 236px), so the 360px floor has more room, not less.
+1199 unit · 73 browser · 45 cli · 124 e2e green; entry 48.5 KB gz (budget 300).
+
 2026-07-30 · P22 · **v1.0.0 — hardened, measured, documented, packaged.** Twelve commits, each green and each
 pushed with CI watched before the next. **Hardening:** every one of the 21 lint codes and 15 schema-load codes now
 has a test proving its message is designed prose rather than leaked engine text (`tests/unit/support/designedMessage.ts`
@@ -406,7 +427,8 @@ and so beats the raw token pair's 5.92. **The keyboard walk found what axe could
 keyboard trap, mitigated by a `.q-skiplink` (a `<button>` — never an `<a href="#…">`, QuaC routes on the hash) plus
 Escape-to-leave on both grid hosts. Deviations → `phase-19-polish-a11y.md`. **For P20**: that trap is the one thing a
 release audit will flag that QuaC cannot fix in-repo — it wants an upstream issue, and `ui-design.md` §9 should be
-re-checked on any data-table bump.
+re-checked on any data-table bump. *(Resolved 2026-09-01: filed as data-table #84, fixed upstream in 0.6.0, cleared
+by the 0.7.0 bump — see the 2026-09-01 entry. The Escape hatch is gone; the skip control stays.)*
 548 unit (+3) · 44 browser · 49 e2e (+4) green; entry 37.5 KB gz (was 37.1, budget 300); axe stayed devDep-only.
 
 2026-07-24 · UIX-3 · Interstitial Rule Studio pass on main (post-P18, before P19): the rail collapses and deleting a

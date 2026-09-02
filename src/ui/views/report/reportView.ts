@@ -6,7 +6,7 @@
  * whenever schema, rules, or dataset change — inspectable before any run.
  */
 import { effect } from '../../../app/signals';
-import { reportError } from '../../../app/errors';
+import { QuacError, reportError } from '../../../app/errors';
 import { showToast } from '../../../app/toast';
 import { assetUrl } from '../../../app/urlBase';
 import {
@@ -134,25 +134,43 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       severity = next;
       gridModule?.applySeverityFilter(next);
     },
-    onOffenderFocus: async (condition, label) => {
+    onOffenderFocus: async (rows, label) => {
       const mod = await loadGridModule();
-      const outcome = await mod.tryFilterByCondition(condition, label);
-      // Both failures leave the grid unfiltered (qc-report-spec.md §4), so the
-      // one thing left to do is say WHICH failure it was — "nothing matched"
-      // reads as a wrong count unless we account for it.
-      if (outcome === 'unfilterable') {
-        showToast('This rule cannot filter the grid (window functions or unavailable columns).', {
+      const outcome = await mod.focusRows(rows, label);
+      if (outcome.kind === 'no-rows') {
+        // The panel does not offer a focus button for these, so reaching here
+        // means the aggregate and the row set disagreed. Say the true thing.
+        showToast(`${label} is not tied to specific rows, so the grid is unchanged.`, {
           kind: 'info',
         });
-      } else if (outcome === 'no-match') {
-        showToast(`${label} matches no rows in the grid, so it was left unfiltered.`, {
-          kind: 'info',
-          hint:
-            'The grid shows the data as it stands after the run — ' +
-            "this rule's flagged cells are still annotated.",
-        });
+        return false;
       }
-      return outcome === 'applied';
+      if (outcome.kind === 'unfilterable') {
+        // Row-identity focus cannot be rejected by a healthy grid (the ids ARE
+        // what the run flagged), so this is a defect, not a rule we can't
+        // express — it goes through the error channel, not a chatty toast.
+        reportError(
+          new QuacError('BRIDGE_FAILED', 'The grid could not focus this rule\u2019s rows.', {
+            hint: 'Re-run QC to rebuild the grid.',
+          }),
+          { fallbackCode: 'BRIDGE_FAILED' },
+        );
+        return false;
+      }
+      // The engine caps flag emission per rule, so a very large offender can be
+      // focused on only the rows it managed to flag. Say so rather than let the
+      // grid's count quietly contradict the panel's.
+      const stat = ctx.store.runArtifacts.get()?.rules?.perRule.find((s) => s.ruleId === label);
+      if (stat?.truncated === true) {
+        showToast(
+          `Focused the first ${outcome.shown.toLocaleString('en-US')} rows ${label} flagged.`,
+          {
+            kind: 'info',
+            hint: "This rule's flags were capped during the run, so later rows are not focused.",
+          },
+        );
+      }
+      return true;
     },
     onClearOffenderFocus: () => {
       gridModule?.clearOffenderFilter();

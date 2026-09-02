@@ -13,7 +13,7 @@
  * a run's present can arrive interleaved (the Run button navigates before the
  * pipeline finishes), and data-table calls must not overlap.
  */
-import { createDataTable } from '@jeyabbalas/data-table';
+import { ROWID_COLUMN, createDataTable } from '@jeyabbalas/data-table';
 import type { DataTable, NewAnnotation } from '@jeyabbalas/data-table';
 import '@jeyabbalas/data-table/styles';
 import { QuacError } from '../../../app/errors';
@@ -25,6 +25,7 @@ import {
   nextDisplayTableName,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
+import { rowFocusSQL } from '../../../core/report/rowFocus';
 import type { PresentPayload } from '../../../core/pipeline';
 import type { HeaderTooltipPlan } from '../../../core/report/headerTooltips';
 
@@ -210,47 +211,55 @@ export function applyTooltips(plan: HeaderTooltipPlan): void {
 }
 
 /**
- * How an offender focus ended (qc-report-spec.md §4 "best effort"):
- * - `applied` — the display table has rows matching the rule; they are shown.
- * - `unfilterable` — the condition cannot run here at all (window functions,
- *   columns the display export does not carry, `__row__`).
- * - `no-match` — the condition runs and matches NOTHING. The panel's count and
- *   the grid's own copy disagree: the rules ran against `data`, where
- *   e.g. `interview_date` is VARCHAR, while data-table's loaded copy types the
- *   same column DATE, so a value the rule flagged as an unparseable date is
- *   already null there (UX-03, proven on H004 in the 2026-07-26 review's repro).
+ * How an offender focus ended (qc-report-spec.md §4):
+ * - `applied` — the rule's flagged rows are showing; `shown` is how many the
+ *   grid matched.
+ * - `no-rows` — the rule flagged no individual rows (a dataset-scope finding:
+ *   a schema `$comment` advisory, a duplicate-records check). Nothing to focus.
+ * - `unfilterable` — the grid rejected a predicate over its own row-id column.
+ *   That is a defect, not a rule the feature cannot express: focus is by row
+ *   identity now, so the only way here is a grid without `__rowid__`.
+ *
+ * The `no-match` outcome this type used to carry is gone with the predicate
+ * that produced it. Re-running a rule's condition against data-table's copy
+ * could match zero rows the run had flagged — H004's `TRY_CAST(interview_date
+ * AS DATE) IS NULL` against a copy that types the column DATE (UX-03). Row ids
+ * cannot miss: they ARE what the run flagged.
  */
-export type OffenderFocusOutcome = 'applied' | 'unfilterable' | 'no-match';
+export type OffenderFocusOutcome =
+  | { kind: 'applied'; shown: number }
+  | { kind: 'no-rows' }
+  | { kind: 'unfilterable' };
 
 /**
- * Repeat-offenders row click (qc-report-spec §4): best-effort raw-SQL filter
- * for window-free row-scope SQL rules.
+ * Repeat-offenders click (qc-report-spec §4): show exactly the rows this rule
+ * flagged, via one raw-SQL filter over the grid's `__rowid__` — which equals
+ * QuaC's `__row__` by construction (V7, see rowFocus.ts).
  *
- * `validateSQLFilter` already runs `SELECT COUNT(*) … WHERE (<sql>)`, so the
- * match count costs nothing extra — and a filter that would empty the grid is
- * a FAILED best effort, not a success. On either failure the previous rule's
- * filter goes too: leaving it applied would label the grid with a rule the
- * user did not click.
+ * `validateSQLFilter` stays in the path: it is the one cheap check that the
+ * grid really carries the row-id column, and it returns the match count for
+ * free. On any failure the previous rule's filter goes too — leaving it applied
+ * would label the grid with a rule the user did not click.
  */
-export function tryFilterByCondition(
-  condition: string,
+export function focusRows(
+  rows: readonly number[],
   label: string,
 ): Promise<OffenderFocusOutcome> {
-  return enqueue(async () => {
+  return enqueue<OffenderFocusOutcome>(async () => {
     const t = table;
-    if (t === undefined) return 'unfilterable';
-    const verdict = await t.actions.validateSQLFilter(condition);
-    const outcome: OffenderFocusOutcome = !verdict.valid
-      ? 'unfilterable'
-      : verdict.matchCount === 0
-        ? 'no-match'
-        : 'applied';
+    if (t === undefined) return { kind: 'unfilterable' };
+    const sql = rowFocusSQL(ROWID_COLUMN, rows);
+    const verdict = sql === '' ? null : await t.actions.validateSQLFilter(sql);
+    // Whatever comes next, the previous rule's filter goes first: a surviving
+    // chip would label the grid with a rule the user did not click.
     if (offenderFilterId !== null) {
       t.actions.removeRawSQLFilter(offenderFilterId);
       offenderFilterId = null;
     }
-    if (outcome === 'applied') offenderFilterId = t.actions.addRawSQLFilter(condition, label);
-    return outcome;
+    if (verdict === null) return { kind: 'no-rows' };
+    if (!verdict.valid) return { kind: 'unfilterable' };
+    offenderFilterId = t.actions.addRawSQLFilter(sql, label);
+    return { kind: 'applied', shown: verdict.matchCount ?? rows.length };
   });
 }
 

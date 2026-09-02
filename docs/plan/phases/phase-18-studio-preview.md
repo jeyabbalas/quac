@@ -61,7 +61,9 @@ New rule semantics; report integration.
 - **Preview mutation safety:** counts run against the FULL `data` view (exact); only the browsing grid is the 10k sample
   (`STUDIO_SAMPLE_SQL`, `__rowid__ === __row__` per V7). "Filter preview to matches" is offered only when
   `validateSQLFilter(condition)` passes on the sample table — window functions or `__row__` references simply fail
-  validation (same contract as reportGrid's `tryFilterByCondition`); the filter dies with clear/new-test/instance rebuild.
+  validation. (The report grid's offender focus once shared this contract; it now filters on `__rowid__` from the
+  flagged rows instead — the Studio has no run, so no flagged rows, and keeps the condition path.) The filter dies with
+  clear/new-test/instance rebuild.
 - **Manual UI/UX pass (2026-07-24):** headed-Playwright screenshot walkthrough on the preview build (the Chrome-extension
   browser tools could not reach local servers in this environment — error page on every localhost/LAN attempt). Verified
   visually: 3-column ≥1280px layout, sample grid + "101 rows" meta, gate states (disabled Add → Tested ✓), validate result

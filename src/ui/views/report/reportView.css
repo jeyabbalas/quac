@@ -427,10 +427,31 @@
   background: var(--q-hover-surface);
 }
 
+/* The row that a click actually acts on takes the pointer — the hover tint
+   alone used to promise that of every row, including the two-thirds of them
+   that name no rows to focus. */
+.q-offenders tbody tr.is-focusable {
+  cursor: pointer;
+}
+
+/* The offender the grid is currently filtered to. Warm wash + accent bar, not
+   another step of gray: it has to read as "selected" next to the gray hover,
+   and it must win over :hover so the marker survives the pointer sitting on a
+   different row. This is the panel's only sign of which rule the grid is
+   showing — data-table's own chip is a column away, over the grid. */
+.q-offenders tbody tr.is-focused,
+.q-offenders tbody tr.is-focused:hover {
+  background: var(--q-yellow-tint);
+  box-shadow: inset 2px 0 0 var(--q-orange);
+}
+
 /* The grid-focus action is a real button in the rule cell (P19 — the row used
    to carry role="button", which broke aria-required-children). It dresses as
-   the mono rule id, so only the affordances change: pointer, plus the
-   link-like underline on hover (it has no box of its own to tint or ring). */
+   the mono rule id, so its answer to the pointer is an underline, not a tint
+   or a ring (tokens.css, the fourth hover answer). What changed: the underline
+   is there AT REST, dotted. Hover-only left a clickable id indistinguishable
+   from the plain-text ids beside it until the pointer was already on it — and
+   with two-thirds of the table unclickable, that was the whole problem. */
 .q-offender-focus {
   border: none;
   background: none;
@@ -441,6 +462,13 @@
   cursor: pointer;
 }
 
-.q-offender-focus:hover .q-offenders-ruleid {
+.q-offender-focus .q-offenders-ruleid {
   text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.q-offender-focus:hover .q-offenders-ruleid,
+.q-offender-focus[aria-pressed='true'] .q-offenders-ruleid {
+  text-decoration-style: solid;
 }

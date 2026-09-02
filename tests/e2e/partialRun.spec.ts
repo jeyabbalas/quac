@@ -48,7 +48,7 @@ const panelTab = (page: Page, name: string): Locator =>
   page.locator('.q-report-panels .q-paneltab', { hasText: name });
 
 const offenderHint = (page: Page): Locator =>
-  page.getByText('Click a row-level SQL rule', { exact: false });
+  page.getByText('Click a rule to focus the rows it flagged', { exact: false });
 
 async function waitForRunDone(page: Page): Promise<void> {
   await expect(page.locator('.q-statcard', { hasText: 'Errors' })).toBeVisible({
@@ -57,7 +57,7 @@ async function waitForRunDone(page: Page): Promise<void> {
   await expect(page.locator('.q-run-progress')).toBeHidden({ timeout: RUN_TIMEOUT });
 }
 
-test('schema-only full run: dash cards, scope note, no offender focus hint', async ({ page }) => {
+test('schema-only full run: dash cards, scope note, offenders still focusable', async ({ page }) => {
   await page.goto('/quac/');
   await datasetInput(page).setInputFiles(DATA);
   await expect(datasetBadge(page)).toHaveText('Valid', { timeout: INGEST_TIMEOUT });
@@ -87,11 +87,13 @@ test('schema-only full run: dash cards, scope note, no offender focus hint', asy
   await panelTab(page, 'Missing vars').click();
   await expect(page.getByText('All schema variables are present in the dataset.')).toBeVisible();
 
-  // Offenders: schema rules produce rows, but none is grid-filterable — the
-  // click hint (and its Clear focus) must not render.
+  // Offenders: schema rules flag rows like any other, so focus is offered here
+  // too. It used to be withheld — focus re-ran the rule's SQL condition, and a
+  // schema rule has none to re-run. Focus is by row identity now.
   await panelTab(page, 'Offenders').click();
   await expect(page.locator('.q-offenders tbody tr').first()).toBeVisible();
-  await expect(offenderHint(page)).toHaveCount(0);
+  await expect(offenderHint(page)).toHaveCount(1);
+  await expect(page.locator('.q-offender-focus').first()).toBeVisible();
 
   // The grid carries annotations from the schema stage.
   await expect(page.locator('.dt-cell--annotated').first()).toBeVisible({ timeout: 30_000 });
@@ -161,11 +163,11 @@ test('rules-only full run: corrections apply, schema note, no-schema missing var
     page.getByText('No JSON Schema loaded — nothing to compare.', { exact: false }),
   ).toBeVisible();
 
-  // Offenders: rows exist, but every surviving rule is column-scope or a
-  // correction — nothing is grid-filterable, so the click hint stays hidden
-  // here too (the visible case is pinned by runQc.spec's full-input run,
-  // where H004 row-scope SQL fires).
+  // Offenders: every surviving rule here is column-scope or a correction, and
+  // focus takes all of them now — what it needs is flagged rows, not a
+  // row-scope SQL condition it can re-run.
   await panelTab(page, 'Offenders').click();
   await expect(page.locator('.q-offenders tbody tr').first()).toBeVisible();
-  await expect(offenderHint(page)).toHaveCount(0);
+  await expect(offenderHint(page)).toHaveCount(1);
+  await expect(page.locator('.q-offender-focus').first()).toBeVisible();
 });

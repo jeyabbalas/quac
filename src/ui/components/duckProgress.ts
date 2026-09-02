@@ -201,7 +201,10 @@ export function createDuckProgress(): DuckProgress {
       if (glide === 0) {
         // Force the write to land before the next retarget so a fresh run
         // snaps to 0 instead of gliding backwards from the previous value.
-        void el.offsetWidth;
+        // The CALL is the flush — a bare `el.offsetWidth` read flushes layout
+        // just the same, but only as an expression statement no lint rule can
+        // tell apart from dead code (`void` on a non-call is itself banned).
+        el.getBoundingClientRect();
       }
       el.setAttribute('aria-valuenow', String(rounded));
       el.setAttribute('aria-valuetext', `${stageLabel} — ${String(rounded)}%`);

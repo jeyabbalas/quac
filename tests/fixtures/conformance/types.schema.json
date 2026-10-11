@@ -1,0 +1,8 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "array", "items": {"type": "object", "properties": {
+ "flag01": {"type": "boolean"},
+ "bool": {"type": "string"},
+ "date": {"type": "integer"},
+ "num": {"type": "string", "pattern": "^\\d+\\.\\d+$"},
+ "int": {"type": "boolean"},
+ "uuid": {"type": "number"}
+}}}

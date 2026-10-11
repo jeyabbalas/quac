@@ -1,0 +1,5 @@
+[
+ {"id":0,"num_or_str":1,"bool_or_str":true,"int_float":1.0,"neg_zero":-0,"beyond53":9007199254740993,"ubig":18446744073709551615,"past64":18446744073709551616,"huge_neg":-9223372036854775809,"ovf":1,"sci":1e2,"bool_col":true,"numstr_int":"42","numstr_lead0":"007","str_bool":"true"},
+ {"id":1,"num_or_str":"x","bool_or_str":"true","int_float":2,"neg_zero":0,"beyond53":1,"ubig":1,"past64":1,"huge_neg":1,"ovf":1e400,"sci":1.5e-7,"bool_col":false,"numstr_int":"1e3","numstr_lead0":"12","str_bool":"no"},
+ {"id":2,"num_or_str":2.5,"bool_or_str":false,"int_float":3.5,"neg_zero":-0.0,"beyond53":2,"ubig":2,"past64":2,"huge_neg":2,"ovf":2,"sci":-3E+5,"bool_col":null,"numstr_int":" 5","numstr_lead0":"0x1F","str_bool":"1"}
+]

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "upper": {"type": "string", "format": "uuid", "enum": ["550E8400-E29B-41D4-A716-446655440000", "6BA7B810-9DAD-11D1-80B4-00C04FD430C8"], "pattern": "^[0-9A-F-]+$"},
+      "braces": {"type": "string", "format": "uuid"},
+      "nohyphen": {"type": "string", "format": "uuid"},
+      "urn": {"type": "string", "format": "uuid", "pattern": "^urn:"},
+      "mixedcase": {"type": "string", "format": "uuid", "minLength": 36, "maxLength": 36}
+    }
+  }
+}

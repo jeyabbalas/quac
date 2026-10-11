@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {"type": "integer"},
+      "opt": {"type": "string"},
+      "req": {"type": "string"},
+      "req_nullable": {"type": ["string", "null"]},
+      "all_null": {"type": "string"},
+      "addr": {
+        "type": "object",
+        "properties": {"city": {"type": ["string", "null"]}, "zip": {"type": "string"}},
+        "required": ["city", "zip"],
+        "additionalProperties": false
+      },
+      "addr_open": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "additionalProperties": false
+      },
+      "tags": {"type": "array", "items": {"type": "string"}},
+      "mixed_v": {"type": ["integer", "string"], "maximum": 10}
+    },
+    "required": ["id", "req", "req_nullable", "addr"]
+  }
+}

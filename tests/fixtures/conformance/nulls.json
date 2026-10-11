@@ -1,0 +1,5 @@
+[
+ {"id":0,"opt":null,"req":null,"req_nullable":null,"all_null":null,"addr":{"city":null,"zip":"1"},"addr_open":{"city":"a"},"tags":["a",null],"mixed_v":"42"},
+ {"id":1,"addr":{"zip":"2"},"addr_open":{"city":"b","extra":1},"tags":[],"mixed_v":"abc"},
+ {"id":2,"opt":"x","req":"y","req_nullable":"z","all_null":null,"addr":{"city":"c","zip":"3"},"addr_open":{"city":"c","extra":null},"tags":null,"mixed_v":"7"}
+]

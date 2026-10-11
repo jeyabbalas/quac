@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {"type": "integer"},
+      "off_530": {"type": "string", "format": "date-time", "pattern": "\\+05:30$"},
+      "off_neg8": {"type": "string", "format": "date-time", "pattern": "-08:00$"},
+      "off_zero": {"type": "string", "format": "date-time", "pattern": "\\+00:00$"},
+      "z_upper": {"type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+      "z_lower": {"type": "string", "format": "date-time"},
+      "space_z": {"type": "string", "format": "date-time", "pattern": " "},
+      "frac9": {"type": "string", "format": "date-time", "maxLength": 30, "minLength": 30},
+      "frac3z": {"type": "string", "format": "date-time", "pattern": "\\.\\d{3}Z$"},
+      "off_nocolon": {"type": "string", "format": "date-time"},
+      "off_hours": {"type": "string", "format": "date-time"},
+      "date_short": {"type": "string", "format": "date"},
+      "date_year0": {"type": "string", "format": "date"},
+      "t24": {"type": "string", "maxLength": 8, "pattern": "^([01]\\d|2[0-3]):"},
+      "time_z": {"type": "string", "format": "time"},
+      "time_off": {"type": "string", "format": "time"},
+      "time_frac": {"type": "string", "pattern": "\\.\\d{3}$"},
+      "leap": {"type": "string", "format": "date-time"},
+      "naive_min": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"},
+      "date_ts": {"type": "string", "format": "date-time"}
+    },
+    "additionalProperties": false
+  }
+}

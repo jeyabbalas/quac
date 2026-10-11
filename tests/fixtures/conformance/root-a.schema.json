@@ -1,0 +1,5 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "array",
+ "prefixItems": [{"type": "object", "properties": {"k": {"const": "header"}}, "required": ["k"]}],
+ "items": {"type": "object", "properties": {"k": {"enum": ["a", "b"]}, "v": {"type": ["integer", "null"]}}, "required": ["k"]},
+ "contains": {"type": "object", "properties": {"k": {"const": "c"}}, "required": ["k"]},
+ "maxItems": 4, "uniqueItems": true}

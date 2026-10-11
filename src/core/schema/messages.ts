@@ -134,3 +134,58 @@ export function indexNoMatchMessage(): string {
 export function nonSchemaIgnoredMessage(path: string): string {
   return `\`${path}\` doesn't look like a JSON Schema and was ignored.`;
 }
+
+/** `E_UNSUPPORTED_DRAFT` — draft-04 (or draft-03) declared; QuaC validates none of its quirks. */
+export function unsupportedDraftMessage(path: string, declared: string): string {
+  return (
+    `\`${path}\` declares an older JSON Schema draft (\`${declared}\`), which QuaC does not support. ` +
+    'QuaC validates draft-06, draft-07, 2019-09 and 2020-12 schemas. To upgrade, set `$schema` to ' +
+    '`https://json-schema.org/draft/2020-12/schema`, rename `id` to `$id`, and write ' +
+    '`exclusiveMinimum` / `exclusiveMaximum` as numbers (`"minimum": 5, "exclusiveMinimum": true` ' +
+    'becomes `"exclusiveMinimum": 5`).'
+  );
+}
+
+/** `W_UNKNOWN_DRAFT` — a `$schema` naming no meta-schema QuaC knows. */
+export function unknownDraftMessage(path: string, declared: string, readAs: string): string {
+  return `\`${path}\` declares \`$schema\` \`${declared}\`, which QuaC does not recognise; it is read as JSON Schema ${readAs}.`;
+}
+
+/** `E_COMPILE` — a `pattern` or `patternProperties` key that is no regular expression at all. */
+export function invalidPatternMessage(
+  path: string,
+  pointer: string,
+  keyword: 'pattern' | 'patternProperties',
+  pattern: string,
+  reason: string,
+): string {
+  const what = keyword === 'pattern' ? 'a `pattern`' : 'a `patternProperties` name';
+  return `\`${path}\` has ${what} that is not a valid regular expression (at \`${pointer}\`): \`${pattern}\` — ${reason}.`;
+}
+
+/** `E_COMPILE` — anything else Ajv could not compile. */
+export function compileMessage(path: string, reason: string): string {
+  return `\`${path}\` could not be prepared for validation: ${reason.replace(/\.$/, '')}.`;
+}
+
+/** `W_EMPTY_ENUM` — valid JSON Schema, but no value can ever satisfy it. */
+export function emptyEnumMessage(path: string, pointer: string): string {
+  return `\`${path}\` has an empty \`enum\` (at \`${pointer}\`): no value can satisfy it, so every value there is reported. List the allowed values, or remove the keyword.`;
+}
+
+/** `W_UNCHECKED_FORMAT` — format names QuaC does not test values against. */
+export function uncheckedFormatMessage(formats: readonly string[]): string {
+  const list = formats.map((f) => `\`${f}\``).join(', ');
+  const noun = formats.length === 1 ? 'this format' : 'these formats';
+  return `QuaC does not check ${noun}, so values are not tested against ${formats.length === 1 ? 'it' : 'them'}: ${list}.`;
+}
+
+/** `W_REF_SIBLINGS` — draft-06/07 ignore every keyword next to `$ref`. */
+export function refSiblingsMessage(path: string, pointer: string, keywords: readonly string[]): string {
+  const list = keywords.map((k) => `\`${k}\``).join(', ');
+  return (
+    `\`${path}\` puts ${list} next to \`$ref\` (at \`${pointer}\`); in draft-06 and draft-07 every keyword ` +
+    'beside `$ref` is ignored, so QuaC does not check them. Move them into an `allOf` together with ' +
+    'the `$ref`, or declare `$schema` 2020-12, where they apply.'
+  );
+}

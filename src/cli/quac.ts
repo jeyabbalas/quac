@@ -6,8 +6,9 @@
  * Exit codes are a closed set scripts may depend on:
  *
  *   0  report written        3  schema-set error
- *   1  usage error           4  run failure
- *   2  input/ingest error    5  report or summary write failure
+ *   1  usage error           4  run failure (also: the schema stage did not
+ *   2  input/ingest error       finish — report and summary still written)
+ *   5  report or summary write failure
  *   6  --fail-on threshold met — the report AND summary were written first
  *   130 SIGINT
  */
@@ -25,8 +26,8 @@ import {
   reportRunWarnings,
   reportWritten,
 } from './progress';
-import { buildSummary } from './summary';
-import type { FailOn, ParsedArgs } from './args';
+import { buildSummary, exitCodeFor } from './summary';
+import type { ParsedArgs } from './args';
 import type { QuacErrorKind } from '../headless/errors';
 import type { RunQuacResult } from '../headless/run';
 import type { Reporter } from './progress';
@@ -39,7 +40,6 @@ const EXIT: Record<QuacErrorKind, number> = {
   run: 4,
   report: 5,
 };
-const EXIT_FAIL_ON = 6;
 const EXIT_INTERRUPTED = 130;
 
 /** Below 20 nothing here works; below 24 you are off the declared engines. */
@@ -128,7 +128,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   reportRunWarnings(reporter, result);
   reportWritten(reporter, result);
 
-  const exitCode = failOnCode(args.failOn, result);
+  const exitCode = exitCodeFor(args.failOn, result);
   if (args.summary !== undefined) {
     try {
       await writeSummary(args.summary, result, exitCode);
@@ -165,13 +165,6 @@ async function writeSummary(
     return;
   }
   await writeFile(target, `${json}\n`, 'utf8');
-}
-
-function failOnCode(failOn: FailOn, result: RunQuacResult): number {
-  if (failOn === 'none') return 0;
-  const { error, warning } = result.artifacts.flagStore.summary().severityTotals;
-  const hit = failOn === 'error' ? error > 0 : error + warning > 0;
-  return hit ? EXIT_FAIL_ON : 0;
 }
 
 /**

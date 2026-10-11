@@ -10,7 +10,7 @@
  * `Date` and an arbitrary thrown `cause`, none of which may reach the output.
  */
 import { describe, expect, it } from 'vitest';
-import { buildSummary } from '../../../src/cli/summary';
+import { buildSummary, exitCodeFor } from '../../../src/cli/summary';
 import { createFlagStore } from '../../../src/core/flags/flagStore';
 import type { SummaryContext } from '../../../src/cli/summary';
 import type { QCFlag } from '../../../src/core/flags/flag';
@@ -303,5 +303,38 @@ describe('buildSummary — it has to survive JSON', () => {
       'stageErrors',
       'summarySchemaVersion',
     ]);
+  });
+});
+
+describe('exitCodeFor — headless.md §6', () => {
+  const withStageError = (stage: 'schema' | 'rules' | 'annotate'): RunQuacResult => {
+    const r = result();
+    r.artifacts.stageErrors = [{ stage, message: 'the stage failed', cause: new Error('boom') }];
+    return r;
+  };
+  const clean = (): RunQuacResult => {
+    const r = result();
+    r.artifacts.flagStore = createFlagStore();
+    r.artifacts.stageErrors = [];
+    return r;
+  };
+
+  it('--fail-on: none never fails; error and warning fail on what they name', () => {
+    expect(exitCodeFor('none', result())).toBe(0);
+    expect(exitCodeFor('error', result())).toBe(6);
+    expect(exitCodeFor('warning', result())).toBe(6);
+    expect(exitCodeFor('error', clean())).toBe(0);
+    expect(exitCodeFor('warning', clean())).toBe(0);
+  });
+
+  it('a schema stage that did not finish is exit 4 whatever --fail-on says', () => {
+    for (const failOn of ['none', 'error', 'warning'] as const) {
+      expect(exitCodeFor(failOn, withStageError('schema')), failOn).toBe(4);
+    }
+  });
+
+  it('other non-prepare stage errors stay non-fatal', () => {
+    expect(exitCodeFor('none', withStageError('rules'))).toBe(0);
+    expect(exitCodeFor('none', withStageError('annotate'))).toBe(0);
   });
 });

@@ -1,57 +1,53 @@
 /**
- * Ajv meta-validation (`E_META`, §A.5): every schema file is checked against
- * its meta-schema before P09 ever calls `addSchema` (which throws on first).
- * One instance per set, class chosen by the ROOT file's draft (§B.1); files of
- * a different KNOWN draft are skipped — their meta-schema is absent on this
- * instance and `E_MIXED_DRAFT` already covers the situation. Ajv is imported
- * dynamically to stay out of the entry chunk (`ajv-engine.ts` is P09's).
+ * The loader's engine checks, behind one dynamic import so Ajv stays out of
+ * the entry chunk (`ajv-engine.ts` is the worker's; here it is a lazy chunk):
+ *
+ * - `metaValidate` (`E_META`, §A.5): every schema file checked against its
+ *   meta-schema before validation ever calls `addSchema` (which throws on
+ *   the first failure). One instance per set, built exactly as the
+ *   validation worker builds it (`buildAjv`), class chosen by the ROOT file's
+ *   draft (§B.1); files of a different KNOWN draft are skipped — their
+ *   meta-schema is absent on this instance and `E_MIXED_DRAFT` already covers
+ *   the situation. A `$schema` spelled other than Ajv registers it (https
+ *   for draft-07, a missing `#`) is read as the draft it names.
+ * - `engineChecks`: `loadTimeChecks` — the record schema compiled once at
+ *   load (`E_COMPILE`), and the warnings about checks QuaC will not make
+ *   (`W_UNCHECKED_FORMAT`, `W_EMPTY_ENUM`, `W_REF_SIBLINGS`).
  */
+import { effectiveDraft } from './drafts';
 import { loadError, metaMessage } from './messages';
-import type { SchemaDraft, SchemaFile, SchemaLoadError } from './types';
-
-interface AjvLike {
-  validateSchema: (schema: unknown) => boolean | Promise<unknown>;
-  errors?: { instancePath: string; message?: string }[] | null;
-}
-
-async function loadAjv(draft: Exclude<SchemaDraft, 'unknown'>): Promise<AjvLike> {
-  const options = { allErrors: true, strict: false, validateSchema: true };
-  if (draft === 'draft-07') {
-    const { Ajv } = await import('ajv');
-    return new Ajv(options) as unknown as AjvLike;
-  }
-  if (draft === '2019-09') {
-    const { Ajv2019 } = await import('ajv/dist/2019.js');
-    return new Ajv2019(options) as unknown as AjvLike;
-  }
-  const { Ajv2020 } = await import('ajv/dist/2020.js');
-  return new Ajv2020(options) as unknown as AjvLike;
-}
+import type { SchemaDraft, SchemaFile, SchemaLoadError, SchemaSet } from './types';
 
 /**
  * Collect ALL `E_META` findings for the given schema files. `rootDraft`
  * 'unknown' is treated as 2020-12 (§A.1); files declaring another draft are
- * skipped, files without `$schema` are validated under the root draft.
+ * skipped, files without `$schema` are validated under the root draft, and a
+ * draft-04 file is left to `E_UNSUPPORTED_DRAFT`.
  */
 export async function metaValidate(
   files: readonly SchemaFile[],
   rootDraft: SchemaDraft,
 ): Promise<SchemaLoadError[]> {
-  const effectiveDraft = rootDraft === 'unknown' ? '2020-12' : rootDraft;
+  const effective = effectiveDraft(rootDraft);
+  if (effective === 'draft-04') return [];
+  const candidates = files.filter(
+    (f) =>
+      f.classification !== 'invalid-json' &&
+      f.draft !== 'draft-04' &&
+      (f.draft === 'unknown' || f.draft === effective),
+  );
+  if (candidates.length === 0) return [];
+  const engine = await import('./ajv-engine');
+  const ajv = engine.buildAjv(effective);
   const errors: SchemaLoadError[] = [];
-  let ajv: AjvLike | undefined;
-
-  for (const file of files) {
-    if (file.classification === 'invalid-json') continue;
-    if (file.draft !== 'unknown' && file.draft !== effectiveDraft) continue;
-    ajv ??= await loadAjv(effectiveDraft);
+  for (const file of candidates) {
     let valid: boolean | Promise<unknown>;
     try {
-      valid = ajv.validateSchema(file.json);
+      valid = ajv.validateSchema(engine.metaSchemaInput(file.json, effective) as object);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       errors.push(
-        loadError('E_META', metaMessage(file.relativePath, effectiveDraft, reason, ''), {
+        loadError('E_META', metaMessage(file.relativePath, effective, reason, ''), {
           fileId: file.fileId,
         }),
       );
@@ -64,7 +60,7 @@ export async function metaValidate(
           'E_META',
           metaMessage(
             file.relativePath,
-            effectiveDraft,
+            effective,
             first?.message ?? 'does not match the meta-schema',
             first?.instancePath ?? '',
           ),
@@ -74,4 +70,10 @@ export async function metaValidate(
     }
   }
   return errors;
+}
+
+/** The engine's load-time checks for a built set (see `loadTimeChecks`). */
+export async function engineChecks(set: SchemaSet): Promise<SchemaLoadError[]> {
+  const engine = await import('./ajv-engine');
+  return engine.loadTimeChecks(set);
 }

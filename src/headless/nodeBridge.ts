@@ -116,7 +116,7 @@ export async function createNodeBridge(): Promise<NodeBridgeHandle> {
    */
   async function loadData(
     source: ArrayBuffer | string,
-    options: { format: string; tableName?: string },
+    options: { format: string; tableName?: string; json?: { sampleSize?: number } },
     onProgress?: ProgressCallback,
   ): Promise<{ tableName: string; rowCount: number; columns: string[]; schema: never[] }> {
     const table = options.tableName ?? 'data_table';
@@ -138,7 +138,9 @@ export async function createNodeBridge(): Promise<NodeBridgeHandle> {
               `FROM read_parquet(${file}, file_row_number=true)`
           : `CREATE OR REPLACE TABLE ${target} AS ` +
               `SELECT CAST(row_number() OVER () - 1 AS BIGINT) AS "__rowid__", * ` +
-              `FROM read_json(${file})`,
+              `FROM read_json(${file}${
+                options.json?.sampleSize === undefined ? '' : `, sample_size = ${String(Math.trunc(options.json.sampleSize))}`
+              })`,
       );
       const described = await query<{ column_name: string }>(`DESCRIBE ${target}`);
       const [counted] = await query<{ n: number }>(`SELECT count(*) AS n FROM ${target}`);

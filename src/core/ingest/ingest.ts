@@ -71,6 +71,26 @@ const OUT_OF_MEMORY = {
 function loadFailure(route: LoadRoute, cause: unknown): IngestError {
   if (cause instanceof IngestError) return cause;
   const raw = cause instanceof Error ? cause.message : String(cause);
+  if (route === 'json') {
+    // Two things a JSON parser may accept and DuckDB never does — said plainly.
+    const duplicate = /record\/value (\d+): Object .* has duplicate key "((?:[^"\\]|\\.)*)"/.exec(raw);
+    if (duplicate !== null) {
+      return new IngestError(
+        'INGEST_UNSUPPORTED',
+        `Record ${duplicate[1] ?? '?'} of this JSON file has the key "${duplicate[2] ?? ''}" twice.`,
+        {
+          hint: 'A record may name each key once (RFC 8259) — with two, it is unclear which value the record holds. Remove the duplicate and load the file again.',
+          cause,
+        },
+      );
+    }
+    if (/no low surrogate|invalid (?:high|low) surrogate/i.test(raw)) {
+      return new IngestError('INGEST_UNSUPPORTED', 'This JSON file holds a string with half of a UTF-16 character pair (an unpaired \\uD800–\\uDFFF escape).', {
+        hint: 'Such a string is not valid Unicode text, and the engine cannot read it. Re-export the file from its source, or replace the broken escape.',
+        cause,
+      });
+    }
+  }
   const copy = /out of memory/i.test(raw) ? OUT_OF_MEMORY : LOAD_FAILURE_COPY[route];
   const code = copy === OUT_OF_MEMORY ? 'INGEST_TOO_LARGE' : 'INGEST_UNSUPPORTED';
   return new IngestError(code, copy.message, { hint: copy.hint, cause });
@@ -131,7 +151,11 @@ async function buildRawTable(
 
   if (input.format === 'json' || input.format === 'parquet') {
     onStage('reading', null);
-    if (input.format === 'json') checkJsonArrayPrefix(new Uint8Array(input.bytes));
+    if (input.format === 'json' && checkJsonArrayPrefix(new Uint8Array(input.bytes)) === 'empty') {
+      // `[]` has no records and no columns; read_json would invent a `json` one.
+      const result = await createEmptyRaw(bridge, []);
+      return { ...base, ...result, columnCount: 0 };
+    }
     const { result, renames } = await loadTmpAndCtas(bridge, input.bytes, input.format, onStage);
     return { ...base, ...result, columnCount: result.columns.length, renames };
   }
@@ -235,7 +259,7 @@ async function loadTmpAndCtas(
   // truncated-but-prefix-valid JSON dies inside `loadData`, and its message is
   // pure engine text (`No magic bytes found at end of file 'quac_ingest_tmp'`).
   try {
-    const loaded = await loadTmp(bridge, bytes, format, onStage);
+    const loaded = await loadTmp(bridge, bytes, format, onStage, { everyRecord: format === 'json' });
     try {
       const originals = loaded.columns.filter((c) => c !== ROWID);
       const { names, renames } = sanitizeColumnNames(originals);
@@ -255,8 +279,13 @@ async function loadTmp(
   bytes: ArrayBuffer,
   format: 'json' | 'parquet',
   onStage?: IngestStageFn,
+  options: { everyRecord?: boolean } = {},
 ): Promise<{ columns: string[] }> {
-  const loaded = await bridge.loadData(bytes, { format, tableName: QUAC_INGEST_TMP }, (info) => {
+  // A JSON dataset's column types come from EVERY record: read_json's default
+  // looks at the first 20,480 and refuses the file when a later one brings a
+  // new key or a value of another type.
+  const json = options.everyRecord === true ? { json: { sampleSize: -1 } } : {};
+  const loaded = await bridge.loadData(bytes, { format, tableName: QUAC_INGEST_TMP, ...json }, (info) => {
     onStage?.('loading', typeof info.percent === 'number' ? info.percent : null);
   });
   bridge.clearQueryCache();
@@ -268,17 +297,15 @@ async function dropTmp(bridge: WorkerBridge): Promise<void> {
   bridge.clearQueryCache();
 }
 
-/** Header-only delimited file: an all-VARCHAR quac_raw with zero rows. */
+/** Header-only delimited file (or an empty JSON array): an all-VARCHAR quac_raw with zero rows. */
 async function createEmptyRaw(
   bridge: WorkerBridge,
   columns: readonly string[],
 ): Promise<RawTableResult> {
-  const selectList = columns
-    .map((name) => `CAST(NULL AS VARCHAR) AS ${quoteIdentifier(name)}`)
-    .join(', ');
+  const selectList = columns.map((name) => `, CAST(NULL AS VARCHAR) AS ${quoteIdentifier(name)}`).join('');
   await bridge.query(
     `CREATE OR REPLACE TABLE ${quoteIdentifier(QUAC_RAW)} AS ` +
-      `SELECT CAST(NULL AS BIGINT) AS __row__, ${selectList} WHERE false`,
+      `SELECT CAST(NULL AS BIGINT) AS __row__${selectList} WHERE false`,
   );
   bridge.clearQueryCache();
   return { rowCount: 0, columns: [...columns] };

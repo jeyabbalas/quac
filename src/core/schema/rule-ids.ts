@@ -8,7 +8,7 @@
  */
 
 export type SchemaPropKind = 'value' | 'required' | 'cast' | 'precision';
-export type SchemaColumnKind = 'missing' | 'unexpected' | 'case-mismatch';
+export type SchemaColumnKind = 'missing' | 'unexpected' | 'undescribed' | 'case-mismatch';
 
 /** `schema:prop:<column>:<kind>` — cell-scope property findings. */
 export function schemaPropRuleId(column: string, kind: SchemaPropKind): string {
@@ -34,6 +34,14 @@ export function schemaAdvisoryRuleId(fileId: string): string {
 export const SCHEMA_DATASET_RULE_IDS = {
   duplicateRecords: 'schema:dataset:duplicate-records',
   minItems: 'schema:dataset:min-items',
+  maxItems: 'schema:dataset:max-items',
+  /** More records than `prefixItems` (or a draft-07 tuple) allows, with no more allowed. */
+  items: 'schema:dataset:items',
+  contains: 'schema:dataset:contains',
+  /** Root keywords about the dataset as a whole that QuaC does not check. */
+  unchecked: 'schema:dataset:unchecked',
+  /** A JSON dataset validated from DuckDB's reading because its own records could not be read. */
+  source: 'schema:dataset:source',
   empty: 'schema:dataset:empty',
   pertinence: 'schema:dataset:pertinence',
   noOverlap: 'schema:dataset:no-overlap',

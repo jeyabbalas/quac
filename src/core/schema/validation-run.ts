@@ -1,48 +1,50 @@
 /**
- * Main-thread validation orchestrator (json-schema-subsystem.md §F): casting
- * into quac_typed, column/dataset-scope flags, the single-slot batch pipeline
- * into the QC worker, progress, abort, and the SQL dataset checks. Never
- * imports Ajv — the worker chunk owns it (entry-bundle budget).
+ * Main-thread validation orchestrator (json-schema-subsystem.md §F): the
+ * column- and dataset-scope findings, the single-slot batch pipeline into
+ * the QC worker, progress and abort. Never imports Ajv — the worker chunk
+ * owns it (entry-bundle budget).
  *
- * Duplicate scan: explicit GROUP BY over the quoted data columns — GROUP BY
- * ALL with an aggregate-only select list collapses to ONE whole-table group
- * (verified against @duckdb/node-api 1.5.5); string_agg keeps the row list a
- * plain VARCHAR on both SQL backends (node list() wraps values, Arrow
- * differs).
+ * What the worker validates is the dataset's own records (§C.0), not
+ * DuckDB's reading of them: a JSON file's records as written, a Parquet
+ * file's values as JSON writes them, a CSV or Excel cell's text as the value
+ * it spells. Every dataset column is part of every record — the schema, not
+ * QuaC, decides whether an extra column is allowed. A cell a correction rule
+ * changed is read from the corrected data instead (`corrected`).
+ *
+ * quac_typed — the schema's cast of quac_raw — still exists, for the rules:
+ * it is what lets `age > 18` work on a CSV column. Validation never reads a
+ * cast: DuckDB's casts are lenient (`yes` is true, `1_000` is 1000) and
+ * would hide exactly what a schema check is for.
  */
-import { QUAC_TYPED } from '../bridge/tables';
-import { mayHoldWideIntegers, parseDuckType, readsAsJson } from '../duckdb-type';
+import { QUAC_RAW, QUAC_TYPED } from '../bridge/tables';
+import { duckTypeBase, mayHoldWideIntegers, parseDuckType, readsAsJson } from '../duckdb-type';
 import { computePertinence } from '../pertinence';
 import { quoteIdentifier } from '../sql-identifier';
-import { applyCastPlan, buildCastPlan, describeColumns, scanCastFailures } from './casting';
+import { applyCastPlan, buildCastPlan, describeColumns } from './casting';
 import { createRefResolver } from './deref';
+import { decodeJsonText, jsonArrayElements } from './json-records';
 import { buildNestedPlan, propertySite } from './nested-values';
-import { hasOpenPropertyUniverse } from './row-shaping';
 import {
   SCHEMA_DATASET_RULE_IDS,
   schemaAdvisoryRuleId,
   schemaColumnRuleId,
 } from './rule-ids';
-import {
-  duplicateRecordsMessage,
-  minItemsMessage,
-  missingColumnMessage,
-  noOverlapMessage,
-  unexpectedColumnMessage,
-} from './translator';
-import {
-  DEFAULT_BATCH_ROWS,
-  DEFAULT_FLAG_CAP,
-  serializeColumnMeta,
-} from './worker-protocol';
+import { minItemsMessage, missingColumnMessage, noOverlapMessage } from './translator';
+import { DEFAULT_BATCH_ROWS, DEFAULT_FLAG_CAP, serializeColumnMeta } from './worker-protocol';
 import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
 import type { CastPlan, SqlRunner } from './casting';
 import type { ColumnDigest } from './column-meta';
-import type { NestedColumn } from './nested-values';
+import type { RefResolver, SchemaSite } from './deref';
+import type { RowSourceSpec } from './row-source';
 import type { SchemaFile, SchemaSet } from './types';
+import type { JsonTypeName } from './value-spec';
 import type {
+  CellTransport,
+  DatasetChecks,
   MainToWorker,
+  PresentedColumn,
+  RowSourceKind,
   ValidationPhase,
   ValidationProgress,
   ValidationSummary,
@@ -61,16 +63,21 @@ export interface ValidationRunDeps {
   /** Dataset column names, file order, `__row__` excluded (DatasetSession.columns). */
   datasetColumns: readonly string[];
   flagStore: FlagStore;
-  /** Table the row loop and dataset checks read (P14 points this at the corrected data). */
+  /** The corrected data (P14 points this at the `data` view); default quac_typed. */
   sourceTable?: string;
   /**
    * Pre-applied cast plan from the pipeline's prepare stage (P14): quac_typed
    * already holds this plan's CTAS (applied BEFORE corrections so rules see
-   * typed columns), so describe/build/apply are skipped here. The cast-failure
-   * scan still runs here either way — this function stays the single writer of
-   * `schema:prop:*:cast` flags (a second writer would inflate dedupe counts).
+   * typed columns), so describe/build/apply are skipped here.
    */
   castPlan?: CastPlan;
+  /**
+   * Which records to validate (row-source.ts). Absent: a table whose raw
+   * columns are all text reads as `text`, any other as `typed`.
+   */
+  source?: RowSourceSpec;
+  /** A correction rule may have changed cells: read those from `sourceTable`. */
+  corrected?: boolean;
   onProgress?: (progress: ValidationProgress) => void;
   signal?: AbortSignal;
   config?: ValidationRunConfig;
@@ -101,6 +108,13 @@ function optionalMissingMessage(name: string, title?: string): string {
   const titled = title === undefined ? '' : ` (${title})`;
   return `Variable '${name}'${titled} is declared in the schema but not present in the dataset.`;
 }
+
+/** An extra column the schema leaves records open to: valid, and worth knowing about. */
+function undescribedColumnMessage(name: string): string {
+  return `Column '${name}' is not described in the schema; the schema allows it, so its values were not checked.`;
+}
+
+const plural = (n: number, noun: string): string => `${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;
 
 interface WorkerChannel {
   expect: <K extends WorkerToMain['type']>(
@@ -152,25 +166,130 @@ function rootFileOf(set: SchemaSet): SchemaFile {
   return root;
 }
 
+/** The engine's own JS value is exact for these (Arrow and node-api agree). */
+const NATIVE_TYPES = new Set([
+  'VARCHAR',
+  'BOOLEAN',
+  'TINYINT',
+  'SMALLINT',
+  'INTEGER',
+  'UTINYINT',
+  'USMALLINT',
+  'UINTEGER',
+  'DOUBLE',
+]);
+/** Read as their digits: both runtimes hand a 64-bit integer over as a rounded number. */
+const NUMBER_TYPES = new Set(['BIGINT', 'UBIGINT', 'HUGEINT', 'UHUGEINT', 'DECIMAL', 'FLOAT', 'REAL']);
+
+function transportFor(rawType: string, site: SchemaSite | null, resolver: RefResolver): CellTransport {
+  const base = duckTypeBase(rawType);
+  if (NATIVE_TYPES.has(base)) return { kind: 'native' };
+  if (NUMBER_TYPES.has(base)) return { kind: 'number', exact: base !== 'FLOAT' && base !== 'REAL' };
+  return {
+    kind: 'json',
+    plan: buildNestedPlan(rawType, site, resolver),
+    wideIntegers: mayHoldWideIntegers(parseDuckType(rawType)),
+  };
+}
+
+/** SQL for one column's cells as its transport carries them. */
+function transportSql(ref: string, rawType: string, transport: CellTransport): string {
+  switch (transport.kind) {
+    case 'native':
+    case 'text':
+      return ref;
+    case 'number':
+      return `CAST(${ref} AS VARCHAR)`;
+    case 'json':
+      // A VARIANT's to_json is its text; its JSON cast is the value.
+      return parseDuckType(rawType).kind === 'variant'
+        ? `CAST(CAST(${ref} AS JSON) AS VARCHAR)`
+        : `CAST(to_json(${ref}) AS VARCHAR)`;
+  }
+}
+
+const ROOT_ARRAY_KEYWORDS = new Set([
+  'type',
+  'items',
+  'prefixItems',
+  'additionalItems',
+  'minItems',
+  'maxItems',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+]);
+/** Root keywords that never constrain the dataset (identifiers, annotations, definitions). */
+const ROOT_INERT_KEYWORDS = new Set([
+  '$schema',
+  '$id',
+  'id',
+  '$anchor',
+  '$dynamicAnchor',
+  '$recursiveAnchor',
+  '$vocabulary',
+  '$comment',
+  '$defs',
+  'definitions',
+  'title',
+  'description',
+  'default',
+  'examples',
+  'deprecated',
+  'readOnly',
+  'writeOnly',
+]);
+
 /**
- * End-to-end schema validation (§F): pertinence-derived column flags →
- * casting (+ cast-failure scan) → chunked worker row loop (single-slot
- * pipeline: the fetch of batch N+1 overlaps validation of batch N) → SQL
- * dataset checks. Flags land in the FlagStore as they are produced; the
- * returned summary is the worker's, with `rowsTotal` patched to the
- * authoritative dataset count. Cooperative abort via `signal` (checked
- * between batches; V12: per-call AbortSignal on the bridge fetches).
+ * What the dataset (the root array) must satisfy, read off the root schema:
+ * the record schema(s), `contains`, `uniqueItems` — and the root keywords
+ * QuaC cannot check record by record, reported instead of ignored.
+ */
+function datasetChecksOf(
+  root: SchemaFile,
+  rootJson: Record<string, unknown>,
+): { checks: DatasetChecks; unchecked: string[] } {
+  const uri = root.declaredId ?? root.retrievalUri;
+  const draft07Tuple = Array.isArray(rootJson.items);
+  const prefixItems = Array.isArray(rootJson.prefixItems) ? rootJson.prefixItems : draft07Tuple ? (rootJson.items as unknown[]) : [];
+  const prefixKey = Array.isArray(rootJson.prefixItems) ? 'prefixItems' : 'items';
+  const prefix = prefixItems.map((_, i) => ({ uri, pointer: `/${prefixKey}/${String(i)}` }));
+  const after = draft07Tuple ? rootJson.additionalItems : rootJson.items;
+  const afterKey = draft07Tuple ? 'additionalItems' : 'items';
+  const record: DatasetChecks['record'] =
+    after === undefined || after === true ? null : after === false ? false : { uri, pointer: `/${afterKey}` };
+  const checks: DatasetChecks = { record, prefix, uniqueItems: rootJson.uniqueItems === true };
+  if (rootJson.contains !== undefined) {
+    const min = typeof rootJson.minContains === 'number' ? rootJson.minContains : 1;
+    const max = typeof rootJson.maxContains === 'number' ? rootJson.maxContains : undefined;
+    checks.contains = { schema: { uri, pointer: '/contains' }, min, ...(max === undefined ? {} : { max }) };
+  }
+  const unchecked = Object.keys(rootJson).filter(
+    (k) => !ROOT_ARRAY_KEYWORDS.has(k) && !ROOT_INERT_KEYWORDS.has(k) && !k.startsWith('x-'),
+  );
+  return { checks, unchecked };
+}
+
+/**
+ * End-to-end schema validation (§F): column-scope findings → the worker's
+ * record loop (single-slot pipeline: the fetch of batch N+1 overlaps
+ * validation of batch N) → dataset-scope findings. Flags land in the
+ * FlagStore as they are produced; the returned summary is the worker's, with
+ * `rowsTotal` patched to the authoritative dataset count. Cooperative abort
+ * via `signal` (checked between batches; V12: per-call AbortSignal on the
+ * bridge fetches).
  */
 export async function runSchemaValidation(deps: ValidationRunDeps): Promise<ValidationSummary> {
   const { runner, set, digest, datasetColumns, flagStore, onProgress, signal } = deps;
   const sourceTable = deps.sourceTable ?? QUAC_TYPED;
   const batchRows = Math.max(1, deps.config?.batchRows ?? DEFAULT_BATCH_ROWS);
   const flagCap = deps.config?.flagCap ?? DEFAULT_FLAG_CAP;
+  const corrected = deps.corrected === true;
   const root = rootFileOf(set);
   const rootJson = (root.json ?? {}) as Record<string, unknown>;
   const meta = digest.meta;
   const metaByName = new Map(meta.map((m) => [m.name, m]));
-  const ordinalByName = new Map(meta.map((m, i) => [m.name, i]));
 
   let flagCount = 0;
   const addFlags = (flags: readonly QCFlag[]): void => {
@@ -200,14 +319,31 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     });
   };
 
-  // ---- Column-scope flags from the shared pertinence check (§E.3/§E.5) ----
-  const pertinence = computePertinence({
-    schemaColumns: meta.map((m) => ({ name: m.name, required: m.required })),
-    datasetColumns: [...datasetColumns],
-  });
-  const missingColumns: string[] = [];
-  {
+  // ---- Which records: the mode, and each column's name in the source ----
+  const rawTypes = await describeColumns(runner, QUAC_RAW);
+  let mode: RowSourceKind =
+    deps.source?.kind ?? ([...rawTypes.values()].every((t) => duckTypeBase(t) === 'VARCHAR') ? 'text' : 'typed');
+  // A CSV header is trimmed at ingest and its schema names match the trimmed
+  // text; a Parquet or JSON record keeps the names it was written with.
+  const sourceName = new Map(mode === 'text' ? [] : (deps.source?.renames ?? []).map((r) => [r.to, r.from]));
+  const keyOf = (column: string): string => sourceName.get(column) ?? column;
+  const datasetKeys = datasetColumns.map(keyOf);
+  const columnOfKey = new Map(datasetColumns.map((c) => [keyOf(c), c]));
+
+  /**
+   * Column-scope findings from the shared pertinence check (§E.3/§E.5),
+   * against the dataset's columns by their source names. Extra columns are
+   * not judged here: whether one is allowed is the schema's call, made record
+   * by record in the worker.
+   */
+  const pertinenceOf = (
+    keys: readonly string[],
+  ): { flags: QCFlag[]; missingRequired: string[]; extras: string[] } => {
     const flags: QCFlag[] = [];
+    const pertinence = computePertinence({
+      schemaColumns: meta.map((m) => ({ name: m.name, required: m.required })),
+      datasetColumns: keys,
+    });
     if (pertinence === null) {
       flags.push(
         datasetFlag(
@@ -216,89 +352,125 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
           'The schema defines no per-column properties, so data pertinence could not be assessed.',
         ),
       );
-    } else {
-      const caseMismatchedDataset = new Set(pertinence.caseMismatches.map((c) => c.dataset));
-      for (const name of pertinence.missingRequired) {
-        missingColumns.push(name);
-        flags.push(
-          columnFlag(
-            schemaColumnRuleId(name, 'missing'),
-            name,
-            'error',
-            missingColumnMessage(name, metaByName.get(name)?.title),
-          ),
-        );
-      }
-      for (const name of pertinence.missingOptional) {
-        missingColumns.push(name);
-        flags.push(
-          columnFlag(
-            schemaColumnRuleId(name, 'missing'),
-            name,
-            'info',
-            optionalMissingMessage(name, metaByName.get(name)?.title),
-          ),
-        );
-      }
-      for (const name of pertinence.extra) {
-        // Case-mismatched headers get the dedicated warning below, not
-        // `unexpected` on top of it (§H edge 11).
-        if (caseMismatchedDataset.has(name)) continue;
-        flags.push(
-          columnFlag(
-            schemaColumnRuleId(name, 'unexpected'),
-            name,
-            'error',
-            unexpectedColumnMessage(name),
-          ),
-        );
-      }
-      for (const { dataset, schema } of pertinence.caseMismatches) {
-        flags.push(
-          columnFlag(
-            schemaColumnRuleId(schema, 'case-mismatch'),
-            schema,
-            'warning',
-            `Found column '${dataset}'; the schema defines '${schema}'. Rename the column to validate it.`,
-          ),
-        );
-      }
+      return { flags, missingRequired: [], extras: [...keys] };
     }
-    // Category/root-level `$comment` advisories (§D.6) — document-root
-    // `$comment` of each schema file; constant per schema set.
+    for (const name of pertinence.missingRequired) {
+      flags.push(
+        columnFlag(
+          schemaColumnRuleId(name, 'missing'),
+          name,
+          'error',
+          missingColumnMessage(name, metaByName.get(name)?.title),
+        ),
+      );
+    }
+    for (const name of pertinence.missingOptional) {
+      flags.push(
+        columnFlag(
+          schemaColumnRuleId(name, 'missing'),
+          name,
+          'info',
+          optionalMissingMessage(name, metaByName.get(name)?.title),
+        ),
+      );
+    }
+    for (const { dataset, schema } of pertinence.caseMismatches) {
+      flags.push(
+        columnFlag(
+          schemaColumnRuleId(schema, 'case-mismatch'),
+          schema,
+          'warning',
+          `Found column '${dataset}'; the schema defines '${schema}'. Rename the column to validate it.`,
+        ),
+      );
+    }
+    if (pertinence.matched.length === 0 && meta.length > 0 && keys.length > 0) {
+      flags.push(
+        datasetFlag(SCHEMA_DATASET_RULE_IDS.noOverlap, 'error', noOverlapMessage(meta.length, keys.length)),
+      );
+    }
+    const caseMismatched = new Set(pertinence.caseMismatches.map((c) => c.dataset));
+    return {
+      flags,
+      missingRequired: pertinence.missingRequired,
+      extras: pertinence.extra.filter((key) => !caseMismatched.has(key)),
+    };
+  };
+
+  // Category/root-level `$comment` advisories (§D.6) — document-root
+  // `$comment` of each schema file; constant per schema set.
+  {
+    const flags: QCFlag[] = [];
     for (const file of set.schemas) {
       const comment = (file.json as Record<string, unknown> | null)?.$comment;
       if (typeof comment === 'string' && comment.length > 0) {
         flags.push(
-          datasetFlag(
-            schemaAdvisoryRuleId(file.fileId),
-            'info',
-            `Schema note (${file.relativePath}): ${comment}`,
-          ),
+          datasetFlag(schemaAdvisoryRuleId(file.fileId), 'info', `Schema note (${file.relativePath}): ${comment}`),
         );
       }
     }
     addFlags(flags);
   }
 
-  // ---- Casting into quac_typed + cast-failure scan (§C) ----
+  // ---- quac_typed: the schema's cast, for the rules (§C.1) ----
   emitProgress('casting', 0, true);
-  let plan: CastPlan;
-  if (deps.castPlan !== undefined) {
-    plan = deps.castPlan; // prepare already ran this plan's CTAS (P14)
-  } else {
-    const rawTypes = await describeColumns(runner);
-    plan = buildCastPlan(meta, datasetColumns, rawTypes);
+  if (deps.castPlan === undefined) {
+    const plan = buildCastPlan(meta, datasetColumns, rawTypes);
     await applyCastPlan(runner, plan);
   }
-  const scan = await scanCastFailures(runner, plan, ordinalByName);
-  addFlags(scan.flags);
 
   const st = quoteIdentifier(sourceTable);
   rowsTotal = num((await runner.query<{ n: unknown }>(`SELECT count(*) AS n FROM ${st}`))[0]?.n);
 
-  // ---- Empty dataset (§H edge 17): no worker run ----
+  // ---- A JSON dataset's own records (§C.0) ----
+  let records: readonly string[] | null = null;
+  if (mode === 'records' && rowsTotal > 0) {
+    let problem: string | null = null;
+    try {
+      const bytes = deps.source?.bytes;
+      if (bytes === undefined) throw new Error('the file itself is not available to this run');
+      const texts = jsonArrayElements(decodeJsonText(await bytes()));
+      if (texts.length === rowsTotal) records = texts;
+      else problem = `the file holds ${plural(texts.length, 'record')}, the loaded table ${plural(rowsTotal, 'row')}`;
+    } catch (err) {
+      problem = err instanceof Error ? err.message : String(err);
+    }
+    if (records === null) {
+      mode = 'typed';
+      addFlags([
+        datasetFlag(
+          SCHEMA_DATASET_RULE_IDS.source,
+          'warning',
+          `QuaC could not read this JSON file's records as written (${problem ?? 'unknown reason'}), so it validated ` +
+            "DuckDB's reading of them: dates, times and UUIDs in DuckDB's text, and an explicit null read as a missing value.",
+        ),
+      ]);
+    }
+  }
+
+  // The dataset's columns by name. A JSON file's real keys are known only once
+  // its records are read: its findings wait for the worker's `keysSeen`.
+  const columnScope = pertinenceOf(datasetKeys);
+  const missingRequired = columnScope.missingRequired;
+  let extras = columnScope.extras;
+  if (records === null) addFlags(columnScope.flags);
+
+  const { checks, unchecked } = datasetChecksOf(root, rootJson);
   const minItems = typeof rootJson.minItems === 'number' ? rootJson.minItems : undefined;
+  const maxItems = typeof rootJson.maxItems === 'number' ? rootJson.maxItems : undefined;
+  if (unchecked.length > 0) {
+    addFlags([
+      datasetFlag(
+        SCHEMA_DATASET_RULE_IDS.unchecked,
+        'warning',
+        `The schema's root keyword${unchecked.length === 1 ? '' : 's'} ${unchecked.map((k) => `'${k}'`).join(', ')} ` +
+          `constrain${unchecked.length === 1 ? 's' : ''} the dataset as a whole, which QuaC does not check — only each record, ` +
+          'and the record count, uniqueness and `contains`.',
+      ),
+    ]);
+  }
+
+  // ---- Empty dataset (§H edge 17): no worker run ----
   if (rowsTotal === 0) {
     const flags: QCFlag[] = [
       datasetFlag(
@@ -324,41 +496,45 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     };
   }
 
-  const includeExtras = hasOpenPropertyUniverse(set, root.fileId);
-  const selected = plan.columns
-    .filter((c) => c.inSchema || includeExtras)
-    .map((c) => c.column);
+  // ---- The columns as the worker presents them ----
+  const resolver = createRefResolver(set);
+  const dataTypes = corrected ? await describeColumns(runner, sourceTable) : new Map<string, string>();
+  const columns: PresentedColumn[] = datasetColumns.map((column) => {
+    const key = keyOf(column);
+    const m = metaByName.get(key);
+    // A column no property declares is read as the text it is; the schema
+    // decides whether it may be there at all.
+    const jsonTypes: JsonTypeName[] = m === undefined ? ['string'] : [...m.jsonTypes].sort();
+    const site = m === undefined ? null : propertySite(resolver.fileById(m.source.fileId), m.source.pointer);
+    const rawType = rawTypes.get(column) ?? 'VARCHAR';
+    const transport: CellTransport =
+      mode === 'text' ? { kind: 'text' } : mode === 'typed' ? transportFor(rawType, site, resolver) : { kind: 'native' };
+    const numbering = readsAsJson(rawType) ? buildNestedPlan(rawType, site, resolver) : undefined;
+    const fixType = dataTypes.get(column);
+    const fix =
+      fixType === undefined
+        ? undefined
+        : { plan: buildNestedPlan(fixType, site, resolver), wideIntegers: mayHoldWideIntegers(parseDuckType(fixType)) };
+    return {
+      column,
+      key,
+      jsonTypes,
+      nullAllowed: jsonTypes.includes('null'),
+      transport,
+      ...(numbering === undefined ? {} : { numbering }),
+      ...(fix === undefined ? {} : { fix }),
+    };
+  });
 
-  /**
-   * §C.4: a nested or JSON column crosses to the worker as `to_json` text,
-   * with the plan that reads it back (nested-values.ts). Its type is read off
-   * the table the loop reads — a correction may have rebuilt it.
-   */
-  const nestedColumns = async (): Promise<NestedColumn[]> => {
-    const sourceTypes = await describeColumns(runner, sourceTable);
-    const resolver = createRefResolver(set);
-    const nested: NestedColumn[] = [];
-    for (const column of selected) {
-      const type = sourceTypes.get(column);
-      if (type === undefined || !readsAsJson(type)) continue;
-      const m = metaByName.get(column);
-      const site =
-        m === undefined ? null : propertySite(resolver.fileById(m.source.fileId), m.source.pointer);
-      nested.push({
-        column,
-        plan: buildNestedPlan(type, site, resolver),
-        wideIntegers: mayHoldWideIntegers(parseDuckType(type)),
-      });
-    }
-    return nested;
-  };
-
-  /** §F: worker init, then the single-slot batch pipeline over `selected`. */
-  const runRowLoop = async (): Promise<ValidationSummary> => {
+  /** §F: worker init, then the single-slot batch pipeline over every column. */
+  const runRowLoop = async (): Promise<{
+    summary: ValidationSummary;
+    datasetFlags: QCFlag[];
+    rejectedColumns: string[];
+    keysSeen?: string[];
+  }> => {
     // ---- Worker init (§F) ----
     emitProgress('compiling', 0, true);
-    const nested = await nestedColumns();
-    const encoded = new Set(nested.map((n) => n.column));
     const worker = (deps.createWorker ?? defaultCreateWorker)();
     try {
       const channel = createChannel(worker);
@@ -368,13 +544,13 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       post({
         type: 'init',
         files: set.schemas.map((f) => ({ uri: f.retrievalUri, json: f.json })),
-        rootBase: root.declaredId ?? root.retrievalUri,
         draft: root.draft,
         columnMeta: serializeColumnMeta(meta),
         conditionals: digest.conditionals,
-        missingColumns,
-        castFailures: [...scan.castFailures],
-        nested,
+        missingRequired,
+        mode,
+        columns,
+        checks,
         config: { flagCap },
       });
       await channel.expect('ready');
@@ -382,39 +558,64 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       // ---- Single-slot batch pipeline (§B.4/§F) ----
       validateStartedAt = performance.now();
       emitProgress('validating', 0, true);
-      const selectList = selected
-        .map((c) => {
-          const quoted = quoteIdentifier(c);
-          return encoded.has(c) ? `CAST(to_json(${quoted}) AS VARCHAR) AS ${quoted}` : quoted;
-        })
-        .join(', ');
-      const fetchBatch = async (start: number): Promise<unknown[][]> => {
+      const valueSelect =
+        mode === 'records'
+          ? []
+          : columns.map(
+              (c, i) =>
+                `${transportSql(`r.${quoteIdentifier(c.column)}`, rawTypes.get(c.column) ?? 'VARCHAR', c.transport)} AS "v${String(i)}"`,
+            );
+      const fixSelect = columns.flatMap((c, i) => {
+        if (c.fix === undefined) return [];
+        const q = quoteIdentifier(c.column);
+        return [
+          `CASE WHEN d.${q} IS DISTINCT FROM t.${q} THEN COALESCE(CAST(to_json(d.${q}) AS VARCHAR), '') END AS "f${String(i)}"`,
+        ];
+      });
+      const fixIndex = columns.map((c) => c.fix !== undefined);
+      const fetchBatch = async (
+        start: number,
+      ): Promise<{ rows?: unknown[][]; records?: string[]; fixes?: (string | null)[][] }> => {
         const end = Math.min(start + batchRows, rowsTotal);
+        const out: { rows?: unknown[][]; records?: string[]; fixes?: (string | null)[][] } = {};
+        if (records !== null) out.records = records.slice(start, end);
+        if (valueSelect.length + fixSelect.length === 0) return out;
+        const key = valueSelect.length > 0 ? 'r' : 'd';
+        const from =
+          valueSelect.length === 0
+            ? `${st} d JOIN ${quoteIdentifier(QUAC_TYPED)} t ON d.__row__ = t.__row__`
+            : fixSelect.length === 0
+              ? `${quoteIdentifier(QUAC_RAW)} r`
+              : `${quoteIdentifier(QUAC_RAW)} r JOIN ${st} d ON d.__row__ = r.__row__ ` +
+                `JOIN ${quoteIdentifier(QUAC_TYPED)} t ON t.__row__ = r.__row__`;
         const rows = await runner.query(
-          `SELECT ${selectList} FROM ${st} ` +
-            `WHERE __row__ >= ${String(start)} AND __row__ < ${String(end)} ORDER BY __row__`,
+          `SELECT ${[...valueSelect, ...fixSelect].join(', ')} FROM ${from} ` +
+            `WHERE ${key}.__row__ >= ${String(start)} AND ${key}.__row__ < ${String(end)} ORDER BY ${key}.__row__`,
           signal,
         );
-        return rows.map((r) => selected.map((name) => r[name]));
+        if (valueSelect.length > 0) out.rows = rows.map((r) => columns.map((_, i) => r[`v${String(i)}`]));
+        if (fixSelect.length > 0) {
+          out.fixes = rows.map((r) =>
+            columns.map((_, i) => {
+              if (fixIndex[i] !== true) return null;
+              const v = r[`f${String(i)}`];
+              return typeof v === 'string' ? v : null;
+            }),
+          );
+        }
+        return out;
       };
 
       let rowsDone = 0;
       let aborted = false;
-      let pending: Promise<unknown[][]> = Promise.resolve([]);
+      let pending: Promise<Awaited<ReturnType<typeof fetchBatch>>> = Promise.resolve({});
       try {
         pending = fetchBatch(0);
         for (let start = 0, seq = 0; start < rowsTotal; start += batchRows, seq += 1) {
-          const rows = await pending;
+          const batch = await pending;
           const nextStart = start + batchRows;
-          pending =
-            nextStart < rowsTotal ? fetchBatch(nextStart) : Promise.resolve([] as unknown[][]);
-          post({
-            type: 'batch',
-            seq,
-            rowStart: start,
-            ...(seq === 0 ? { columns: selected } : {}),
-            rows,
-          });
+          pending = nextStart < rowsTotal ? fetchBatch(nextStart) : Promise.resolve({});
+          post({ type: 'batch', seq, rowStart: start, ...batch });
           const done = await channel.expect('batchDone');
           addFlags(done.flags);
           rowsDone += done.rowsDone;
@@ -436,79 +637,48 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       void pending.catch(() => undefined);
       post({ type: aborted ? 'abort' : 'flush' });
       const done = await channel.expect('done');
-      return done.summary;
+      return {
+        summary: done.summary,
+        datasetFlags: done.datasetFlags,
+        rejectedColumns: done.rejectedColumns,
+        ...(done.keysSeen === undefined ? {} : { keysSeen: done.keysSeen }),
+      };
     } finally {
       worker.terminate();
     }
   };
 
-  /**
-   * §H edge 20 — zero overlap: the schema names none of this dataset's columns
-   * and its property universe is closed, so `selected` is empty. There is
-   * nothing to validate row by row — every row would shape to `{}`, and each
-   * `required` error that would raise is already suppressed by `missingColumns`
-   * in favour of the one column-scope flag emitted above. Running the loop
-   * anyway built `SELECT  FROM …` and died on DuckDB's `SELECT clause without
-   * selection list`, which reached the user as raw engine text on a toast.
-   * The dataset-level SQL checks below still apply: they count rows and group
-   * by the dataset's own columns, neither of which needs a schema match.
-   */
-  const noOverlapSummary = (): ValidationSummary => {
-    addFlags([
-      datasetFlag(
-        SCHEMA_DATASET_RULE_IDS.noOverlap,
-        'error',
-        noOverlapMessage(meta.length, datasetColumns.length),
-      ),
-    ]);
-    emitProgress('validating', rowsTotal, true);
-    return {
-      rowsTotal,
-      rowsWithErrors: 0,
-      flagsEmitted: 0,
-      flagsTruncated: false,
-      countsByRuleId: {},
-      elapsedMs: Math.round(performance.now() - startedAt),
-      aborted: false,
-    };
-  };
+  const loop = await runRowLoop();
+  const summary = loop.summary;
+  if (records !== null) {
+    const seen = pertinenceOf(loop.keysSeen ?? datasetKeys);
+    addFlags(seen.flags);
+    extras = seen.extras;
+  }
 
-  const summary = selected.length === 0 ? noOverlapSummary() : await runRowLoop();
-
-  // ---- Dataset-level SQL checks (§D.6, aggregating) ----
+  // ---- Dataset-scope findings (§D.6, aggregating) ----
   emitProgress('aggregating', rowsTotal, true);
   if (!summary.aborted) {
-    const flags: QCFlag[] = [];
-    if (rootJson.uniqueItems === true) {
-      const dataCols = plan.columns.map((c) => quoteIdentifier(c.column)).join(', ');
-      const groups = await runner.query<{ rows: string }>(
-        `SELECT string_agg(CAST(__row__ AS VARCHAR), ',' ORDER BY __row__) AS rows ` +
-          `FROM ${st} GROUP BY ${dataCols} HAVING count(*) > 1 ORDER BY min(__row__)`,
-        signal,
-      );
-      for (const group of groups) {
-        const ids = group.rows.split(',').map(Number);
-        const first = ids[0];
-        if (first === undefined) continue;
-        for (const other of ids.slice(1)) {
-          flags.push(
-            datasetFlag(
-              SCHEMA_DATASET_RULE_IDS.duplicateRecords,
-              'error',
-              duplicateRecordsMessage(first, other),
-            ),
-          );
-        }
-      }
-    }
+    const flags: QCFlag[] = [...loop.datasetFlags];
     if (minItems !== undefined && rowsTotal < minItems) {
+      flags.push(datasetFlag(SCHEMA_DATASET_RULE_IDS.minItems, 'error', minItemsMessage(rowsTotal, minItems)));
+    }
+    if (maxItems !== undefined && rowsTotal > maxItems) {
       flags.push(
         datasetFlag(
-          SCHEMA_DATASET_RULE_IDS.minItems,
+          SCHEMA_DATASET_RULE_IDS.maxItems,
           'error',
-          minItemsMessage(rowsTotal, minItems),
+          `The dataset has ${plural(rowsTotal, 'record')}; the schema allows at most ${plural(maxItems, 'record')}.`,
         ),
       );
+    }
+    // An extra column the schema rejected already has its error; one it let
+    // through is valid — said once, as information.
+    const rejected = new Set(loop.rejectedColumns);
+    for (const key of extras) {
+      const column = columnOfKey.get(key) ?? key;
+      if (rejected.has(column)) continue;
+      flags.push(columnFlag(schemaColumnRuleId(column, 'undescribed'), column, 'info', undescribedColumnMessage(key)));
     }
     addFlags(flags);
   }

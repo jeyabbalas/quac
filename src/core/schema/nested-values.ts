@@ -50,21 +50,27 @@
 import { parseDuckType } from '../duckdb-type';
 import type { DuckType } from '../duckdb-type';
 import { NON_FINITE_MARK, markNonFinite } from '../nested-json';
+import { canonicalKindOf, canonicalValue } from './canonical';
+import type { CanonicalKind } from './canonical';
 import { escapePointerSegment, getAtPointer } from './deref';
 import type { RefResolver, SchemaSite } from './deref';
 import { allowsNull } from './value-spec';
 import type { SchemaFile } from './types';
 
-/** How one nested column's JSON text maps back onto what the schema expects. */
+/** How one column's `to_json` text maps back onto what the schema expects. */
 export type NestedPlan =
   /** A LIST or fixed-size ARRAY: items count from 1. */
   | { kind: 'list'; element: NestedPlan }
   /** A STRUCT: its fields in order, and those whose NULL reads as missing. */
   | { kind: 'struct'; fields: [string, NestedPlan][]; dropNull: string[] }
-  | { kind: 'map'; value: NestedPlan }
-  /** JSON, VARIANT or UNION: taken as written; arrays count from 0. */
+  /** A MAP: `key` when its keys need a standard rendering (a TIMESTAMP key). */
+  | { kind: 'map'; value: NestedPlan; key?: CanonicalKind }
+  /** A UNION, which `to_json` writes as `{"tag": value}`: read as the value. */
+  | { kind: 'union'; members: [string, NestedPlan][] }
+  /** JSON or VARIANT: taken as written; arrays count from 0. */
   | { kind: 'json' }
-  | { kind: 'leaf' };
+  /** A scalar: `canonical` when DuckDB's text is not the standard one (canonical.ts). */
+  | { kind: 'leaf'; canonical?: CanonicalKind };
 
 /** What the worker needs to read one nested column. */
 export interface NestedColumn {
@@ -225,17 +231,26 @@ function planFor(type: DuckType, site: SchemaSite | null, resolver: RefResolver,
       }
       return { kind: 'struct', fields, dropNull };
     }
-    case 'map':
+    case 'map': {
+      const key = type.key.kind === 'scalar' ? canonicalKindOf(type.key.name) : undefined;
       return {
         kind: 'map',
         value: planFor(type.value, mapValueSite(inPlace(site, resolver)), resolver, depth + 1),
+        ...(key === undefined ? {} : { key }),
+      };
+    }
+    case 'union':
+      return {
+        kind: 'union',
+        members: type.members.map(([name, member]) => [name, planFor(member, site, resolver, depth + 1)]),
       };
     case 'json':
     case 'variant':
-    case 'union':
       return { kind: 'json' };
-    case 'scalar':
-      return { kind: 'leaf' };
+    case 'scalar': {
+      const canonical = canonicalKindOf(type.name);
+      return canonical === undefined ? { kind: 'leaf' } : { kind: 'leaf', canonical };
+    }
   }
 }
 
@@ -274,6 +289,8 @@ export interface DecodedValue {
   nonFinite: { path: PathSegment[]; token: string }[];
   /** The first integer past ±(2^53 − 1), if the scan was asked for and found one. */
   unsafeInteger: { path: PathSegment[]; text: string } | null;
+  /** The text did not parse at all (JSON a lenient DuckDB cast accepted): `value` is undefined. */
+  unreadable?: true;
 }
 
 /** Long integer tokens outside strings are rare enough to gate the scan on the text. */
@@ -340,30 +357,49 @@ function parseKeepingWideDigits(text: string): {
 const ROOT: object = Object.freeze({});
 
 /**
+ * Parse `text`, reading bare non-finite tokens (`NaN`, `inf`, …) as marked
+ * strings when the strict parse fails. Null when even that fails.
+ */
+function parseCell(
+  text: string,
+  scan: boolean,
+): { value: unknown; digits: Map<object, Map<string, string>> | null; marked: boolean } | null {
+  const parse = (source: string): { value: unknown; digits: Map<object, Map<string, string>> | null } =>
+    scan ? parseKeepingWideDigits(source) : { value: JSON.parse(source) as unknown, digits: null };
+  try {
+    return { ...parse(text), marked: false };
+  } catch {
+    // NaN and Infinity are rare; so is anything worse.
+  }
+  try {
+    return { ...parse(markNonFinite(text)), marked: true };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse one cell's `to_json` text and fit it to the schema's view: STRUCT
  * nulls the schema does not allow become missing fields, non-finite numbers
- * become null (and are reported), and — when asked — the first unsafe
- * integer is located. Mutates only the freshly parsed value.
+ * become null (and are reported), DuckDB's text for a timestamp, interval,
+ * blob or float becomes the standard one (canonical.ts), a UNION's tag goes,
+ * and — when asked — the first unsafe integer is located (or, `perKey`, the
+ * first under each top-level key). Mutates only the freshly parsed value.
  */
-export function decodeNestedValue(
+function decode(
   text: string,
   plan: NestedPlan | undefined,
   scanWideIntegers: boolean,
-): DecodedValue {
+  perKey: boolean,
+): DecodedValue & { unsafeByKey: Map<string, { path: PathSegment[]; text: string }> } {
   const scan = scanWideIntegers && LONG_INTEGER.test(text);
-  let marked = false;
-  let source = text;
-  // The plain parse first: NaN and Infinity are rare, and so are wide integers.
-  let parsed: { value: unknown; digits: Map<object, Map<string, string>> | null };
-  try {
-    parsed = scan ? parseKeepingWideDigits(source) : { value: JSON.parse(source) as unknown, digits: null };
-  } catch {
-    source = markNonFinite(text);
-    marked = true;
-    parsed = scan ? parseKeepingWideDigits(source) : { value: JSON.parse(source) as unknown, digits: null };
-  }
-  const { digits } = parsed;
   const nonFinite: DecodedValue['nonFinite'] = [];
+  const unsafeByKey = new Map<string, { path: PathSegment[]; text: string }>();
+  const parsed = parseCell(text, scan);
+  if (parsed === null) {
+    return { value: undefined, nonFinite, unsafeInteger: null, unreadable: true, unsafeByKey };
+  }
+  const { digits, marked } = parsed;
   let unsafeInteger: DecodedValue['unsafeInteger'] = null;
 
   const walk = (
@@ -378,18 +414,22 @@ export function decodeNestedValue(
         nonFinite.push({ path: [...path], token: v.slice(NON_FINITE_MARK.length) });
         return null;
       }
-      return v;
+      return p?.kind === 'leaf' && p.canonical !== undefined ? canonicalValue(p.canonical, v) : v;
     }
     if (typeof v === 'number') {
-      if (scan && unsafeInteger === null && Number.isInteger(v) && !Number.isSafeInteger(v)) {
+      if (scan && Number.isInteger(v) && !Number.isSafeInteger(v)) {
+        const slot = perKey ? String(path[0] ?? '') : '';
+        const seen = perKey ? unsafeByKey.has(slot) : unsafeInteger !== null;
         const written = digits?.get(holder)?.get(key);
         // With the source text at hand, only an integer TOKEN counts: a double
         // written `1.7976931348623157e308` has lost nothing it ever had.
-        if (written !== undefined || !SOURCE_ACCESS) {
-          unsafeInteger = { path: [...path], text: written ?? String(v) };
+        if (!seen && (written !== undefined || !SOURCE_ACCESS)) {
+          const found = { path: [...path], text: written ?? String(v) };
+          if (perKey) unsafeByKey.set(slot, found);
+          else unsafeInteger = found;
         }
       }
-      return v;
+      return p?.kind === 'leaf' && p.canonical !== undefined ? canonicalValue(p.canonical, v) : v;
     }
     if (Array.isArray(v)) {
       const element = p?.kind === 'list' ? p.element : p?.kind === 'json' ? p : undefined;
@@ -401,26 +441,48 @@ export function decodeNestedValue(
       return v;
     }
     if (isRecord(v)) {
+      if (p?.kind === 'union') {
+        // `to_json` writes a UNION as `{"tag": value}`; the value is the value.
+        const [tag, ...rest] = Object.keys(v);
+        const member = tag === undefined ? undefined : p.members.find(([name]) => name === tag);
+        if (tag !== undefined && rest.length === 0 && member !== undefined) {
+          return walk(v[tag], member[1], path, v, tag);
+        }
+        return v;
+      }
       if (p?.kind === 'struct') {
         for (const name of p.dropNull) {
           if (Object.hasOwn(v, name) && v[name] === null) Reflect.deleteProperty(v, name);
         }
       }
-      for (const key of Object.keys(v)) {
+      if (p?.kind === 'map' && p.key !== undefined) {
+        // A TIMESTAMP (or BLOB, …) map key is text in standard form too.
+        const keyKind = p.key;
+        const out: Record<string, unknown> = {};
+        for (const k of Object.keys(v)) {
+          const canonicalKey = String(canonicalValue(keyKind, k));
+          path.push(canonicalKey);
+          const result = walk(v[k], p.value, path, v, k);
+          path.pop();
+          Object.defineProperty(out, canonicalKey, { value: result, writable: true, enumerable: true, configurable: true });
+        }
+        return out;
+      }
+      for (const k of Object.keys(v)) {
         const next =
           p?.kind === 'struct'
-            ? p.fields.find(([name]) => name === key)?.[1]
+            ? p.fields.find(([name]) => name === k)?.[1]
             : p?.kind === 'map'
               ? p.value
               : p?.kind === 'json'
                 ? p
                 : undefined;
-        path.push(key);
-        const result = walk(v[key], next, path, v, key);
+        path.push(k);
+        const result = walk(v[k], next, path, v, k);
         path.pop();
         // defineProperty, not assignment: a `__proto__` field must stay a field.
-        if (result !== v[key]) {
-          Object.defineProperty(v, key, { value: result, writable: true, enumerable: true, configurable: true });
+        if (result !== v[k]) {
+          Object.defineProperty(v, k, { value: result, writable: true, enumerable: true, configurable: true });
         }
       }
       return v;
@@ -429,7 +491,46 @@ export function decodeNestedValue(
   };
 
   const value = walk(parsed.value, plan, [], ROOT, '');
-  return { value, nonFinite, unsafeInteger };
+  return { value, nonFinite, unsafeInteger, unsafeByKey };
+}
+
+/** One cell's `to_json` text, read with its column's plan (see `decode`). */
+export function decodeNestedValue(
+  text: string,
+  plan: NestedPlan | undefined,
+  scanWideIntegers: boolean,
+): DecodedValue {
+  const d = decode(text, plan, scanWideIntegers, false);
+  return {
+    value: d.value,
+    nonFinite: d.nonFinite,
+    unsafeInteger: d.unsafeInteger,
+    ...(d.unreadable === true ? { unreadable: true as const } : {}),
+  };
+}
+
+export interface DecodedRecord {
+  /** The record as the file wrote it — any JSON value, an object for a well-formed dataset. */
+  value: unknown;
+  /** Bare NaN / Infinity tokens (DuckDB reads them; JSON has no word for them), now null. */
+  nonFinite: { path: PathSegment[]; token: string }[];
+  /** The first integer past ±(2^53 − 1) under each top-level key. */
+  unsafeIntegers: ReadonlyMap<string, { path: PathSegment[]; text: string }>;
+  unreadable: boolean;
+}
+
+/**
+ * One JSON record's exact text, parsed as the file wrote it: nothing dropped,
+ * nothing renamed, an explicit null kept as null and a missing key missing.
+ */
+export function decodeRecord(text: string, scanWideIntegers: boolean): DecodedRecord {
+  const decoded = decode(text, { kind: 'json' }, scanWideIntegers, true);
+  return {
+    value: decoded.value,
+    nonFinite: decoded.nonFinite,
+    unsafeIntegers: decoded.unsafeByKey,
+    unreadable: decoded.unreadable === true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +559,7 @@ export function renderNestedPath(
   let v = value;
   let p = plan;
   for (const seg of path) {
+    if (p?.kind === 'union') p = unionMemberFor(p, v);
     if (Array.isArray(v)) {
       const index = typeof seg === 'number' ? seg : Number(seg);
       out += p?.kind === 'list' ? `[${String(index + 1)}]` : `[${String(index)}]`;
@@ -478,6 +580,17 @@ export function renderNestedPath(
             : undefined;
   }
   return out;
+}
+
+/** The UNION member a decoded value came from, judged by its shape (for numbering only). */
+function unionMemberFor(plan: Extract<NestedPlan, { kind: 'union' }>, value: unknown): NestedPlan | undefined {
+  const fits = (p: NestedPlan): boolean =>
+    Array.isArray(value)
+      ? p.kind === 'list' || p.kind === 'json'
+      : isRecord(value)
+        ? p.kind === 'struct' || p.kind === 'map' || p.kind === 'json'
+        : p.kind === 'leaf';
+  return plan.members.find(([, p]) => fits(p))?.[1];
 }
 
 /** An Ajv `instancePath` (`/people/1/age`) as unescaped segments, column first. */

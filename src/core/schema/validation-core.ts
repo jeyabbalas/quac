@@ -21,7 +21,7 @@
  * "cancellable between chunks"; §F's "between rows" wording is noted in the
  * phase deferred notes.
  */
-import { buildAjv, collectMetaErrors, registerSchemaFiles } from './ajv-engine';
+import { buildAjv, collectMetaErrors, prepareSchemaForAjv, registerSchemaFiles } from './ajv-engine';
 import { pointerSegments, renderNestedPath } from './nested-values';
 import { createRowShaper } from './row-shaping';
 import { SCHEMA_DATASET_RULE_IDS } from './rule-ids';
@@ -96,7 +96,8 @@ function summarize(s: EngineState): ValidationSummary {
   };
 }
 
-function compileAt(ajv: AjvCore, id: string): ValidateFunction {
+/** Compile a schema by its `ajv.getSchema` id (`schemaRefUri`). */
+function compileId(ajv: AjvCore, id: string): ValidateFunction {
   const validate = ajv.getSchema(id);
   if (validate === undefined) throw new Error(`schema engine: '${id}' failed to compile`);
   return validate;
@@ -159,15 +160,19 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
       post({ type: 'fatal', message: `schema meta-validation failed — ${detail}` });
       return;
     }
-    registerSchemaFiles(ajv, msg.files, msg.draft);
+    // The documents exactly as Ajv holds them (ajv-engine.ts may rewrite a
+    // copy: a `__proto__` property, draft-07 `$ref` siblings, an empty enum) —
+    // the probe below must locate the very objects Ajv's errors point at.
+    const files = msg.files.map((f) => ({ uri: f.uri, json: prepareSchemaForAjv(f.json, msg.draft) }));
+    registerSchemaFiles(ajv, files, msg.draft);
     const { checks } = msg;
-    const prefix = checks.prefix.map((ref) => compileAt(ajv, ref));
-    const record = checks.record === null || checks.record === false ? checks.record : compileAt(ajv, checks.record);
+    const prefix = checks.prefix.map((id) => compileId(ajv, id));
+    const record = checks.record === null || checks.record === false ? checks.record : compileId(ajv, checks.record);
     const contains =
       checks.contains === undefined
         ? null
         : {
-            validate: compileAt(ajv, checks.contains.schema),
+            validate: compileId(ajv, checks.contains.schema),
             min: checks.contains.min,
             ...(checks.contains.max === undefined ? {} : { max: checks.contains.max }),
             matched: 0,
@@ -176,7 +181,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
     // re-validating its branches (error-tree.ts); the record schema tells the
     // probe which subschemas apply only under a dependentSchemas key.
     const rowSchema = typeof checks.record === 'string' ? checks.record : checks.prefix[0];
-    const probe = createSchemaProbe(ajv, msg.files, rowSchema === undefined ? {} : { rowSchema });
+    const probe = createSchemaProbe(ajv, files, rowSchema === undefined ? {} : { rowSchema });
     const compileMs = Math.round(performance.now() - t0);
 
     const meta = deserializeColumnMeta(msg.columnMeta);

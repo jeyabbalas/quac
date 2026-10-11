@@ -129,12 +129,20 @@ function inPlace(site: SchemaSite | null, resolver: RefResolver): SchemaSite[] {
   return out;
 }
 
+/**
+ * A `patternProperties` name as Ajv reads it (keywords.ts `tolerantRegExp`,
+ * not imported: it brings Ajv's code generator onto the main thread):
+ * Unicode mode, plain ECMA-262 when `u` refuses the pattern.
+ */
 function patternMatches(pattern: string, name: string): boolean {
-  try {
-    return new RegExp(pattern, 'u').test(name);
-  } catch {
-    return false;
+  for (const flags of ['u', '']) {
+    try {
+      return new RegExp(pattern, flags).test(name);
+    } catch {
+      // try the next reading
+    }
   }
+  return false;
 }
 
 /**

@@ -30,6 +30,7 @@ import draft6MetaSchema from 'ajv/dist/refs/json-schema-draft-06.json';
 import addFormats from 'ajv-formats';
 import type AjvCore from 'ajv/dist/core';
 import type { AnySchema, ValidateFunction } from 'ajv';
+import { datasetShape, schemaRefUri } from './dataset-shape';
 import { canonicalMetaSchemaUri, effectiveDraft, readDraft } from './drafts';
 import {
   isDate,
@@ -482,9 +483,20 @@ export function loadTimeChecks(set: SchemaSet): SchemaLoadError[] {
         set.schemas.map((f: SchemaFile) => ({ uri: f.retrievalUri, json: f.json })),
         draft,
       );
-      const json = rootFile.json;
-      const pointer = isRecord(json) && (isRecord(json.items) || typeof json.items === 'boolean') ? '/items' : '';
-      compileAt(ajv, rootFile.declaredId ?? rootFile.retrievalUri, pointer);
+      // Every schema the run will compile: the record schema (wherever the
+      // root's `$ref`s put it), the prefix schemas, `contains` — or, for a
+      // root that names none of them, the root document itself.
+      const shape = datasetShape(set);
+      const refs = shape === null ? [] : [
+        ...(shape.record === null || shape.record === false ? [] : [shape.record]),
+        ...shape.prefix,
+        ...(shape.contains === undefined ? [] : [shape.contains.schema]),
+      ];
+      if (refs.length === 0) compileAt(ajv, rootFile.declaredId ?? rootFile.retrievalUri, '');
+      for (const ref of refs) {
+        const id = schemaRefUri(ref);
+        if (ajv.getSchema(id) === undefined) throw new Error(`'${id}' failed to compile`);
+      }
     } catch (err) {
       errors.push(
         loadError('E_COMPILE', compileMessage(rootFile.relativePath, compileReason(err)), {

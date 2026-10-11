@@ -101,7 +101,7 @@
     "@playwright/test": "^1.64.0",
     "@types/node": "^24.19.2",
     "@types/papaparse": "^5.5.2",
-    "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/browser-playwright": "^5.0.3",
     "es-module-lexer": "^3.0.3",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
@@ -112,6 +112,6 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.4",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   }
 }

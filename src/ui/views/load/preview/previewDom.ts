@@ -1,12 +1,12 @@
 /**
- * The two DOM builders every Preview panel shares.
+ * The two DOM builders the Preview panels share.
  *
  * Both were private to dataDictionary.ts until the QC rules panel needed them
  * verbatim. They are five and eight lines over documented primitives
  * (`.q-panel-note`, native `<details>`), which is exactly the size at which a
- * second copy stops being cheaper than an import: two copies of a `+N more`
- * disclosure is two keyboard behaviours to keep in step, and the two panels
- * are meant to read as one component.
+ * second copy stops being cheaper than an import. Every panel uses `note` for
+ * its states; `overflowDetails` is the QC rules panel's alone since the JSON
+ * Schema panel became json-schema-data-dictionary's own component.
  */
 
 /** The in-panel empty (ui-design.md:201) — never the framed `.q-empty`. */

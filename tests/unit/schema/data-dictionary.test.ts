@@ -3,20 +3,26 @@
  * the agreement invariant that keeps QuaC's two descriptions of a schema —
  * `columnDigest` and the dictionary — naming the same variables.
  *
+ * Since json-schema-data-dictionary 0.7.0 the package renders the panel too,
+ * so what is pinned here is the QuaC-side contract only: which documents go
+ * in, the root and options the table is built with, the agreement invariant,
+ * the guards, and the memoization. How the table reads on screen is the
+ * package's to test.
+ *
  * The extractor is imported STATICALLY here; the browser injects a dynamically
  * imported one (data-dictionary.ts's `SchemaToTable` port).
  */
 import { readdirSync } from 'node:fs';
 import { schemaDocumentsToTable } from 'json-schema-data-dictionary';
+import type { DataDictionaryTable } from 'json-schema-data-dictionary';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   DICTIONARY_OPTIONS,
-  buildDictionaryModel,
-  dictionaryModel,
+  buildDictionaryTable,
+  dictionaryTable,
   rootUriOf,
   toSchemaDocuments,
 } from '../../../src/core/schema/data-dictionary';
-import type { DictionaryModel } from '../../../src/core/schema/data-dictionary';
 import { columnDigest } from '../../../src/core/schema/column-meta';
 import { applyRootSelection } from '../../../src/core/schema/root-detection';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
@@ -26,24 +32,24 @@ import { entriesFromDir, entry, fixtureDir } from './helpers';
 const HESP_ROOT_ID = 'core/core.schema.json';
 
 let hesp: SchemaSet;
-let model: DictionaryModel;
+let table: DataDictionaryTable;
+
+/** A table QuaC's options build, for a set that must have one. */
+function tableOf(set: SchemaSet): DataDictionaryTable {
+  const built = buildDictionaryTable(set, schemaDocumentsToTable);
+  if (built === null) throw new Error('expected a dictionary table');
+  return built;
+}
+
+const namesOf = (t: DataDictionaryTable): string[] => t.rows.map((r) => r['Variable name']);
 
 beforeAll(async () => {
   hesp = await buildSchemaSet(entriesFromDir(fixtureDir('hesp', 'json_schema')), {
     origin: 'upload',
   });
   expect(hesp.root.rootFileId).toBe(HESP_ROOT_ID);
-  model = buildDictionaryModel(hesp, schemaDocumentsToTable);
+  table = tableOf(hesp);
 });
-
-const rowsOf = (m: DictionaryModel): DictionaryModel['categories'][number]['rows'] =>
-  m.categories.flatMap((c) => [...c.rows]);
-
-const row = (name: string): DictionaryModel['categories'][number]['rows'][number] => {
-  const hit = rowsOf(model).find((r) => r.name === name);
-  if (hit === undefined) throw new Error(`missing dictionary row ${name}`);
-  return hit;
-};
 
 describe('toSchemaDocuments / rootUriOf', () => {
   it('maps set.schemas to {uri, name} in set order — never set.files', () => {
@@ -69,15 +75,15 @@ describe('toSchemaDocuments / rootUriOf', () => {
   });
 });
 
-describe('buildDictionaryModel over HESP', () => {
+describe('buildDictionaryTable over HESP', () => {
   it('extracts 265 rows in 12 categories with no warnings', () => {
-    expect(model.rowCount).toBe(265);
-    expect(model.categories).toHaveLength(12);
-    expect(model.warnings).toEqual([]);
+    expect(table.rows).toHaveLength(265);
+    expect(table.categories).toHaveLength(12);
+    expect(table.warnings).toEqual([]);
   });
 
   it('keeps categories in items.allOf order with the measured per-category counts', () => {
-    expect(model.categories.map((c) => c.title)).toEqual([
+    expect(table.categories.map((c) => c.title)).toEqual([
       'HESP CORE - Identification and survey administration',
       'HESP CORE - Household composition',
       'HESP CORE - Housing and housing costs',
@@ -91,78 +97,18 @@ describe('buildDictionaryModel over HESP', () => {
       'HESP CORE - Panel status and follow-up',
       'HESP CORE - Derived financial measures',
     ]);
-    expect(model.categories.map((c) => c.rows.length)).toEqual([
+    expect(table.categories.map((c) => c.rows.length)).toEqual([
       16, 28, 24, 32, 26, 24, 24, 26, 17, 23, 10, 15,
     ]);
   });
 
-  it('household_size: measurement range, two sentinels, x-unit as "Unit"', () => {
-    const m = row('household_size');
-    expect(m.type).toBe('integer + coded values');
-    expect(m.values).toEqual([
-      { kind: 'measurement', code: null, label: '1–20' },
-      {
-        kind: 'sentinel',
-        code: '-888',
-        label: "Don't know / unavailable",
-        note: 'The respondent did not know the value or it could not be determined.',
-      },
-      {
-        kind: 'sentinel',
-        code: '-999',
-        label: 'Not collected / processing missing',
-        note: 'The item was in universe but was not collected or was unavailable after processing.',
-      },
-    ]);
-    expect(m.sentinelStart).toBe(1);
-    expect(m.extras).toEqual([{ label: 'Unit', text: 'persons', nested: false }]);
-    expect(m.constraints.map((c) => c.text)).toEqual([
-      'Required',
-      'Measured value: 1 ≤ value ≤ 20',
-    ]);
-  });
-
-  it('partitions values stably: sentinels last, order preserved within a group', () => {
-    for (const r of rowsOf(model)) {
-      // The invariant: no substantive value at or after sentinelStart, and no
-      // sentinel before it.
-      expect(r.values.slice(r.sentinelStart).every((v) => v.kind === 'sentinel')).toBe(true);
-      expect(r.values.slice(0, r.sentinelStart).every((v) => v.kind !== 'sentinel')).toBe(true);
-    }
-    // …and the partition does real work: 2 of 265 rows arrive interleaved.
-    let unpartitionedOnInput = 0;
-    const table = schemaDocumentsToTable(toSchemaDocuments(hesp), {
-      ...DICTIONARY_OPTIONS,
-      rootUri: rootUriOf(hesp) ?? '',
-    });
-    for (const r of table.rows) {
-      let seenSentinel = false;
-      for (const v of r['Valid values']) {
-        if ((v.kind ?? 'value') === 'sentinel') seenSentinel = true;
-        else if (seenSentinel) {
-          unpartitionedOnInput += 1;
-          break;
-        }
-      }
-    }
-    expect(unpartitionedOnInput).toBe(2);
-  });
-
-  it('builds a lowercased haystack covering values, constraints, extras and the category', () => {
-    const m = row('household_size');
-    for (const token of ['household_size', 'persons', "don't know", '1 ≤ value ≤ 20', 'x-unit']) {
-      expect(m.haystack).toContain(token);
-    }
-    expect(m.haystack).toContain('hesp core - household composition');
-    expect(m.haystack).toBe(m.haystack.toLowerCase());
+  it('carries the 171 skip patterns the panel lets you follow', () => {
+    // The component's Skip logic panel and its "Skips N" chips are built from
+    // these; HESP's count is the one the schema-subsystem goldens pin (P07).
+    expect(table.conditionalRules).toHaveLength(171);
   });
 });
 
-/**
- * QuaC now describes a schema twice — `columnDigest` (validation) and this
- * dictionary (browsing). These tests turn "the two may drift" from a risk into
- * a CI failure.
- */
 describe('the agreement invariant with columnDigest', () => {
   /**
    * Sets whose ROOT SHAPE §E.1 does not model, so the two are expected to
@@ -184,9 +130,9 @@ describe('the agreement invariant with columnDigest', () => {
   const agree = (set: SchemaSet, label: string): void => {
     const digest = columnDigest(set);
     if (digest === null) return; // digest blocks on fatals; the dictionary does not
-    const dict = buildDictionaryModel(set, schemaDocumentsToTable);
-    expect(dict.rowCount, `${label}: row count`).toBe(digest.meta.length);
-    expect(new Set(rowsOf(dict).map((r) => r.name)), `${label}: variable names`).toEqual(
+    const dict = tableOf(set);
+    expect(dict.rows.length, `${label}: row count`).toBe(digest.meta.length);
+    expect(new Set(namesOf(dict)), `${label}: variable names`).toEqual(
       new Set(digest.meta.map((m) => m.name)),
     );
   };
@@ -220,10 +166,9 @@ describe('the agreement invariant with columnDigest', () => {
       if (divergent !== undefined) {
         // Pinned, not skipped: assert the exact disagreement so a fix breaks here.
         expect(digest.meta.length, `synthetic/${name}: digest`).toBe(divergent.digest);
-        expect(
-          buildDictionaryModel(set, schemaDocumentsToTable).rowCount,
-          `synthetic/${name}: dictionary`,
-        ).toBe(divergent.dictionary);
+        expect(tableOf(set).rows.length, `synthetic/${name}: dictionary`).toBe(
+          divergent.dictionary,
+        );
         continue;
       }
       agree(set, `synthetic/${name}`);
@@ -234,9 +179,10 @@ describe('the agreement invariant with columnDigest', () => {
 });
 
 describe('DICTIONARY_OPTIONS', () => {
-  it('pins both pseudo-row flags off', () => {
+  it('pins all three extra-row flags off', () => {
     expect(DICTIONARY_OPTIONS.includePatternProperties).toBe(false);
     expect(DICTIONARY_OPTIONS.includeOpenContentRows).toBe(false);
+    expect(DICTIONARY_OPTIONS.expandNested).toBe(false);
   });
 
   it('emits no /regex/ pseudo-row for a patternProperties schema', async () => {
@@ -256,43 +202,72 @@ describe('DICTIONARY_OPTIONS', () => {
       ],
       { origin: 'upload' },
     );
-    const dict = buildDictionaryModel(set, schemaDocumentsToTable);
-    expect(rowsOf(dict).map((r) => r.name)).toEqual(['id']);
+    expect(namesOf(tableOf(set))).toEqual(['id']);
 
     // …and the flags are what suppress them: with the package defaults they appear.
     const loose = schemaDocumentsToTable(toSchemaDocuments(set), { rootUri: rootUriOf(set) ?? '' });
     expect(loose.rows.length).toBeGreaterThan(1);
   });
-});
 
-describe('guards', () => {
-  it('an empty schema list yields an empty model instead of throwing', async () => {
-    const set = await buildSchemaSet([entry('notes.txt', 'not json at all')], { origin: 'upload' });
-    expect(set.schemas).toHaveLength(0);
-    expect(() => buildDictionaryModel(set, schemaDocumentsToTable)).not.toThrow();
-    expect(buildDictionaryModel(set, schemaDocumentsToTable)).toEqual({
-      categories: [],
-      rowCount: 0,
-      warnings: [],
+  // 0.6.0 expands an object-valued column into a row per field by default.
+  // The dataset — and columnDigest — has ONE column there, so the dictionary
+  // keeps one row, which names what is inside it.
+  it('keeps an object-valued column as one row, as the digest does', async () => {
+    const set = await buildSchemaSet(
+      [
+        entry('root.json', {
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+          $id: 'https://example.org/root.json',
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              address: {
+                type: 'object',
+                properties: { city: { type: 'string' }, zip: { type: 'string' } },
+              },
+            },
+          },
+        }),
+      ],
+      { origin: 'upload' },
+    );
+    expect(namesOf(tableOf(set))).toEqual(['id', 'address']);
+    expect(columnDigest(set)?.meta.map((m) => m.name)).toEqual(['id', 'address']);
+
+    // …and the flag is what keeps it one row: with the package default it splits.
+    const expanded = schemaDocumentsToTable(toSchemaDocuments(set), {
+      rootUri: rootUriOf(set) ?? '',
     });
+    expect(namesOf(expanded)).toEqual(['id', 'address', 'address.city', 'address.zip']);
   });
 });
 
-describe('dictionaryModel memoization', () => {
+describe('guards', () => {
+  it('an empty schema list yields no table instead of throwing', async () => {
+    const set = await buildSchemaSet([entry('notes.txt', 'not json at all')], { origin: 'upload' });
+    expect(set.schemas).toHaveLength(0);
+    expect(() => buildDictionaryTable(set, schemaDocumentsToTable)).not.toThrow();
+    expect(buildDictionaryTable(set, schemaDocumentsToTable)).toBeNull();
+  });
+});
+
+describe('dictionaryTable memoization', () => {
   it('returns null without a resolved root', () => {
     const unresolved: SchemaSet = { ...hesp, root: { ...hesp.root, rootFileId: undefined } };
-    expect(dictionaryModel(unresolved)).toBeNull();
+    expect(dictionaryTable(unresolved)).toBeNull();
   });
 
   it('returns null when the set has no schemas', async () => {
     const set = await buildSchemaSet([entry('notes.txt', 'nope')], { origin: 'upload' });
-    expect(dictionaryModel(set)).toBeNull();
+    expect(dictionaryTable(set)).toBeNull();
   });
 
   it('returns the SAME promise twice for one set', () => {
-    const first = dictionaryModel(hesp);
+    const first = dictionaryTable(hesp);
     expect(first).not.toBeNull();
-    expect(dictionaryModel(hesp)).toBe(first);
+    expect(dictionaryTable(hesp)).toBe(first);
   });
 
   it('returns a DIFFERENT promise after applyRootSelection — the setId regression', async () => {
@@ -303,11 +278,11 @@ describe('dictionaryModel memoization', () => {
     // The regression this pins: same setId, different set.
     expect(chosen.setId).toBe(two.setId);
     expect(chosen).not.toBe(two);
-    expect(dictionaryModel(chosen)).not.toBe(dictionaryModel(two));
+    expect(dictionaryTable(chosen)).not.toBe(dictionaryTable(two));
   });
 
-  it('resolves to a real model through the dynamic import', async () => {
-    const resolved = await dictionaryModel(hesp);
-    expect(resolved?.rowCount).toBe(265);
+  it('resolves to a real table through the dynamic import', async () => {
+    const resolved = await dictionaryTable(hesp);
+    expect(resolved?.rows).toHaveLength(265);
   });
 });

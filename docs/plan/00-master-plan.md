@@ -83,6 +83,19 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
 
+2026-10-11 · schema-correctness · **The validator judges the dataset's own values, as JSON.** A five-reviewer audit
+(differential oracle vs a plain validator, the JSON-Schema-Test-Suite, row/dataset semantics, translator, value mapping)
+found 3,196 disagreements on JSON files and dozens of engine/translator defects (V43–V51). Row sources (`schema/row-source.ts`,
+§C.0): JSON validated as its own records (`json-records.ts`, `decodeRecord`), Parquet as standard JSON text
+(`canonical.ts`), text cells read by the schema with JSON's grammar (`text-cells.ts`); every column in every record, corrected
+cells overlaid; quac_typed is the rules' cast only, the SQL cast scan is gone. Digest walks every applicator, unconditional
+`required`, ghosts, undeclared-column metas, dataset shape with `$ref`/tuple/prefixItems roots (`column-meta.ts`,
+`dataset-shape.ts`); translator reads errors as a tree sized by a schema probe (`error-tree.ts`, `schema-probe.ts`); engine:
+exact decimal multipleOf, tolerant regex, RFC 3339 formats, IRI/IDN, draft-06, load-time compile (`keywords.ts`,
+`formats.ts`, `drafts.ts`). Ingest: JSON types from every record, Excel values not display text. Conformance pinned by
+`jsonConformance.test.ts`. Known: browser-only Parquet ISO-text conversion (data-table), IDNA approximated.
+Unit 1,467 · browser 77 · CLI 53 · e2e 124 · entry 55.5 KB gz.
+
 2026-10-11 · nested · **Nested data — LIST, STRUCT, MAP, JSON — checked end to end.** A JSON Schema used to cast every
 nested column to text, so the upstream nested stress fixture (valid) drew 15,308 false errors (V37); now 0. Types are read
 whole (`core/duckdb-type.ts`); nested/JSON raw columns are never cast, text under an array/object schema parses to JSON

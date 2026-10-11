@@ -83,8 +83,8 @@ governs.
 | ------- | ----------------- | ------------------------------------------------------------ |
 | CSV     | `.csv`            | Delimiter sniffed; every column arrives as text              |
 | TSV     | `.tsv`, `.tab`    | As above                                                     |
-| JSON    | `.json`           | Must be a top-level array of objects; native types preserved, nested values too |
-| Excel   | `.xlsx`           | See sheet choice below                                       |
+| JSON    | `.json`           | Must be a top-level array of objects; each record validated as written, nested values too |
+| Excel   | `.xlsx`           | See sheet choice below; each cell read as the value it holds  |
 | Parquet | `.parquet`, `.pq` | Native types preserved, nested values too; by far the fastest route |
 
 Format is decided by **magic bytes first**, then extension, then content — so a Parquet file
@@ -97,6 +97,74 @@ and prints every sheet name — name one with `--sheet`.
 **Size.** Files over 100 MB warn that the run will be slow; QuaC refuses above 500 MB to keep the
 browser responsive. Parquet is dramatically smaller than the same data as CSV, and if you are
 anywhere near these numbers it is the format to use.
+
+---
+
+## How the schema reads your data
+
+A JSON Schema judges JSON values, so QuaC hands the validator each record as JSON: the values your
+file holds, never a converted copy of them.
+
+- **JSON:** each record exactly as the file wrote it.
+  - A missing key is missing. A key set to `null` is null, and its `type` must allow `null`.
+  - Dates, times and UUIDs are the strings you wrote. `2024-01-15T08:30:00+05:30` is a valid
+    `date-time`; `2024-01-15T08:30:00`, with no time-zone offset, is not.
+  - A string that looks like a number is still a string: `"42"` fails `type: integer`.
+- **Parquet:** each value as JSON writes it — numbers, strings, `true`/`false`, lists and records.
+  - Types JSON has no word for become standard text:
+    - a timestamp → `2024-01-15T08:30:00`, ending in `Z` when it is a UTC instant;
+    - a date → `2024-01-15`;
+    - an interval → an ISO 8601 duration such as `P1DT2H`;
+    - a UUID → lowercase;
+    - binary data → base64.
+  - Nothing is converted to another JSON type first: a number column under `type: string` is
+    reported.
+- **CSV, TSV, Excel:** a cell's text is the JSON value it spells, where the schema allows that
+  type. Anything else is text, exactly as written.
+  - A number is written as JSON writes one: `42`, `-0.5`, `1e5`. `+5`, `.5`, `007` and `1,000`
+    are text.
+  - `true`/`false` count in any letter case.
+  - Array and object variables take JSON text: `[…]`, `{…}`.
+  - So `007` passes `type: string` and is reported under `type: integer`:
+    `'007' is not a valid integer.`
+  - An empty cell is a missing value.
+  - Excel cells are read as the values they hold, not as the sheet shows them: `1234.5`, not
+    `1,234.50`. Dates read as `2024-01-15`, or `2024-01-15T08:30:00` with a time.
+
+**The schema decides about columns it does not declare.** Every column of the dataset is part of
+every record:
+
+- `additionalProperties: false` (or `unevaluatedProperties: false`) makes each such column one
+  error;
+- a `patternProperties` or `additionalProperties` schema checks its values;
+- a schema that leaves records open lets the column through, and QuaC notes it as information.
+
+**The schema's root describes the dataset itself:**
+
+- `minItems` / `maxItems` bound the record count;
+- `uniqueItems` reports records that are equal as JSON;
+- `contains` (with `minContains` / `maxContains`) counts the records that match;
+- `prefixItems` (or a draft-07 `items` list) gives the first records schemas of their own;
+- a root may be just a `$ref` to the dataset's schema;
+- a root keyword QuaC cannot check record by record — `not`, `if`, an array-level `anyOf` — is
+  named in a warning, never skipped silently.
+
+**Drafts and formats.**
+
+- **Drafts:** 2020-12, 2019-09, draft-07 and draft-06, whichever the root declares (2020-12 when
+  none). Draft-04 is refused, with the changes needed to upgrade.
+- **Formats checked:**
+  - by RFC 3339: `date`, `time` and `date-time` (with a time-zone offset), and `duration`
+    (Appendix A);
+  - addresses and identifiers: `email`, `idn-email`, `hostname`, `idn-hostname`, `ipv4`,
+    `ipv6`, `uri`, `uri-reference`, `iri`, `iri-reference` and `uuid`;
+  - the rest: `uri-template`, `json-pointer`, `relative-json-pointer` and `regex`, plus
+    OpenAPI's `int32`, `int64` and `byte`.
+- **Formats not checked:** a misspelling, a vendor format, or OpenAPI's `float`, `double`,
+  `password` and `binary` are listed in a warning when the schema loads.
+- **`multipleOf`** works in decimal: `19.99` is a multiple of `0.01`.
+- **Patterns** are ECMA-262 regular expressions, in Unicode mode. A pattern only the plain dialect
+  accepts, such as `\-`, still works.
 
 ---
 
@@ -121,11 +189,11 @@ nested, the way DuckDB reads them (`LIST`, `STRUCT`, `MAP`, `JSON`), and checks 
   as the JSON it holds (an array, an object, dates as `"2024-05-29"`).
 - **The Excel report** writes a nested cell as its exact JSON text.
 
-DuckDB cannot tell a struct field that is missing from one that is `null`, and gives a struct every
-key that any row has. QuaC reads a `NULL` field as missing where the schema does not allow `null`
-there, so neither turns into a false finding. A CSV, TSV or Excel cell can carry a nested value as
-JSON text (`["a", "b"]`): under an `array` or `object` schema QuaC parses it, and reports text that
-does not parse.
+A JSON dataset is validated record by record as written, so a field that is missing and one that
+is `null` are told apart at every level. In a Parquet file a struct field cannot be missing: a NULL
+field reads as missing where the schema does not allow `null` there, and as `null` where it does. A
+CSV, TSV or Excel cell can carry a nested value as JSON text (`["a", "b"]`): under an `array` or
+`object` schema QuaC parses it, and reports text that does not parse.
 
 The [nested-data example](examples/nested/) — 40 study participants with lists, records and maps,
 their schema and ten QC rules — walks through all of it, finding by finding.
@@ -378,7 +446,7 @@ URL, but all of them must be the same kind, never a mix.
 | 1    | Usage error — bad flags, no dataset, no source of checks                                                                |
 | 2    | Input error — unreadable, unsupported or oversize dataset; a multi-sheet workbook with no `--sheet`; a failed URL fetch |
 | 3    | Schema-set error — fatal load errors, or a root left ambiguous without a matching `--index`                             |
-| 4    | Run failure                                                                                                             |
+| 4    | Run failure — including a schema stage that could not finish (its findings are missing); the report and summary are still written |
 | 5    | The report or the summary could not be written                                                                          |
 | 6    | `--fail-on` threshold met — **the report and summary were still written first**                                         |
 | 130  | Interrupted                                                                                                             |
@@ -504,10 +572,23 @@ Worth knowing before you rely on it:
   still validated and every finding still counted; both that sheet and Run Info say what was cut.
   A cell longer than Excel's 32,767-character limit — a long list's JSON, a long note — is cut too,
   and says so in the cell.
-- **One nested case goes unseen.** DuckDB stores a missing struct field and an explicit `null` the
-  same way, so an explicit `null` in a field the schema neither requires nor allows `null` in passes
-  unnoticed (a missing *required* field is still reported). Integers inside nested values past
-  ±(2^53 − 1) are checked as the nearest double, with a warning saying where.
+- **Integers past ±(2^53 − 1)** are checked as the nearest double, with a warning saying which
+  value and where.
+- **In the browser, a Parquet text column of ISO dates or times arrives as dates and times.** The
+  table library converts such a column when it loads the file. The validator then sees the
+  standard text of the converted values rather than the file's own text:
+  - a `T` where the file had a space;
+  - no `Z` where it matched UTC;
+  - no trailing fractional zeros.
+
+  The CLI reads the text as written. JSON files are not affected: their records are always read
+  as written.
+- **Some JSON files cannot be loaded:**
+  - a record that names the same key twice;
+  - a string with half of a UTF-16 surrogate pair (`\uD800`).
+
+  QuaC refuses these and says which record. `idn-hostname` and `idn-email` follow IDNA2008's rules
+  closely but not exhaustively.
 - **A run is capped, and says so.** At most 10,000 violating rows are individually flagged per rule
   (200 for a dataset-scope rule) and 200,000 flags are materialized per run. Exact counts survive
   the caps — the Repeat Offenders sheet and the summary panel report the true totals either way, and

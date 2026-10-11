@@ -21,8 +21,14 @@ Two of QuaC's own libraries moved, and the report and the Load view move with th
 `json-schema-data-dictionary` 0.1.0 → 0.7.0 brings its own dictionary component, which now renders the JSON
 Schema preview. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
 end to end: a JSON or Parquet dataset whose values are lists and records is validated, ruled on, shown and
-reported as the values it holds. The CLI's flags, exit codes, summary record and `runQuac()` surface are
-unchanged.
+reported as the values it holds.
+
+A correctness review of the JSON Schema validation followed, and rebuilt it around one rule: **the
+validator judges the values your dataset holds, as JSON** — never DuckDB's reading of them or a cast of
+them. On data-table's JSON fixtures and a set of crafted edge cases, QuaC disagreed with a plain JSON Schema
+validator 3,196 times; it now agrees, and a conformance test keeps it so. Expect different findings on the same
+inputs — the list is under **Fixed** and **Changed** below. The CLI's flags, summary record and `runQuac()`
+surface are unchanged; one exit code widens (below).
 
 ### Added — web app
 
@@ -80,6 +86,71 @@ unchanged.
   list's JSON or a long text field. The cell is cut, and says so.
 - The CLI reads `TIMESTAMP WITH TIME ZONE` in UTC, as the browser does; it used the machine's own zone.
 
+### Fixed — both: JSON Schema validation
+
+- **A JSON dataset is validated against its own records.** DuckDB reads ISO strings as dates and timestamps,
+  and QuaC used to validate that reading: `2024-01-15T08:30:00+05:30` reached the validator as
+  `2024-01-15 03:00:00` and failed `format: date-time`; a `T` became a space, so `pattern` checks failed;
+  `2024-1-5` became a valid `2024-01-05`; an uppercase UUID became lowercase. Each record is now read from the
+  file as written. So is `null`: an explicit `null` is a value (`type` must allow it), and a missing key is
+  missing — DuckDB reads both as the same NULL, at the top level and inside objects, which made optional fields
+  set to `null` pass and `required` fields set to `null` read as missing.
+- **Values are no longer coerced to the schema's type.** A JSON string `"42"` passed `type: integer`, a number
+  passed `type: string`, `"true"` passed `type: boolean`. Each is now reported as the type mismatch it is
+  (`'42' is a string, not an integer.`).
+- **Parquet values reach the validator in standard text**: timestamps as RFC 3339 (`2024-01-15T08:30:00`, with
+  `Z` for a time-zone-aware one), intervals as ISO 8601 durations, binary as base64, a `FLOAT` 0.1 as 0.1 (not
+  0.10000000149011612), a 64-bit integer from its digits — they reached it as DuckDB's text (`1 year 2 months`,
+  `\xFF`) or rounded silently.
+- **CSV, TSV and Excel cells are read by the schema, strictly.** A cell is the JSON value it spells where the
+  schema allows that type: JSON's number grammar (DuckDB also took `+5`, `.5`, `1_000`, ` 42 `), `true`/`false`
+  in any case (DuckDB also took `yes`, `t`, `1`), JSON text for arrays and objects. A multi-type variable no
+  longer turns `007` into 7 or reads `true` as text.
+- **Excel cells are read as the values they hold**, not as the sheet displays them: `1234.5`, not `1,234.50`;
+  `0.125`, not `12.5%`; dates as `2024-01-15` (with the time when there is one), not `1/15/24`.
+- **Schemas laid out with `items: {"$ref": "#/$defs/row"}` were not validated at all** — QuaC only looked for
+  properties directly under `items` or its `allOf`. Properties declared anywhere — behind `$ref`s, in nested
+  `allOf`, in `anyOf`/`oneOf` branches, under `then`/`else` — are now columns, and a root that is only a `$ref`
+  loads.
+- **`required` means what the schema says.** A `required` inside `anyOf`, `if`/`then` or `dependentSchemas` was
+  reported as "required for every record"; it now says when ("…required when status = 'closed'"). A
+  `required` beside `allOf` categories now counts, so a missing column it names is an error, not information.
+- **Messages that are true**: an `else` failure no longer reads as its `then` rule; collapsing an `anyOf` no
+  longer hides an unrelated error on the same value; `contains` honours `maxContains`; bounds keep every digit
+  (no more "0.00005 is below the minimum 0"); a `oneOf` matching two options says so; conditions anywhere in
+  the schema are worded; `date-time` says it needs a time-zone offset; a column named `bp (mm/Hg)` gets its
+  findings.
+- **`multipleOf` works in decimal**: `19.99` is a multiple of `0.01` (150,445 false errors in a million money
+  values before).
+- **One pattern could stop the whole schema stage**: `\-` and other escapes only plain ECMA-262 allows; such
+  patterns now work, and a pattern no dialect accepts is reported when the schema loads.
+- **The dataset-level keywords are checked**: `maxItems`, `contains` (`minContains`/`maxContains`),
+  `prefixItems` and draft-07 tuples were ignored; `uniqueItems` compares records as JSON (key order and `1` vs
+  `1.0` do not matter, `null` vs missing does).
+- **Mixed-draft sets resolve**, draft-06 is supported, a `constructor` column is a column, and integers past
+  2^53 at the top level now get the precision warning (both runtimes rounded them silently).
+- **JSON files that loaded only partly, or not at all**: a key or a type that first appears after record 20,480
+  no longer fails the load; `[]` loads as an empty dataset.
+
+### Changed — both
+
+- **Extra columns follow the schema.** A column the schema does not declare is an error when the schema rejects
+  it (`additionalProperties: false` or `unevaluatedProperties: false` — "Column 'x' is not allowed by the
+  schema"), checked when a `patternProperties` / `additionalProperties` schema covers it, and information when
+  the schema leaves records open (it used to be an error regardless).
+- **Formats follow their standards**: `date-time` and `time` need a time-zone offset written `Z` or `±hh:mm`
+  and a `T` separator (RFC 3339; a space, `+05` and `+0530` used to pass), `duration` is RFC 3339's, `uuid` takes
+  no `urn:uuid:` prefix, and `iri`, `iri-reference`, `idn-email` and `idn-hostname` are now checked. A format
+  QuaC cannot check is listed when the schema loads.
+- **Draft-04 schemas are refused** with the changes they need; a `$schema` QuaC does not know is read as 2020-12
+  with a warning.
+- **A JSON file with a repeated key in a record, or a broken `\uD800` escape, is refused** with a message naming
+  the record — DuckDB cannot load either.
+- **CLI: a schema stage that cannot finish exits 4**, even without `--fail-on` — its findings are missing. The
+  report and summary are still written.
+- **Run Info no longer lists "Cell annotations painted"** — in the browser's workbook and the CLI's alike — since
+  there is no such cap. "Flags materialized" stays.
+
 ### Changed — web app
 
 - **The JSON Schema preview lists each nested variable's fields** under it, indented (`address.city`,
@@ -98,11 +169,6 @@ unchanged.
 
 - The "Painting N of M cell flags" banner, with the cap it reported.
 - QuaC's own dictionary table and its search, replaced by the component above.
-
-### Changed — both
-
-- **Run Info no longer lists "Cell annotations painted"** — in the browser's workbook and the CLI's alike — since
-  there is no such cap. "Flags materialized" stays.
 
 ### Changed — CLI
 
@@ -141,9 +207,10 @@ unchanged.
 
 | Measure                           | 1.1.0   | 1.2.0                    |
 | --------------------------------- | ------- | ------------------------ |
-| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 49.5 KB                  |
+| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 55.5 KB                  |
 | Cells the report grid can colour  | 20,000  | every recorded flag      |
-| Unit tests                        | 1,211   | 1,263                    |
+| JSON Schema Test Suite (2020-12)  | 2,125 / 2,353 | 2,278 / 2,353      |
+| Unit tests                        | 1,211   | 1,467                    |
 | Browser tests                     | 73      | 77                       |
 | CLI tests                         | 45      | 53                       |
 | End-to-end tests                  | 124     | 124                      |
@@ -157,7 +224,15 @@ The 1.2.0 numbers are from a local run (Node 26, macOS), the 1.1.0 ones from CI.
 Carried over from 1.1.0, minus the 20,000-highlight cap, which is gone. Still true: `external` rules are listed
 rather than executed; a rules-only run leaves every column `VARCHAR`; column names are matched case-sensitively;
 the Excel data sheet stops at 1,048,575 rows; Chromium is the only browser with automated coverage; and `xlsx`
-installs from `cdn.sheetjs.com` rather than the npm registry.
+installs from `cdn.sheetjs.com` rather than the npm registry. New with this release:
+
+- **In the browser, a Parquet text column of ISO dates or times arrives as dates and times.** data-table converts
+  it while loading, so the validator sees its standard text (`T` separator, a UTC `Z` dropped, trailing
+  fractional zeros dropped) rather than the file's own text; the CLI reads the text as written. JSON files are not
+  affected.
+- `idn-hostname` and `idn-email` follow IDNA2008 closely but not exhaustively. A handful of JSON-Schema-Test-Suite
+  cases still fail — `$dynamicRef` corners, `unevaluated*` with `if` but no `then`, draft-07 `content*`
+  assertion — none of them shapes a tabular schema uses.
 
 ## [1.1.0] — 2026-09-02
 

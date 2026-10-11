@@ -12,6 +12,7 @@ blob-report/
 .eslintcache
 *.local
 .vitest-attachments/
+.vitest/
 __screenshots__/
 public/examples/
 *.tgz

@@ -46,7 +46,7 @@ Rationale for `external` staying in the format: real QC programs (see `tests/fix
 
 **One mental model: `condition` selects the rows the rule ACTS ON** — violating rows for `validate`, rows-to-fix for `correct`. Plain SQL `WHERE` truthiness; **NULL ⇒ not selected**. (Rejected alternative — applicability + assertion in two columns — would force the app to negate user SQL, and `NOT (expr)` under three-valued logic silently drops NULL rows: an ambiguity trap. One column also makes Studio preview trivial: matching rows ARE the violations; `matchCount` IS the violation count.) Applicability guards are simply ANDed in (`monthly_rent > 0 AND …`) — the house style for sentinel-heavy data, shown throughout §8.
 
-All rule SQL is written against the view **`data`** (never physical table names). The injected `__row__` column (BIGINT, 0-based file order) is queryable. DuckDB dialect, full function catalog (`regexp_full_match`, `TRY_CAST`, `quantile_cont`, window functions, …).
+All rule SQL is written against the view **`data`** (never physical table names). The injected `__row__` column (BIGINT, 0-based file order) is queryable. DuckDB dialect, full function catalog (`regexp_full_match`, `TRY_CAST`, `quantile_cont`, window functions, …). A JSON or Parquet dataset's nested columns keep their types — `LIST`, `STRUCT`, `MAP`, `JSON` — so list, struct and JSON functions apply (`list_filter(visits, v -> v.systolic_bp > 180)`, `address.city`, `labs['hba1c']`, `struct_update(address, country := upper(address.country))`, `json_extract_string(notes, '$.interpreter')`). DuckDB's `->` / `->>` bind more loosely than `AND`/`IS NULL`: parenthesize them, or prefer the function forms. A finding's value, a correction's before/after and a dataset rule's result columns read a nested value as the JSON it holds (`examples/nested/` walks through it).
 
 | | `row` | `longitudinal` | `column` | `dataset` |
 |---|---|---|---|---|
@@ -82,6 +82,7 @@ NULL semantics are documented loudly in user docs and Studio help: sentinel guar
 ## 6. Correction semantics (JavaScript)
 
 - `update_expression` holds an arrow function **`(value, row) => newValue`**: `value` = current cell for the target (per-target invocation, mirroring `__value__`); `row` = frozen plain object of the full pre-correction row (incl. `__row__`). Return the new value; `null` writes SQL NULL; **`undefined` leaves the cell unchanged** (escape hatch when the SQL condition over-selects).
+- A nested value (`LIST`, `STRUCT`, `MAP`, `JSON`) arrives as the JSON it holds — an array, an object, a date as `"2024-05-29"`, a DECIMAL as a number — on both runtimes; return the new value in the same shape. It is staged as JSON and cast back through DuckDB's JSON type (`CAST(CAST(val AS JSON) AS <type>)`), which a MAP needs: VARCHAR text casts to a STRUCT or LIST, not to a MAP.
 - Execution: condition selects rows in SQL; matches stream to QuickJS in 5,000-row chunks (keyset pagination on `__row__`); results staged into a temp table and merged via one CTAS LEFT JOIN with `CAST(u.val AS <declared column type>)`. Before/after captured host-side.
 - Sandbox budget: fresh QuickJS context per rule; ~128 MB memory; interrupt ~2 s/chunk, 30 s/rule; **no host functions injected — `fetch`/DOM do not exist in the engine**.
 

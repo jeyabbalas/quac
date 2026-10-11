@@ -2,19 +2,19 @@
  * UX-01 regression: rebuilding the display grid after the dataset's SHAPE
  * changed.
  *
- * data-table's parquet loader derives its duckdb-wasm virtual file from the
- * table name — `registerFileBuffer('<tableName>.parquet', bytes)` … `finally
- * { dropFile(...) }`. Reusing ONE name across builds therefore reuses one
- * path, and DuckDB carries per-path state across the drop: the second build
- * of a differently sized export reads the new bytes against the old file's
- * extent and dies ("No magic bytes found at end of file"), unrecoverably
- * until the page reloads.
+ * Through data-table 0.8 the parquet loader derived its duckdb-wasm virtual
+ * file from the table name — `registerFileBuffer('<tableName>.parquet', …)` …
+ * `finally { dropFile(...) }`. Reusing ONE name across builds reused one path,
+ * and DuckDB carried per-path state across the drop: the second build of a
+ * differently sized export read the new bytes against the old file's extent
+ * and died ("No magic bytes found at end of file") until the page reloaded.
+ * `nextDisplayTableName` (core/bridge/tables.ts) was the fix.
  *
- * `nextDisplayTableName` (core/bridge/tables.ts) is what stops that, so this
- * proves the whole loop the report grid runs on a dataset replacement:
- * export wide → build → destroy → export NARROW → build again. Pin the name
- * back to the bare `QUAC_DISPLAY` constant and the second build fails — that
- * is the regression guarded here.
+ * Since 0.9 the loader generates its own file name (`__dt_source_<n>`), so
+ * pinning the bare `QUAC_DISPLAY` constant no longer fails this — checked on
+ * 0.10.0. What it still guards is the user-visible loop the report grid runs
+ * on a dataset replacement, end to end: export wide → build → destroy → export
+ * NARROW → build again, and the second grid reads the NEW dataset.
  */
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createDataTable } from '@jeyabbalas/data-table';

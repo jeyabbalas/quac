@@ -15,16 +15,22 @@ export const QUAC_STUDIO_DISPLAY = 'quac_studio_display';
 
 /**
  * Base names for the two data-table grids, suffixed per instance (UX-01).
- * data-table's parquet loader derives its duckdb-wasm virtual file from the
- * table name — `registerFileBuffer('<tableName>.parquet', bytes)` … `finally
- * { dropFile(...) }` — so a FIXED name means every grid build registers and
- * drops the same path with different-sized content. DuckDB keeps per-path
+ *
+ * Through data-table 0.8 the parquet loader derived its duckdb-wasm virtual
+ * file from the table name — `registerFileBuffer('<tableName>.parquet', …)` …
+ * `finally { dropFile(...) }` — so a FIXED name made every grid build register
+ * and drop the same path with different-sized content. DuckDB kept per-path
  * state across that cycle: the second build of a differently shaped dataset
- * reads the new bytes against the old file's extent and fails with
- * "No magic bytes found at end of file", unrecoverably (only a reload frees
- * the path). A fresh name per build gives a fresh path, so nothing is
- * inherited. Monotonic like ingestController's generation counter: never
- * reused within a session, even after a table is dropped.
+ * read the new bytes against the old file's extent and failed with "No magic
+ * bytes found at end of file", unrecoverably. A fresh name per build was the
+ * fix.
+ *
+ * Since 0.9 the loader names its file itself (`__dt_source_<n>`, upstream
+ * 9d2827c2), so that collision cannot recur: displayGridReshape's rebuild
+ * passes with the bare constant too (checked on 0.10.0). The suffix stays —
+ * it costs nothing and keeps every build's table distinct in DuckDB — but it
+ * is no longer load-bearing. Monotonic like ingestController's generation
+ * counter: never reused within a session, even after a table is dropped.
  */
 let displayTableSeq = 0;
 export function nextDisplayTableName(base: string): string {

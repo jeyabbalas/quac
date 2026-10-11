@@ -108,8 +108,7 @@ export function createPreviewPane(): PreviewPane {
     if (table !== undefined && tableGeneration === generation) {
       if (!refresh) return;
       const bytes = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);
-      // Option-less on purpose — see reportGrid.ts: a generated table name per
-      // refresh means a fresh parquet path, which is what keeps this safe.
+      // Option-less, as in reportGrid.ts: a generated table name per refresh.
       await table.loadData(bytes.slice().buffer);
       return;
     }
@@ -132,9 +131,8 @@ export function createPreviewPane(): PreviewPane {
         container: gridHost,
         source: source.slice().buffer,
         sourceFormat: 'parquet',
-        // Fresh per build, like the report grid (UX-01): the table name is
-        // also data-table's duckdb-wasm parquet path, and reusing one path
-        // across differently shaped samples breaks the rebuild.
+        // Fresh per build, like the report grid (UX-01; not load-bearing
+        // since data-table 0.9 — see nextDisplayTableName).
         tableName: nextDisplayTableName(QUAC_STUDIO_DISPLAY),
         bridge,
         persistence: false,

@@ -81,11 +81,10 @@ async function ensureTable(
   showLocalProgress: boolean,
 ): Promise<DataTable> {
   if (table !== undefined && tableGeneration === generation) {
-    // Deliberately option-less: with no tableName, data-table mints a fresh
-    // generated one (and so a fresh virtual parquet path) for every refresh.
-    // Do NOT "fix" this by passing a stable name — reusing one path across
-    // loads of different sizes is exactly the UX-01 failure (see
-    // nextDisplayTableName). This is why same-dataset re-runs never broke.
+    // Option-less: with no tableName, data-table loads under a generated one,
+    // a fresh table for every refresh. (Through 0.8 this was also what kept
+    // re-runs off one virtual parquet path — the UX-01 failure; since 0.9 the
+    // loader names that file itself. See nextDisplayTableName.)
     if (bytes !== null) await table.loadData(bytes.slice().buffer);
     return table;
   }
@@ -113,8 +112,8 @@ async function ensureTable(
       container: gridHost,
       source: source.slice().buffer,
       sourceFormat: 'parquet',
-      // A FRESH name per build (UX-01) — never the bare constant. See
-      // nextDisplayTableName: the name is also the duckdb-wasm parquet path.
+      // A fresh name per build (UX-01, see nextDisplayTableName — no longer
+      // load-bearing since data-table 0.9, kept because it costs nothing).
       tableName: nextDisplayTableName(QUAC_DISPLAY),
       bridge,
       persistence: false,

@@ -288,7 +288,7 @@ describe('(d) JSON text in a CSV cell, under an array or object schema', () => {
           row: 1,
           column: 'tags',
           ruleId: 'schema:prop:tags:value',
-          message: 'must be a string, got number (at tags[1]).',
+          message: '7 is a number, not a string (at tags[1]).',
         },
         {
           row: 1,
@@ -306,7 +306,7 @@ describe('(d) JSON text in a CSV cell, under an array or object schema', () => {
           row: 2,
           column: 'point',
           ruleId: 'schema:prop:point:value',
-          message: "must be a number, got string (at point.x).",
+          message: "'far' is a string, not a number (at point.x).",
         },
         {
           row: 2,

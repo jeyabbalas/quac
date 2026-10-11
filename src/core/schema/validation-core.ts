@@ -25,12 +25,14 @@ import { buildAjv, collectMetaErrors, registerSchemaFiles } from './ajv-engine';
 import { pointerSegments, renderNestedPath } from './nested-values';
 import { createRowShaper } from './row-shaping';
 import { SCHEMA_DATASET_RULE_IDS } from './rule-ids';
+import { createSchemaProbe } from './schema-probe';
 import { createTranslateCtx, duplicateRecordsMessage, translateRowErrors } from './translator';
 import { deserializeColumnMeta } from './worker-protocol';
 import type { ValidateFunction } from 'ajv';
 import type AjvCore from 'ajv/dist/core';
 import type { QCFlag } from '../flags/flag';
 import type { RowShaper } from './row-shaping';
+import type { SchemaProbe } from './schema-probe';
 import type { AjvErrorLike, TranslateCtx } from './translator';
 import type {
   DatasetChecks,
@@ -48,6 +50,8 @@ interface EngineState {
   contains: { validate: ValidateFunction; min: number; max?: number; matched: number } | null;
   /** Record fingerprint → first row, when the schema wants unique records. */
   seen: Map<string, number> | null;
+  /** Re-validation for the translator's exact applicator blocks (schema-probe.ts). */
+  probe: SchemaProbe;
   ctx: TranslateCtx;
   /** The live Set inside ctx — shaping-discovered castKeys are added here. */
   liveCastFailures: Set<string>;
@@ -168,15 +172,21 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
             ...(checks.contains.max === undefined ? {} : { max: checks.contains.max }),
             matched: 0,
           };
+    // The translator sizes each failed applicator's block of errors by
+    // re-validating its branches (error-tree.ts); the record schema tells the
+    // probe which subschemas apply only under a dependentSchemas key.
+    const rowSchema = typeof checks.record === 'string' ? checks.record : checks.prefix[0];
+    const probe = createSchemaProbe(ajv, msg.files, rowSchema === undefined ? {} : { rowSchema });
     const compileMs = Math.round(performance.now() - t0);
 
     const meta = deserializeColumnMeta(msg.columnMeta);
-    const ctx = createTranslateCtx(meta, msg.conditionals, { missingColumns: msg.missingRequired });
+    const ctx = createTranslateCtx(meta, msg.conditionals, { missingRequired: msg.missingRequired });
     state = {
       prefix,
       record,
       contains,
       seen: checks.uniqueItems ? new Map() : null,
+      probe,
       ctx,
       liveCastFailures: ctx.castFailures as Set<string>,
       ordinalByName: ctx.ordinalByName,
@@ -258,7 +268,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
         if (key === undefined) return '';
         return renderNestedPath(key, rest, record[key], s.columnByKey.get(key)?.numbering);
       };
-      const translated = translateRowErrors(errors, row, s.ctx, locate);
+      const translated = translateRowErrors(errors, row, s.ctx, { locate, probe: s.probe });
       const rowFlags: QCFlag[] = [];
       for (const flag of [...shapeFlags, ...translated]) {
         // Flags name the dataset column; the record knew it by the source's name.

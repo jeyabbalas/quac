@@ -550,9 +550,28 @@ export function deriveValueSpec(site: SchemaSite, resolver: RefResolver): ValueS
 
 const numberFormat = new Intl.NumberFormat('en-US');
 
-/** Range bounds get thousands separators; code/sentinel values render as-is. */
+/**
+ * Range bounds get thousands separators; code/sentinel values render as-is.
+ * Every digit a bound has is kept: `Intl.NumberFormat` stops at three
+ * fraction digits by default, which printed a minimum of 0.00005 as "0" and
+ * 2.71828 as "2.718" — a message saying "0.00001 is below the minimum 0".
+ * The digits come from `String(v)` (the shortest exact form); only the
+ * integer part is grouped.
+ */
 export function formatBound(v: number): string {
-  return numberFormat.format(v);
+  if (!Number.isFinite(v)) return String(v);
+  const text = String(v);
+  const small = /^-?(\d)(?:\.(\d+))?e-(\d+)$/.exec(text);
+  if (small !== null) {
+    // 1e-7 reads as 0.0000001 while that is short enough to read at all.
+    const digits = Number(small[3]) + (small[2]?.length ?? 0);
+    return digits <= 20 ? v.toFixed(digits) : text;
+  }
+  if (/e/i.test(text)) return text; // 1e+21: no grouping to add
+  const [whole = '', fraction] = text.split('.');
+  const grouped = numberFormat.format(Number(whole === '-0' ? '0' : whole));
+  const signed = whole.startsWith('-') && !grouped.startsWith('-') ? `-${grouped}` : grouped;
+  return fraction === undefined ? signed : `${signed}.${fraction}`;
 }
 
 export function renderValue(v: string | number | boolean | null): string {

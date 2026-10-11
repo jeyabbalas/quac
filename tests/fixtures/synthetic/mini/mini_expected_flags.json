@@ -76,7 +76,7 @@
       "scope": "column",
       "column": "notes",
       "severity": "error",
-      "message": "Column 'notes' is not defined in the schema, which does not allow unexpected variables."
+      "message": "Column 'notes' is not allowed by the schema (unevaluatedProperties is false)."
     },
     {
       "source": "schema",

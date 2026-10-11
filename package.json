@@ -96,7 +96,7 @@
     "@fontsource/boogaloo": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
-    "@jeyabbalas/data-table": "0.7.0",
+    "@jeyabbalas/data-table": "0.10.0",
     "@lezer/highlight": "^1.2.3",
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.3",

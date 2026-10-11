@@ -111,8 +111,11 @@ test('Format is folded into Type, not a column of its own', async ({ page }) => 
     'Additional information',
   ]);
 
-  // record_id is one of the 5 HESP variables that carry a format; it now sits
-  // under its own type rather than in an eighty-pixel column of its own.
+  // record_id is one of the 6 HESP variables that carry a format; it now sits
+  // under its own type rather than in an eighty-pixel column of its own. (5
+  // before json-schema-data-dictionary 0.7.0, which stopped typing
+  // split_origin_household_id — a patterned string whose only codes are
+  // sentinels — as categorical, and so shows its pattern.)
   const type = page
     .locator('.q-dd-table tbody tr')
     .filter({ has: page.locator('.q-dd-name', { hasText: 'record_id' }) })
@@ -123,8 +126,8 @@ test('Format is folded into Type, not a column of its own', async ({ page }) => 
   await expect(type.locator('.q-dd-format')).toHaveText(
     'Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$',
   );
-  // The other 260 print nothing where the em-dash column used to be.
-  await expect(page.locator('.q-dd-format')).toHaveCount(5);
+  // The other 259 print nothing where the em-dash column used to be.
+  await expect(page.locator('.q-dd-format')).toHaveCount(6);
 });
 
 test('search narrows the count, hides empty categories, and clears', async ({ page }) => {

@@ -153,10 +153,11 @@ test('mini end-to-end: flags deep-equal mini_expected_flags.json', async () => {
   expect(summary.rowsTotal).toBe(10);
   expect(summary.aborted).toBe(false);
   expect(summary.flagsTruncated).toBe(false);
-  // Worker-side share of the 9: 6 translator flags (the cast, column, and
-  // dataset flags are main-thread SQL findings).
-  expect(summary.flagsEmitted).toBe(6);
-  expect(summary.rowsWithErrors).toBe(6);
+  // Worker-side share of the 9: 6 translator flags, the `abc` cast finding
+  // (the worker reads each cell's text) and the extra `notes` column the
+  // schema rejects (one column flag); the duplicate pair is dataset scope.
+  expect(summary.flagsEmitted).toBe(8);
+  expect(summary.rowsWithErrors).toBe(7);
 });
 
 test('progress events: phase order and monotone rowsDone', async () => {
@@ -199,11 +200,12 @@ test('abort mid-run returns a partial summary and keeps partial flags', async ()
   unsubscribe();
   expect(summary.aborted).toBe(true);
   expect(summary.rowsTotal).toBe(10);
-  expect(summary.flagsEmitted).toBeLessThan(6);
-  // Dataset checks are skipped on abort — the duplicate pair is absent, but
-  // main-thread casting/column flags landed before the row loop.
+  expect(summary.flagsEmitted).toBeLessThan(8);
+  // Dataset checks are skipped on abort — the duplicate pair is absent — and
+  // so are the records after the cut: row 3's `abc` age was never read. The
+  // first batch did see the extra `notes` column, which the schema rejects.
   expect(flags.some((f) => f.ruleId === 'schema:dataset:duplicate-records')).toBe(false);
-  expect(flags.some((f) => f.ruleId === 'schema:prop:age:cast')).toBe(true);
+  expect(flags.some((f) => f.ruleId === 'schema:prop:age:cast')).toBe(false);
   expect(flags.some((f) => f.ruleId === 'schema:column:notes:unexpected')).toBe(true);
 });
 
@@ -214,7 +216,8 @@ test('cap truncation: materialized ≤ cap, countsByRuleId stays exact', async (
   expect(capped.summary.flagsEmitted).toBe(3);
   expect(capped.summary.countsByRuleId).toEqual(uncapped.summary.countsByRuleId);
   const workerFlagCount = Object.values(capped.summary.countsByRuleId).reduce((a, n) => a + n, 0);
-  expect(workerFlagCount).toBe(6);
+  // The 8 row-loop flags and the duplicate pair the worker finds across records.
+  expect(workerFlagCount).toBe(9);
 });
 
 test('HESP dirty end-to-end: every seeded schema:* expectation surfaces', async () => {

@@ -11,7 +11,7 @@
  * anyOf/oneOf collapse for string-pattern specs renders
  * "a {patternTitle} ({humanized regex})" instead of §D.4's "text matching …".
  */
-import { formatBound, renderExpectation, renderValue } from './value-spec';
+import { formatBound, labelledValuesOf, renderExpectation, renderValue } from './value-spec';
 import type { ValueSpec } from './value-spec';
 import type { ColumnMeta } from './column-meta';
 import type { ConditionalRule } from './conditionals';
@@ -26,7 +26,17 @@ export interface AjvErrorLike {
   params: Record<string, unknown>;
   message?: string;
   data?: unknown;
+  /** The keyword's own value (Ajv `verbose`): a union's branch schemas. */
+  schema?: unknown;
 }
+
+/**
+ * Renders where below its column an error sits — `people[2].age` — from an
+ * Ajv `instancePath` (nested-values.ts `renderNestedPath`). The worker builds
+ * one per row, over the row's decoded values; without one a path reads as its
+ * JSON Pointer.
+ */
+export type Locate = (instancePath: string) => string;
 
 export interface TranslateCtx {
   readonly metaByName: ReadonlyMap<string, ColumnMeta>;
@@ -131,11 +141,138 @@ function collapseExpectation(spec: ValueSpec): string {
   return renderExpectation(spec);
 }
 
+/** A value quoted in a message is cut past this many code points (a list can hold 10,000 items). */
+const MESSAGE_VALUE_CAP = 80;
+
+function clip(text: string, cap: number): string {
+  if (text.length <= cap) return text;
+  const points = Array.from(text);
+  return points.length <= cap ? text : `${points.slice(0, cap - 1).join('')}…`;
+}
+
 function renderData(value: unknown): string {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+  if (typeof value === 'string') {
+    const clipped = clip(value, MESSAGE_VALUE_CAP - 2);
+    return clipped === value ? renderValue(value) : `'${clipped}'`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
     return renderValue(value);
   }
-  return value === undefined ? 'value' : JSON.stringify(value);
+  return value === undefined ? 'value' : clip(JSON.stringify(value), MESSAGE_VALUE_CAP);
+}
+
+/** JSON Schema's name for what a value is — `array`, not `typeof`'s `object`. */
+function jsonTypeOf(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+const quoteName = (name: unknown): string => `'${String(name)}'`;
+
+const plural = (n: number, noun: string): string =>
+  `${formatBound(n)} ${noun}${n === 1 ? '' : 's'}`;
+
+/** Ajv's `format` names, as a reader would say them. */
+const FORMAT_NOUNS: Readonly<Record<string, string>> = {
+  date: 'date (YYYY-MM-DD)',
+  'date-time': 'date and time (ISO 8601)',
+  time: 'time of day',
+  duration: 'duration (ISO 8601)',
+  email: 'email address',
+  'idn-email': 'email address',
+  hostname: 'host name',
+  ipv4: 'IPv4 address',
+  ipv6: 'IPv6 address',
+  uri: 'URI',
+  'uri-reference': 'URI reference',
+  iri: 'IRI',
+  uuid: 'UUID',
+  regex: 'regular expression',
+  'json-pointer': 'JSON Pointer',
+};
+
+/** What one union branch accepts, in a word or two — from the branch alone, no `$ref` followed. */
+function branchNoun(branch: unknown): string | null {
+  if (branch === true) return 'any value';
+  if (typeof branch !== 'object' || branch === null || Array.isArray(branch)) return null;
+  const node = branch as Record<string, unknown>;
+  if (Object.hasOwn(node, 'const')) return renderData(node.const);
+  if (Array.isArray(node.enum)) return `one of ${node.enum.map(renderData).join(', ')}`;
+  const types = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type : [];
+  const nouns = types.map((t) => {
+    switch (t) {
+      case 'integer':
+        return 'an integer';
+      case 'number':
+        return 'a number';
+      case 'string':
+        return 'text';
+      case 'boolean':
+        return 'a boolean';
+      case 'null':
+        return 'null';
+      case 'array':
+        return 'an array';
+      case 'object':
+        return 'an object';
+      default:
+        return String(t);
+    }
+  });
+  if (nouns.length > 0) return nouns.join(' or ');
+  if (typeof node.title === 'string') return node.title;
+  return null;
+}
+
+function describeBranches(schema: unknown): string {
+  const branches = Array.isArray(schema) ? schema : [];
+  const nouns = [...new Set(branches.map(branchNoun).filter((n): n is string => n !== null))];
+  if (nouns.length === 0 || nouns.length < branches.length) {
+    return nouns.length === 0
+      ? 'a value matching one of the schema\'s alternatives'
+      : `${nouns.join(', ')} or another of the schema's alternatives`;
+  }
+  return nouns.length === 1 ? (nouns[0] ?? '') : `${nouns.slice(0, -1).join(', ')} or ${nouns.at(-1) ?? ''}`;
+}
+
+/** The JSON types a union branch accepts, read off the branch alone; null = cannot tell. */
+function branchTypes(branch: unknown): ReadonlySet<string> | null {
+  if (branch === false) return new Set();
+  if (typeof branch !== 'object' || branch === null || Array.isArray(branch)) return null;
+  const node = branch as Record<string, unknown>;
+  if (typeof node.$ref === 'string') return null;
+  if (typeof node.type === 'string') return new Set([node.type]);
+  if (Array.isArray(node.type)) return new Set(node.type.map(String));
+  if (Object.hasOwn(node, 'const')) return new Set([jsonTypeOf(node.const)]);
+  if (Array.isArray(node.enum)) return new Set(node.enum.map(jsonTypeOf));
+  return null;
+}
+
+/**
+ * The one branch of a failed union whose type admits the value, when exactly
+ * one does and every branch says its type outright: `{"k": 12}` against a
+ * number, a word or a `{k: 0–9}` object can only have meant the object, and
+ * the useful finding is the object branch's own — `12 exceeds the maximum 9`
+ * — not "is not valid". A branch behind a `$ref` cannot be read here, so a
+ * union of `$ref`'d sentinel codes (HESP) never narrows.
+ */
+function discriminatedBranch(union: AjvErrorLike): number | null {
+  const passing = union.params.passingSchemas;
+  if (Array.isArray(passing) && passing.length > 1) return null;
+  if (!Array.isArray(union.schema)) return null;
+  const actual = jsonTypeOf(union.data);
+  const integral = typeof union.data === 'number' && Number.isInteger(union.data);
+  let match: number | null = null;
+  for (const [i, branch] of union.schema.entries()) {
+    const types = branchTypes(branch);
+    if (types === null) return null;
+    const admits = types.has(actual) || (integral && types.has('integer'));
+    if (!admits) continue;
+    if (match !== null) return null;
+    match = i;
+  }
+  return match;
 }
 
 /** Lead sentence for the collapse template (decision from goldens #1/#2/#6 + mini). */
@@ -167,6 +304,14 @@ function genericMessage(error: AjvErrorLike): string {
 /** §C.2 non-numeric cast failure: `'twelve hundred' is not a valid integer.` */
 export function castNonNumericMessage(rawValue: string, typeNoun = 'integer'): string {
   return `'${rawValue}' is not a valid ${typeNoun}.`;
+}
+
+/**
+ * §C.2 for an array or object variable read from text (CSV, TSV, Excel): the
+ * cell must hold JSON, and this one does not parse.
+ */
+export function castNotJsonMessage(rawValue: string, shape: string): string {
+  return `'${rawValue}' is not valid JSON — this variable takes ${shape}, written as JSON text.`;
 }
 
 /** §C.2 non-integral cast failure in an integer column. */
@@ -230,11 +375,16 @@ function bucketColumn(error: AjvErrorLike): string | null {
   return null;
 }
 
-/** ` (at \`/2/street\`)` suffix for errors nested below the column value. */
-function deepPathSuffix(error: AjvErrorLike, column: string): string {
+/**
+ * ` (at people[2].age)` for an error below the column's own value, '' for
+ * one at it. Without a `locate`, the path is the JSON Pointer below the
+ * column: `` (at `/2/street`) ``.
+ */
+function locationSuffix(error: AjvErrorLike, column: string, locate?: Locate): string {
   const prefix = `/${column}`;
   if (error.instancePath === prefix || !error.instancePath.startsWith(`${prefix}/`)) return '';
-  return ` (at \`${error.instancePath.slice(prefix.length)}\`)`;
+  if (locate === undefined) return ` (at \`${error.instancePath.slice(prefix.length)}\`)`;
+  return ` (at ${locate(error.instancePath)})`;
 }
 
 function stableErrorOrder(a: AjvErrorLike, b: AjvErrorLike): number {
@@ -246,67 +396,131 @@ function stableErrorOrder(a: AjvErrorLike, b: AjvErrorLike): number {
   return pa < pb ? -1 : pa > pb ? 1 : 0;
 }
 
-/** §D.6 keyword table — one flag per remaining single-keyword error. */
-function keywordFlag(error: AjvErrorLike, row: number, column: string, meta: ColumnMeta | undefined): QCFlag {
-  const spec = meta?.valueSpec;
-  const suffix = deepPathSuffix(error, column);
-  let message: string;
+/** A finite number from Ajv's params, or NaN. */
+const num = (v: unknown): number => (typeof v === 'number' ? v : NaN);
+
+/**
+ * §D.6 keyword table — one sentence per remaining single-keyword error,
+ * without its final period (the caller adds the location first).
+ */
+function keywordBody(error: AjvErrorLike, spec: ValueSpec | undefined, locate?: Locate): string {
+  const data = error.data;
   switch (error.keyword) {
     case 'pattern': {
       const pattern = typeof error.params.pattern === 'string' ? error.params.pattern : '';
       const description = spec?.kind === 'string-pattern' ? spec.patternDescription : undefined;
       const gloss = description === undefined ? '' : ` — ${description.replace(/\.$/, '')}`;
-      message = `${renderData(error.data)} does not match the expected format (pattern ${pattern}${gloss}).`;
-      break;
+      return `${renderData(data)} does not match the expected format (pattern ${pattern}${gloss})`;
     }
     case 'enum': {
       const allowed = Array.isArray(error.params.allowedValues) ? error.params.allowedValues : [];
       const list = allowed.map(renderData).join(', ');
-      message = `${renderData(error.data)} is not an allowed value — expected one of ${list}.`;
-      break;
+      return `${renderData(data)} is not an allowed value — expected one of ${list}`;
     }
     case 'type': {
       const expected = Array.isArray(error.params.type)
         ? error.params.type.join(' or ')
         : String(error.params.type);
-      const actual = error.data === null ? 'null' : typeof error.data;
-      message = `must be ${article(expected)} ${expected}, got ${actual}.`;
-      break;
+      return `must be ${article(expected)} ${expected}, got ${jsonTypeOf(data)}`;
     }
     case 'minimum':
-    case 'maximum': {
-      const limit = typeof error.params.limit === 'number' ? error.params.limit : NaN;
-      message =
-        error.keyword === 'minimum'
-          ? `${renderData(error.data)} is below the minimum ${formatBound(limit)}.`
-          : `${renderData(error.data)} exceeds the maximum ${formatBound(limit)}.`;
-      break;
-    }
+      return `${renderData(data)} is below the minimum ${formatBound(num(error.params.limit))}`;
+    case 'maximum':
+      return `${renderData(data)} exceeds the maximum ${formatBound(num(error.params.limit))}`;
+    case 'exclusiveMinimum':
+      return `${renderData(data)} must be greater than ${formatBound(num(error.params.limit))}`;
+    case 'exclusiveMaximum':
+      return `${renderData(data)} must be less than ${formatBound(num(error.params.limit))}`;
+    case 'multipleOf':
+      return `${renderData(data)} is not a multiple of ${renderData(error.params.multipleOf)}`;
     case 'const': {
       const allowed = error.params.allowedValue;
       const rendered = renderData(allowed);
       let label: string | undefined;
       if (spec !== undefined && (typeof allowed === 'string' || typeof allowed === 'number')) {
-        const pools =
-          spec.kind === 'codes'
-            ? [spec.codes, spec.sentinels]
-            : spec.kind === 'mixed' || spec.kind === 'opaque'
-              ? []
-              : [spec.sentinels];
-        for (const pool of pools) {
-          const hit = pool.find((s) => s.value === allowed);
-          if (hit?.label !== undefined) {
-            label = hit.label;
-            break;
-          }
-        }
+        label = labelledValuesOf(spec).find((s) => s.value === allowed && s.label !== undefined)?.label;
       }
-      message = `must be ${rendered}${label === undefined ? '' : ` (${label})`}.`;
-      break;
+      return `must be ${rendered}${label === undefined ? '' : ` (${label})`}`;
     }
+    case 'required':
+      return `required field ${quoteName(error.params.missingProperty)} is missing`;
+    case 'dependentRequired':
+      return (
+        `field ${quoteName(error.params.missingProperty)} is required when ` +
+        `${quoteName(error.params.property)} is present`
+      );
+    case 'additionalProperties':
+      return `field ${quoteName(error.params.additionalProperty)} is not allowed here`;
+    case 'unevaluatedProperties':
+      return `field ${quoteName(error.params.unevaluatedProperty)} is not allowed here`;
+    case 'propertyNames': {
+      const rule = typeof error.params.namePattern === 'string' ? ` (names must match ${error.params.namePattern})` : '';
+      return `field name ${quoteName(error.params.propertyName)} is not allowed${rule}`;
+    }
+    case 'maxProperties':
+    case 'minProperties': {
+      const has = typeof data === 'object' && data !== null ? Object.keys(data).length : NaN;
+      const limit = num(error.params.limit);
+      return error.keyword === 'maxProperties'
+        ? `has ${plural(has, 'field')}; at most ${formatBound(limit)} allowed`
+        : `has ${plural(has, 'field')}; at least ${formatBound(limit)} required`;
+    }
+    case 'maxItems':
+    case 'minItems': {
+      const has = Array.isArray(data) ? data.length : NaN;
+      const limit = num(error.params.limit);
+      return error.keyword === 'maxItems'
+        ? `has ${plural(has, 'item')}; at most ${formatBound(limit)} allowed`
+        : `has ${plural(has, 'item')}; at least ${formatBound(limit)} required`;
+    }
+    case 'uniqueItems': {
+      // Ajv's two code paths name the pair in opposite orders (a typed item
+      // schema takes a hash-map walk, any other a pairwise one), so order them
+      // here: the later item repeats the earlier. Both 0-based.
+      const a = num(error.params.i);
+      const b = num(error.params.j);
+      const at = (index: number): string =>
+        locate === undefined
+          ? `item ${String(index + 1)}`
+          : locate(`${error.instancePath}/${String(index)}`);
+      return `${at(Math.max(a, b))} repeats ${at(Math.min(a, b))} — items must be unique`;
+    }
+    case 'contains': {
+      const min = error.params.minContains;
+      return typeof min === 'number' && min > 1
+        ? `has fewer than ${formatBound(min)} items matching the schema`
+        : 'has no item matching the schema';
+    }
+    case 'maxLength':
+    case 'minLength': {
+      const length = typeof data === 'string' ? Array.from(data).length : NaN;
+      const limit = num(error.params.limit);
+      return error.keyword === 'maxLength'
+        ? `${renderData(data)} has ${plural(length, 'character')}; at most ${formatBound(limit)} allowed`
+        : `${renderData(data)} has ${plural(length, 'character')}; at least ${formatBound(limit)} required`;
+    }
+    case 'format': {
+      const format = String(error.params.format);
+      return `${renderData(data)} is not a valid ${FORMAT_NOUNS[format] ?? `'${format}' value`}`;
+    }
+    case 'false schema':
+      return 'no value is allowed here';
+    case 'not':
+      return `${renderData(data)} is a value the schema rules out`;
     default:
-      message = genericMessage(error);
+      return genericMessage(error);
   }
+}
+
+/** §D.6 keyword table — one flag per remaining single-keyword error. */
+function keywordFlag(
+  error: AjvErrorLike,
+  row: number,
+  column: string,
+  meta: ColumnMeta | undefined,
+  locate?: Locate,
+): QCFlag {
+  const body = keywordBody(error, meta?.valueSpec, locate);
   return {
     source: 'schema',
     ruleId: schemaPropRuleId(column, 'value'),
@@ -314,17 +528,133 @@ function keywordFlag(error: AjvErrorLike, row: number, column: string, meta: Col
     row,
     column,
     severity: 'error',
-    message: `${message}${suffix}${trailers(meta)}`,
+    message: `${body}${locationSuffix(error, column, locate)}.${trailers(meta)}`,
     ...(error.data === undefined ? {} : { value: error.data }),
     meta: { keyword: error.keyword, schemaPath: error.schemaPath },
   };
+}
+
+/** One flag for a union no branch of which the value satisfies (§D.3e). */
+function unionFlag(
+  union: AjvErrorLike,
+  row: number,
+  column: string,
+  meta: ColumnMeta | undefined,
+  locate?: Locate,
+): QCFlag {
+  const multiMatch =
+    Array.isArray(union.params.passingSchemas) && union.params.passingSchemas.length > 1
+      ? ' (matches more than one exclusive option)'
+      : '';
+  // At the column itself the ValueSpec says it best (the §D.7 goldens);
+  // inside a nested value there is no ValueSpec, so the branches speak.
+  const atColumn = union.instancePath === `/${column}`;
+  const spec = atColumn ? meta?.valueSpec : undefined;
+  const expectation = atColumn
+    ? spec === undefined
+      ? 'a value satisfying the schema'
+      : collapseExpectation(spec)
+    : describeBranches(union.schema);
+  return {
+    source: 'schema',
+    ruleId: schemaPropRuleId(column, 'value'),
+    scope: 'cell',
+    row,
+    column,
+    severity: 'error',
+    message:
+      `${collapseLead(spec, union.data)} — expected ${expectation}${multiMatch}` +
+      `${locationSuffix(union, column, locate)}.${trailers(meta)}`,
+    ...(union.data === undefined ? {} : { value: union.data }),
+    meta: { keyword: union.keyword, schemaPath: union.schemaPath },
+  };
+}
+
+const isUnder = (path: string, prefix: string): boolean =>
+  path === prefix || path.startsWith(`${prefix}/`);
+
+/**
+ * Ajv reports a bad field NAME twice: the name's own failure inside the
+ * `propertyNames` subschema (`'LDL-C' does not match … pattern`), then the
+ * `propertyNames` error itself. One finding: the second, told the pattern the
+ * first one tested.
+ */
+function foldPropertyNames(errors: readonly AjvErrorLike[]): AjvErrorLike[] {
+  const wrappers = errors.filter((e) => e.keyword === 'propertyNames');
+  if (wrappers.length === 0) return [...errors];
+  const inner = (e: AjvErrorLike): AjvErrorLike | undefined =>
+    wrappers.find(
+      (w) => e !== w && e.instancePath === w.instancePath && e.schemaPath.startsWith(`${w.schemaPath}/`),
+    );
+  const patternFor = new Map<AjvErrorLike, string>();
+  const kept: AjvErrorLike[] = [];
+  for (const e of errors) {
+    const wrapper = inner(e);
+    if (wrapper === undefined) {
+      kept.push(e);
+      continue;
+    }
+    if (e.keyword === 'pattern' && typeof e.params.pattern === 'string') {
+      patternFor.set(wrapper, e.params.pattern);
+    }
+  }
+  return kept.map((e) => {
+    const pattern = patternFor.get(e);
+    return pattern === undefined ? e : { ...e, params: { ...e.params, namePattern: pattern } };
+  });
+}
+
+/**
+ * §D.3e for every union in a bucket, outermost first. A union whose value
+ * only one branch could have meant hands over to that branch's own errors
+ * (`discriminatedBranch`); any other collapses to ONE flag and silences
+ * everything at or below it — the branch sub-errors are noise. At the column
+ * itself this is the §D.3e collapse exactly; inside a nested value it is the
+ * same rule one level down.
+ */
+function settleUnions(
+  errors: readonly AjvErrorLike[],
+  row: number,
+  column: string,
+  meta: ColumnMeta | undefined,
+  locate?: Locate,
+): QCFlag[] {
+  let remaining = foldPropertyNames(errors);
+  const flags: QCFlag[] = [];
+  const unions = remaining
+    .filter((e) => e.keyword === 'anyOf' || e.keyword === 'oneOf')
+    .sort((a, b) => a.instancePath.length - b.instancePath.length || stableErrorOrder(a, b));
+  for (const union of unions) {
+    if (!remaining.includes(union)) continue; // an outer union already spoke for it
+    const at = union.instancePath;
+    const branch = discriminatedBranch(union);
+    if (branch !== null) {
+      // The other branches' type mismatches at this very value are not findings.
+      const narrowed = remaining.filter(
+        (e) => e !== union && !(e.instancePath === at && e.keyword === 'type'),
+      );
+      if (narrowed.some((e) => isUnder(e.instancePath, at))) {
+        remaining = narrowed;
+        continue;
+      }
+    }
+    remaining = remaining.filter((e) => e !== union && !isUnder(e.instancePath, at));
+    flags.push(unionFlag(union, row, column, meta, locate));
+  }
+  for (const error of remaining) flags.push(keywordFlag(error, row, column, meta, locate));
+  return flags;
 }
 
 /**
  * §D.3 — translate one row's Ajv errors into flags. Pure; output sorted by
  * `(row, columnOrdinal, ruleId)` and independent of input error order.
  */
-export function translateRowErrors(errors: readonly AjvErrorLike[], row: number, ctx: TranslateCtx): QCFlag[] {
+export function translateRowErrors(
+  errors: readonly AjvErrorLike[],
+  row: number,
+  ctx: TranslateCtx,
+  locate?: Locate,
+): QCFlag[] {
   // 1. Drop wrappers.
   const relevant = errors.filter((e) => e.keyword !== 'if' && e.keyword !== 'allOf');
 
@@ -374,7 +704,7 @@ export function translateRowErrors(errors: readonly AjvErrorLike[], row: number,
       const rule = ctx.conditionalByIndex.get(index);
       const first = group[0];
       if (rule === undefined || first === undefined) {
-        for (const error of group) flags.push(keywordFlag(error, row, column, meta));
+        for (const error of group) flags.push(keywordFlag(error, row, column, meta, locate));
         continue;
       }
       const target = rule.targets.find((t) => t.column === column);
@@ -399,7 +729,9 @@ export function translateRowErrors(errors: readonly AjvErrorLike[], row: number,
     if (plainErrors.length === 0) continue;
 
     // 3b/3c. Missing column ⇒ its column flag covers required; required cell.
-    const required = plainErrors.find((e) => e.keyword === 'required');
+    // Only the row's own `required` (at the root) means the CELL is missing; a
+    // `required` deeper down names a field missing inside the value (3f).
+    const required = plainErrors.find((e) => e.keyword === 'required' && e.instancePath === '');
     if (required !== undefined) {
       if (!ctx.missingColumns.has(column)) {
         flags.push({
@@ -416,34 +748,9 @@ export function translateRowErrors(errors: readonly AjvErrorLike[], row: number,
       continue;
     }
 
-    // 3e. anyOf/oneOf collapse — union error at exactly the column path.
-    const union = plainErrors.find(
-      (e) => (e.keyword === 'anyOf' || e.keyword === 'oneOf') && e.instancePath === `/${column}`,
-    );
-    if (union !== undefined) {
-      const spec = meta?.valueSpec;
-      const expectation =
-        spec === undefined ? 'a value satisfying the schema' : collapseExpectation(spec);
-      const multiMatch =
-        Array.isArray(union.params.passingSchemas) && union.params.passingSchemas.length > 1
-          ? ' (matches more than one exclusive option)'
-          : '';
-      flags.push({
-        source: 'schema',
-        ruleId: schemaPropRuleId(column, 'value'),
-        scope: 'cell',
-        row,
-        column,
-        severity: 'error',
-        message: `${collapseLead(spec, union.data)} — expected ${expectation}${multiMatch}.${trailers(meta)}`,
-        ...(union.data === undefined ? {} : { value: union.data }),
-        meta: { keyword: union.keyword, schemaPath: union.schemaPath },
-      });
-      continue; // every other non-conditional bucket error is branch sub-noise
-    }
-
-    // 3f. Remaining single-keyword errors → one flag each.
-    for (const error of plainErrors) flags.push(keywordFlag(error, row, column, meta));
+    // 3e. anyOf/oneOf collapse, at the column and inside it; 3f. the rest,
+    // one flag per single-keyword error.
+    flags.push(...settleUnions(plainErrors, row, column, meta, locate));
   }
 
   // 4. Row-level leftovers.

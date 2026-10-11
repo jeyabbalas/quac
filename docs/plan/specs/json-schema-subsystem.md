@@ -210,7 +210,9 @@ For each schema property, compute `jsonTypes ⊆ {integer, number, string, boole
 | `{number}` or `{integer,number}` | `DOUBLE` | weights, ratios |
 | `{string}` | `VARCHAR` | ids, dates — leading zeros preserved |
 | `{boolean}` | `BOOLEAN` | |
+| `{array}`, `{object}` or both | `JSON` | text (CSV/TSV/XLSX) → `TRY_CAST(raw AS JSON)`; text that does not parse is a cast finding (`'[1, 2' is not valid JSON — this variable takes an array, written as JSON text.`). Any other scalar raw type keeps its type (Ajv names the mismatch) |
 | mixed string+numeric / empty / opaque | `VARCHAR` + `mixed:true` | see row shaping |
+| *(any target)* over a **nested or JSON raw column** | **its own type, untouched** | §C.4 — a LIST/STRUCT/MAP/UNION/JSON column is never cast, whatever its schema says |
 | data column absent from schema | `VARCHAR` passthrough | flagged column-scope `unexpected` |
 
 `DECIMAL` never used (Arrow decimal objects complicate row shaping).
@@ -248,6 +250,20 @@ Hits land in `castFailures: Set<string>` (`` `${row} ${col}` ``) consulted by th
 | `mixed:true` VARCHAR | `/^-?(\d+)(\.\d+)?([eE][+-]?\d+)?$/` → number, else string | documented heuristic |
 
 ---
+
+### C.4 Nested values (LIST, STRUCT, MAP, JSON) — `nested-values.ts`, `core/duckdb-type.ts`, `core/nested-json.ts`
+
+A JSON or Parquet dataset keeps DuckDB's nested types (`BIGINT[]`, `STRUCT(x DOUBLE, tier VARCHAR)`, `MAP(VARCHAR, BIGINT)`, `JSON`). They are validated as the values the source JSON held:
+
+1. **Types are read whole.** `describeColumns` returns DuckDB's full type text; `core/duckdb-type.ts` reads it into a tree. Stripping the parameters off the text (as before) read `DECIMAL(10,2)[]` as `DECIMAL` and a list of structs as `STRUCT`.
+2. **Never cast** (§C.1). Before this, a nested column under an `array`/`object` schema landed in the mixed bucket and was cast to VARCHAR: every cell became DuckDB's text for it, which the schema then rejected (`must be an array or null, got string.`) — 15,308 false errors on the upstream nested stress fixture, nested rendering gone from the grids, and no list functions for the rules.
+3. **Read as JSON text.** The row loop selects a nested or JSON column as `CAST(to_json(c) AS VARCHAR)` and the worker parses it. Arrow is no route: data-table's `bridge.query` hands a DATE inside a list over as epoch milliseconds and a HUGEINT/DECIMAL inside one as a meaningless number; `@duckdb/node-api` has value classes of its own. `to_json` is exact on both runtimes (dates and UUIDs as text, every digit of a 128-bit integer, JSON as itself) — so browser and CLI validate the same value (`tests/fixtures/nested/*_expected_flags.json`, asserted on both).
+4. **STRUCT nulls follow the schema.** DuckDB reads `{}` and `{"x": null}` into the same struct. A NULL field reads as **missing** when the schema does not allow null there (found as JSON Schema finds it: `properties`, then a matching `patternProperties`, then `additionalProperties`), as **null** when it does — §C.3's rule, one level down. A field the object does not admit at all (`additionalProperties: false`) also reads as missing when NULL: DuckDB gives a struct every key ANY record has, so one record's stray key would otherwise be a finding in every record. Only an explicit null the schema forbids, in a field it does not require, goes unseen. MAP and JSON values keep their keys and nulls as written.
+5. **Non-finite numbers.** `to_json` writes NaN/±Infinity bare; the worker reads them as null, emits one `schema:prop:<col>:cast` flag per cell naming every path (`NaN and Infinity are not finite numbers (at readings[2], readings[3]).`), and drops Ajv errors at or below those paths.
+6. **Integers past ±(2^53 − 1)** parse to the nearest double (the BIGINT rule); the first one in a column gets the `precision` warning with its exact digits and location (`value at counts[3] exceeds …`). The digits come from `JSON.parse`'s source-text access, which also keeps a huge DOUBLE (`1.79e308`) from counting.
+7. **Paths in messages** are written as the report grid's value inspector shows them: list items from 1 (`people[2].age`, DuckDB SQL's numbering), an array inside a JSON value from 0 (`shifty[0]`, JSONPath's), a non-identifier field quoted (`odd_keys["my field"]`), a map entry by key (`labs["ldl"]`). The plan (main thread, from the DuckDB type + the property's schema) travels to the worker in `init.nested`.
+
+Every other read that shows row values to people — the Excel Data sheet, the Load preview, a rule's finding and its correction before/after, a JS correction's input — reads nested columns the same way (`core/nested-json.ts`). A JS correction's result for a nested target is staged as JSON and cast back through DuckDB's JSON type (`CAST(CAST(val AS JSON) AS <type>)`: VARCHAR text casts to a STRUCT or LIST but not to a MAP).
 
 ## D. Error → flag mapping (the translator)
 
@@ -287,7 +303,7 @@ function translateRowErrors(errors: AjvErrorLike[], row: number, ctx: TranslateC
 ```
 
 1. **Drop wrappers:** `keyword === 'if'` and aggregate `allOf` errors.
-2. **Bucket by column:** first segment of `instancePath` (`/wage_income_annual` → that column) or `params.missingProperty` for root `required`. Deeper paths attribute to the top segment + append "(at `{innerPath}`)".
+2. **Bucket by column:** first segment of `instancePath` (`/wage_income_annual` → that column) or `params.missingProperty` for root `required`. Deeper paths attribute to the top segment + append "(at {path})", the path rendered by the worker's `locate` (§C.4.7).
 3. **Per-bucket priority:**
    a. `(row, column) ∈ castFailures` → emit nothing (cast flag exists).
    b. column ∈ `missingColumns` and error is `required` → emit nothing (column flag exists).
@@ -351,7 +367,16 @@ Stable for an unchanged schema set (allOf index is positional — acceptable: id
 | `description` (33) | tooltips, missing-vars sheet | — | — |
 | `x-unit` (108) / `x-universe` (149) | trailers + tooltips | — | `[Unit: …] [Universe: …]` |
 | `x-role` (26) / `x-variable-group` (12) / `x-derivation` (7) | tooltips only | — | — |
+| `required` *inside* a value | cell (the column) | cell | `required field '{name}' is missing (at {path}).` — only the row's own `required` (instancePath `''`) means the CELL is missing (§D.3c) |
+| `additionalProperties` / `unevaluatedProperties` inside a value | cell | cell | `field '{name}' is not allowed here (at {path}).` |
+| `propertyNames` | cell | cell | `field name '{name}' is not allowed (names must match {pattern}).` — the name's own sub-error is folded in |
+| `maxItems` / `minItems`, `maxProperties` / `minProperties` | cell | cell | `has {n} items; at most {limit} allowed.` |
+| `uniqueItems` (inside a value) | cell | cell | `{path of later} repeats {path of earlier} — items must be unique.` (Ajv's two code paths name the pair in opposite orders; ordered here) |
+| `maxLength` / `minLength`, `format`, `exclusiveMinimum` / `exclusiveMaximum`, `multipleOf`, `contains`, `dependentRequired`, `false schema`, `not` | cell | cell | plain sentences (`'2024-02-30' is not a valid date (YYYY-MM-DD)`) |
+| `anyOf` / `oneOf` *inside* a value | collapse at that path | cell | `{v} is not valid — expected {branch shapes} (at {path}).` When exactly one branch's declared type admits the value, its own errors are reported instead (`12 exceeds the maximum 9 (at mixed[3].k)`); a `$ref`'d branch never narrows, so HESP's sentinel unions collapse as before |
 | **any other keyword** | generic fallback | cell/row | `value fails the '{keyword}' constraint {params-summary} (schema: {schemaPath})` — no error is ever dropped silently |
+
+Values quoted in a message are cut at 80 characters (`flag.value` keeps them whole). An error below the column's own value ends `(at {path})` before its final period (§C.4.7).
 
 ### D.7 Golden message examples (all HESP-real; seed the P08 tests verbatim)
 

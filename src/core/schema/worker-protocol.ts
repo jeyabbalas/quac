@@ -9,6 +9,7 @@
 import type { QCFlag } from '../flags/flag';
 import type { ColumnMeta } from './column-meta';
 import type { ConditionalRule } from './conditionals';
+import type { NestedColumn } from './nested-values';
 import type { SchemaDraft } from './types';
 import type { JsonTypeName } from './value-spec';
 
@@ -40,6 +41,11 @@ export type MainToWorker =
       conditionals: ConditionalRule[];
       missingColumns: string[];
       castFailures: string[];
+      /**
+       * The selected columns whose cells arrive as `to_json` text — every
+       * nested or JSON one — with the plan that reads them (§C.4).
+       */
+      nested: NestedColumn[];
       config: { flagCap: number };
     }
   | { type: 'batch'; seq: number; rowStart: number; columns?: string[]; rows: unknown[][] }

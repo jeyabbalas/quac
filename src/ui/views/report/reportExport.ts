@@ -11,7 +11,9 @@
  * export rejects; the caller distinguishes it via `signal.aborted`.
  */
 import { getBridge } from '../../../core/bridge/bridge';
-import { reportRowsSQL } from '../../../core/bridge/tables';
+import { DATA_VIEW, reportRowsSQL } from '../../../core/bridge/tables';
+import { nestedColumnsOf } from '../../../core/nested-json';
+import { describeColumns } from '../../../core/schema/casting';
 import { triggerDownload } from '../../components/download';
 import { buildReportModel } from '../../../core/report/reportModel';
 import { writeReportWorkbook } from '../../../core/report/excelWriter';
@@ -67,13 +69,17 @@ function buildRunInfo(dataset: { name: string; format: string }, artifacts: RunA
   };
 }
 
-/** Page `data` by __row__, clearing the SELECT cache after every chunk. */
+/**
+ * Page `data` by __row__, clearing the SELECT cache after every chunk. Nested
+ * and JSON columns come out as their exact JSON text (core/nested-json.ts).
+ */
 function pageRows(bridge: WorkerBridge, rowLimit: number): ReportRowSource {
   return async function* stream(signal?: AbortSignal) {
+    const nested = nestedColumnsOf(await describeColumns(bridge, DATA_VIEW));
     for (let offset = 0; offset < rowLimit; offset += CHUNK_ROWS) {
       if (signal?.aborted) throw new Error('Export cancelled');
       const limit = Math.min(CHUNK_ROWS, rowLimit - offset);
-      const rows = await bridge.query(reportRowsSQL(offset, limit), signal);
+      const rows = await bridge.query(reportRowsSQL(offset, limit, nested), signal);
       bridge.clearQueryCache();
       yield rows.map<ReportDataRow>((r) => ({ row: Number(r.__row__), values: r }));
     }

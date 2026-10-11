@@ -21,11 +21,13 @@
  * phase deferred notes.
  */
 import { buildAjv, collectMetaErrors, compileRowValidator, registerSchemaFiles } from './ajv-engine';
+import { pointerSegments, renderNestedPath } from './nested-values';
 import { createRowShaper, shapingColumns } from './row-shaping';
 import { createTranslateCtx, translateRowErrors } from './translator';
 import { deserializeColumnMeta } from './worker-protocol';
 import type { ValidateFunction } from 'ajv';
 import type { QCFlag } from '../flags/flag';
+import type { NestedColumn } from './nested-values';
 import type { RowShaper } from './row-shaping';
 import type { AjvErrorLike, TranslateCtx } from './translator';
 import type { MainToWorker, ValidationSummary, WorkerToMain } from './worker-protocol';
@@ -37,6 +39,7 @@ interface EngineState {
   liveCastFailures: Set<string>;
   ordinalByName: ReadonlyMap<string, number>;
   metaByName: TranslateCtx['metaByName'];
+  nestedByName: ReadonlyMap<string, NestedColumn>;
   shaper: RowShaper | null;
   columns: string[] | null;
   flagCap: number;
@@ -101,6 +104,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
       liveCastFailures: ctx.castFailures as Set<string>,
       ordinalByName: ctx.ordinalByName,
       metaByName: ctx.metaByName,
+      nestedByName: new Map(msg.nested.map((n) => [n.column, n])),
       shaper: null,
       columns: null,
       flagCap: msg.config.flagCap,
@@ -124,7 +128,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
 
     if (msg.columns !== undefined) {
       s.columns = msg.columns;
-      s.shaper = createRowShaper(shapingColumns(msg.columns, s.metaByName), {
+      s.shaper = createRowShaper(shapingColumns(msg.columns, s.metaByName, s.nestedByName), {
         // The main thread already excluded out-of-universe columns from the
         // SELECT list (§C.3); anything that arrives is meant to be presented.
         includeExtras: true,
@@ -142,11 +146,23 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
     let rowsWithErrors = 0;
     msg.rows.forEach((values, i) => {
       const row = msg.rowStart + i;
-      const { obj, flags: shapeFlags, castKeys } = shaper.shapeRow(values, row);
+      const { obj, flags: shapeFlags, castKeys, suppressPaths } = shaper.shapeRow(values, row);
       for (const key of castKeys) s.liveCastFailures.add(key);
       const valid = s.validateRow(obj);
-      const errors = valid ? [] : ((s.validateRow.errors ?? []) as AjvErrorLike[]);
-      const rowFlags = [...shapeFlags, ...translateRowErrors(errors, row, s.ctx)].sort(
+      let errors = valid ? [] : ((s.validateRow.errors ?? []) as AjvErrorLike[]);
+      if (suppressPaths.length > 0) {
+        // A NaN inside a nested value was read as null and already reported.
+        errors = errors.filter(
+          (e) => !suppressPaths.some((p) => e.instancePath === p || e.instancePath.startsWith(`${p}/`)),
+        );
+      }
+      // Where inside a nested value an error is, numbered as the value inspector shows it.
+      const locate = (instancePath: string): string => {
+        const [column, ...rest] = pointerSegments(instancePath);
+        if (column === undefined) return '';
+        return renderNestedPath(column, rest, obj[column], s.nestedByName.get(column)?.plan);
+      };
+      const rowFlags = [...shapeFlags, ...translateRowErrors(errors, row, s.ctx, locate)].sort(
         (a, b) =>
           ordinal(a.column) - ordinal(b.column) ||
           (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0),

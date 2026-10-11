@@ -2,8 +2,12 @@
 // string/comment-aware scanner, top-level-semicolon analysis, `__value__` token
 // substitution, and the wrapper/builder strings the P11–P13 engine executes.
 // Everything here is a pure function of its inputs — no bridge, no DOM.
+import { readsAsJson } from '../duckdb-type';
+import { nestedReplaceClause, selectColumn, toJsonText } from '../nested-json';
 import { quoteIdentifier } from '../sql-identifier';
 import type { QCRule } from './types';
+
+const NONE: ReadonlySet<string> = new Set();
 
 // ---- scanner ----------------------------------------------------------------
 
@@ -216,8 +220,18 @@ export function violCountSQL(condition: string): string {
   return `SELECT COUNT(*) FROM (SELECT (${condition}) AS viol FROM data) WHERE viol`;
 }
 
-export function violFetchSQL(condition: string, targets: string[], rowCap: number): string {
-  const cols = ['__row__', ...targets.map((t) => quoteIdentifier(t))].join(', ');
+/**
+ * `nested` names the targets read as JSON text — a LIST, STRUCT, MAP or JSON
+ * value loses dates and wide numbers through the row read
+ * (core/nested-json.ts); the engine parses them back.
+ */
+export function violFetchSQL(
+  condition: string,
+  targets: string[],
+  rowCap: number,
+  nested: ReadonlySet<string> = NONE,
+): string {
+  const cols = ['__row__', ...targets.map((t) => selectColumn(t, nested))].join(', ');
   return (
     `SELECT ${cols} FROM (SELECT *, (${condition}) AS viol FROM data) ` +
     `WHERE viol ORDER BY __row__ LIMIT ${String(rowCap)}`
@@ -255,8 +269,18 @@ export function correctionCaptureSQL(
   expression: string,
   target: string,
   rowCap: number,
+  nestedTarget = false,
 ): string {
   const t = quoteIdentifier(target);
+  if (nestedTarget) {
+    // Compared as values, returned as JSON text. The inner names differ from
+    // the outer ones so the WHERE can only mean the values.
+    return (
+      `SELECT __row__, ${toJsonText('b')} AS before, ${toJsonText('a')} AS after ` +
+      `FROM (SELECT __row__, ${t} AS b, (${expression}) AS a, (${condition}) AS hit FROM data) ` +
+      `WHERE hit AND a IS DISTINCT FROM b ORDER BY __row__ LIMIT ${String(rowCap)}`
+    );
+  }
   return (
     `SELECT __row__, before, after FROM (SELECT __row__, ${t} AS before, ` +
     `(${expression}) AS after, (${condition}) AS hit FROM data) ` +
@@ -291,9 +315,14 @@ export function ctasRebuildSQL(pairs: ValueExpansion[]): string {
  * columns are rejected at ingestion, so it can never shadow user data (the
  * engine reads the target's current value straight from the `*` projection).
  */
-export function jsChunkFetchSQL(condition: string, lastRow: number | bigint, limit: number): string {
+export function jsChunkFetchSQL(
+  condition: string,
+  lastRow: number | bigint,
+  limit: number,
+  nested: ReadonlySet<string> = NONE,
+): string {
   return (
-    `SELECT * FROM (SELECT *, (${condition}) AS __qc_hit__ FROM data) ` +
+    `SELECT *${nestedReplaceClause(nested)} FROM (SELECT *, (${condition}) AS __qc_hit__ FROM data) ` +
     `WHERE __qc_hit__ AND __row__ > ${String(lastRow)} ORDER BY __row__ LIMIT ${String(limit)}`
   );
 }
@@ -348,6 +377,18 @@ export interface JsMergePart {
 }
 
 /**
+ * A staged value back in its column's type. A nested or JSON value was staged
+ * as JSON text (`JSON.stringify` of what the function returned) and goes
+ * through DuckDB's JSON type: VARCHAR text casts to a STRUCT or LIST, but not
+ * to a MAP, and a JSON column must not take the text unparsed.
+ */
+export function stagedValueSQL(part: JsMergePart, alias: string): string {
+  return readsAsJson(part.castType)
+    ? `CAST(CAST(${alias}.val AS JSON) AS ${part.castType})`
+    : `CAST(${alias}.val AS ${part.castType})`;
+}
+
+/**
  * Exact changed-cell count for one staged pair: CAST back to the declared type
  * FIRST so cast-normalization no-ops (e.g. '042' → 42) are suppressed exactly
  * like SQL corrections' `after IS DISTINCT FROM before`. A non-castable staged
@@ -358,17 +399,24 @@ export function jsCountSQL(part: JsMergePart): string {
   const t = quoteIdentifier(part.target);
   return (
     `SELECT COUNT(*) FROM data JOIN ${part.table} u ON data.__row__ = u.__row__ ` +
-    `WHERE CAST(u.val AS ${part.castType}) IS DISTINCT FROM ${t}`
+    `WHERE ${stagedValueSQL(part, 'u')} IS DISTINCT FROM ${t}`
   );
 }
 
-/** Before/after capture rows for one staged pair (pre-merge `data` state). */
+/**
+ * Before/after capture rows for one staged pair (pre-merge `data` state) —
+ * a nested target's as JSON text (core/nested-json.ts).
+ */
 export function jsCaptureSQL(part: JsMergePart, rowCap: number): string {
   const t = quoteIdentifier(part.target);
+  const staged = stagedValueSQL(part, 'u');
+  const nested = readsAsJson(part.castType);
+  const before = nested ? toJsonText(t) : t;
+  const after = nested ? toJsonText(staged) : staged;
   return (
-    `SELECT data.__row__ AS __row__, ${t} AS before, CAST(u.val AS ${part.castType}) AS after ` +
+    `SELECT data.__row__ AS __row__, ${before} AS before, ${after} AS after ` +
     `FROM data JOIN ${part.table} u ON data.__row__ = u.__row__ ` +
-    `WHERE CAST(u.val AS ${part.castType}) IS DISTINCT FROM ${t} ` +
+    `WHERE ${staged} IS DISTINCT FROM ${t} ` +
     `ORDER BY data.__row__ LIMIT ${String(rowCap)}`
   );
 }
@@ -384,7 +432,7 @@ export function jsMergeSelectSQL(parts: readonly JsMergePart[]): string {
   const replaces = parts
     .map((p, i) => {
       const t = quoteIdentifier(p.target);
-      return `CASE WHEN u${String(i)}.__row__ IS NOT NULL THEN CAST(u${String(i)}.val AS ${p.castType}) ELSE ${t} END AS ${t}`;
+      return `CASE WHEN u${String(i)}.__row__ IS NOT NULL THEN ${stagedValueSQL(p, `u${String(i)}`)} ELSE ${t} END AS ${t}`;
     })
     .join(', ');
   const joins = parts

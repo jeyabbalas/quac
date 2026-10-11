@@ -55,22 +55,26 @@ export function mountDatasetPreview(panel: HTMLElement, ctx: ShellContext): void
       typedRevision.get() !== revision;
 
     void (async () => {
-      const [{ getBridge }, { PREVIEW_SQL, DATA_VIEW }, { describeColumns }] = await Promise.all([
-        import('../../../../core/bridge/bridge'),
-        import('../../../../core/bridge/tables'),
-        import('../../../../core/schema/casting'),
-      ]);
+      const [{ getBridge }, { previewSQL, DATA_VIEW }, { describeColumns }, { nestedColumnsOf }] =
+        await Promise.all([
+          import('../../../../core/bridge/bridge'),
+          import('../../../../core/bridge/tables'),
+          import('../../../../core/schema/casting'),
+          import('../../../../core/nested-json'),
+        ]);
       const bridge = await getBridge();
-      // Rows first, types second, so a DESCRIBE failure costs the type row and
-      // nothing else.
-      const rows = await bridge.query(PREVIEW_SQL);
-      if (isStale()) return;
-      // DATA_VIEW explicitly: describeColumns defaults to quac_raw, which is
-      // all-VARCHAR by construction for CSV/TSV/XLSX (ingest.ts:9) and would
-      // never show a BIGINT. DESCRIBE "data" returns post-cast types — what
-      // these rows actually contain.
+      // Types first: they decide which columns are read as JSON text — a
+      // nested value through the row read loses its dates and wide numbers
+      // (core/nested-json.ts). A DESCRIBE failure still costs only the type
+      // row: the rows then come as they are. DATA_VIEW explicitly:
+      // describeColumns defaults to quac_raw, which is all-VARCHAR by
+      // construction for CSV/TSV/XLSX (ingest.ts:9) and would never show a
+      // BIGINT. DESCRIBE "data" returns post-cast types — what these rows
+      // actually contain.
       const columnTypes = await describeColumns(bridge, DATA_VIEW).catch(() => null);
-      if (isStale()) return; // re-check: DESCRIBE was a second await
+      if (isStale()) return;
+      const rows = await bridge.query(previewSQL(columnTypes === null ? [] : nestedColumnsOf(columnTypes)));
+      if (isStale()) return; // re-check: the rows were a second await
 
       const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
       const line = datasetMetaLine(rows.length, dataset.rowCount, dataset.columnCount);

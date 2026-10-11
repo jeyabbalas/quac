@@ -43,6 +43,7 @@ import {
   jsStageInsertSQL,
   jsStageTableName,
   rebuildSelectSQL,
+  stripTrailingSemicolon,
   violCountSQL,
   violFetchSQL,
 } from './sql';
@@ -56,6 +57,8 @@ import type {
   RunResult,
   SQLRunner,
 } from './types';
+import { readsAsJson } from '../duckdb-type';
+import { nestedColumnsOf, nestedReplaceClause, parseNestedColumns } from '../nested-json';
 import { computePertinence } from '../pertinence';
 import type { QCFlag } from '../flags/flag';
 
@@ -222,6 +225,18 @@ function interpret(rule: QCRule, targets: string[]): Interpretation {
   return { kind: 'rowBool', conds: [{ condition: rule.condition, targets }] };
 }
 
+/**
+ * The LIST, STRUCT, MAP and JSON columns of `data` right now. Read per rule
+ * where a correction may just have rebuilt the table: a value of one of these
+ * is read as JSON text and parsed back (core/nested-json.ts) — through the
+ * ordinary row read its dates arrive as epoch milliseconds in the browser and
+ * as Date objects on Node.
+ */
+export async function nestedOf(runner: SQLRunner): Promise<Set<string>> {
+  const rows = await runner.query<{ column_name: string; column_type: string }>('DESCRIBE data');
+  return nestedColumnsOf(new Map(rows.map((r) => [r.column_name, r.column_type])));
+}
+
 // ---- per-path execution ----------------------------------------------------
 
 interface ExecOutcome {
@@ -235,6 +250,7 @@ async function runRowBool(
   conds: { condition: string; targets: string[] }[],
   rowCap: number,
   sink: FlagSink,
+  nested: ReadonlySet<string>,
 ): Promise<ExecOutcome> {
   let violationCount = 0;
   let truncated = false;
@@ -243,7 +259,8 @@ async function runRowBool(
     const n = firstScalar(await runner.query(violCountSQL(condition)));
     violationCount += n;
     if (n === 0) continue;
-    const rows = await runner.query(violFetchSQL(condition, targets, rowCap));
+    const rows = await runner.query(violFetchSQL(condition, targets, rowCap, nested));
+    parseNestedColumns(rows, nested);
     for (const row of rows) {
       for (const target of targets) {
         sink.emit({
@@ -300,6 +317,35 @@ async function runColumnAggregate(
   return { violationCount: violating, truncated: false };
 }
 
+/**
+ * The rule's own SELECT, its nested result columns read as JSON text. A
+ * SELECT without one runs exactly as written; one with any is wrapped, so
+ * `people` in `SELECT id, people FROM data …` reads `[{"name":"Ada",…}]`
+ * with its dates and wide numbers intact.
+ */
+export async function datasetRows(
+  runner: SQLRunner,
+  condition: string,
+  cap: number,
+): Promise<Record<string, unknown>[]> {
+  const body = stripTrailingSemicolon(condition);
+  let nested = new Set<string>();
+  try {
+    const described = await runner.query<{ column_name: string; column_type: string }>(
+      `DESCRIBE SELECT * FROM (\n${body}\n)`,
+    );
+    nested = nestedColumnsOf(new Map(described.map((r) => [r.column_name, r.column_type])));
+  } catch {
+    // The fetch below reports whatever is wrong with the SQL, in its own words.
+  }
+  if (nested.size === 0) return runner.query(datasetFetchSQL(condition, cap));
+  const rows = await runner.query(
+    `SELECT *${nestedReplaceClause(nested)} FROM (\n${body}\n) LIMIT ${String(cap)}`,
+  );
+  parseNestedColumns(rows, nested);
+  return rows;
+}
+
 async function runDatasetSelect(
   runner: SQLRunner,
   rule: QCRule,
@@ -307,7 +353,7 @@ async function runDatasetSelect(
   sink: FlagSink,
 ): Promise<ExecOutcome> {
   const message = flagMessage(rule);
-  const rows = await runner.query(datasetFetchSQL(rule.condition, datasetCap + 1));
+  const rows = await datasetRows(runner, rule.condition, datasetCap + 1);
   for (const row of rows.slice(0, datasetCap)) {
     sink.emit({
       source: 'rules',
@@ -340,11 +386,12 @@ async function runValidateRule(
   rowCap: number,
   datasetCap: number,
   sink: FlagSink,
+  nested: ReadonlySet<string>,
 ): Promise<ExecOutcome> {
   const interpretation = interpret(rule, targets);
   switch (interpretation.kind) {
     case 'rowBool':
-      return runRowBool(runner, rule, interpretation.conds, rowCap, sink);
+      return runRowBool(runner, rule, interpretation.conds, rowCap, sink, nested);
     case 'columnAggregate':
       return runColumnAggregate(runner, rule, interpretation.aggs, sink);
     case 'datasetSelect':
@@ -407,6 +454,8 @@ function recordBrokenRule(ctx: PhaseCtx, rule: QCRule, err: unknown, started: nu
 async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<void> {
   const total = allRules.filter((r) => r.ruleType === 'validate' && r.enabled).length;
   let index = 0;
+  // Validations never rebuild the table, so one read of its types serves them all.
+  const nested = total > 0 ? await nestedOf(ctx.runner) : new Set<string>();
 
   for (const rule of allRules) {
     if (isAborted(ctx.signal)) return; // partial: stop before stats/flags
@@ -438,6 +487,7 @@ async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<v
         ctx.rowCap,
         ctx.datasetCap,
         ctx.sink,
+        nested,
       );
       const suppressed = ctx.sink.suppressed();
       if (suppressed > 0) {
@@ -522,15 +572,18 @@ async function runSqlCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcom
 
   // Capture BEFORE the rebuild: every count/capture and the CTAS all read the
   // same pre-rule `data` state (spec §3 single-pass guarantee).
+  const nested = await nestedOf(ctx.runner);
   for (const pair of pairs) {
     const n = firstScalar(
       await ctx.runner.query(correctionCountSQL(pair.condition, pair.expression, pair.target)),
     );
     changed += n;
     if (n === 0) continue;
+    const nestedTarget = nested.has(pair.target);
     const rows = await ctx.runner.query(
-      correctionCaptureSQL(pair.condition, pair.expression, pair.target, ctx.rowCap),
+      correctionCaptureSQL(pair.condition, pair.expression, pair.target, ctx.rowCap, nestedTarget),
     );
+    if (nestedTarget) parseNestedColumns(rows, BEFORE_AFTER);
     for (const row of rows) {
       ctx.sink.emit({
         source: 'rules',
@@ -578,13 +631,19 @@ export function marshalJsValue(v: unknown): unknown {
 
 /**
  * VARCHAR staging text for a sandbox-returned value (CAST at merge time).
- * Inputs are JSON-parsed sandbox output, so objects always stringify.
+ * Inputs are JSON-parsed sandbox output, so objects always stringify. A
+ * nested or JSON target always stages JSON — a string included, which its
+ * column must read as `"text"`, not `text` (sql.ts `stagedValueSQL`).
  */
-function stageText(v: unknown): string {
+function stageText(v: unknown, asJson: boolean): string {
+  if (asJson) return JSON.stringify(v);
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'bigint' || typeof v === 'boolean') return String(v);
   return JSON.stringify(v);
 }
+
+/** The two columns a correction capture returns. */
+const BEFORE_AFTER: ReadonlySet<string> = new Set(['before', 'after']);
 
 interface JsRowError {
   row: number;
@@ -617,6 +676,9 @@ async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome
       (r) => [r.column_name, r.column_type],
     ),
   );
+  // Nested columns reach the function as the values their JSON holds — dates
+  // as ISO strings, lists as arrays — on both runtimes (core/nested-json.ts).
+  const nested = nestedColumnsOf(columnTypes);
   const pairs = expandValueToken(rule);
   const message = flagMessage(rule);
 
@@ -638,9 +700,10 @@ async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome
       // catch sees an aborted signal and discards this rule (never broken).
       ctx.signal?.throwIfAborted();
       const chunk: Record<string, unknown>[] = await ctx.runner.query(
-        jsChunkFetchSQL(pair.condition, lastRow, JS_CHUNK_SIZE),
+        jsChunkFetchSQL(pair.condition, lastRow, JS_CHUNK_SIZE, nested),
       );
       if (chunk.length === 0) break;
+      parseNestedColumns(chunk, nested);
       const batch = chunk.map((row) => {
         const rowData: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(row)) {
@@ -673,7 +736,10 @@ async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome
         // `value === undefined` covers JSON-unrepresentable returns
         // (function/symbol) — treated as unchanged, like `undefined` itself.
         if (!result.changed || result.value === undefined) continue;
-        updates.push({ row: result.row, val: result.value === null ? null : stageText(result.value) });
+        updates.push({
+          row: result.row,
+          val: result.value === null ? null : stageText(result.value, readsAsJson(castType)),
+        });
       }
       if (rowErrors.length > processedRows * JS_ERROR_RATE_LIMIT) {
         throw new Error(
@@ -715,6 +781,7 @@ async function runJsCorrection(ctx: PhaseCtx, rule: QCRule): Promise<ExecOutcome
       changed += n;
       merge.push(part);
       const rows = await ctx.runner.query(jsCaptureSQL(part, ctx.rowCap));
+      if (readsAsJson(part.castType)) parseNestedColumns(rows, BEFORE_AFTER);
       for (const row of rows) {
         ctx.sink.emit({
           source: 'rules',

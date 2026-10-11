@@ -4,7 +4,7 @@
 // right cells, frozen pane, autofilter, clamped widths. exceljs runs in node.
 import { describe, expect, it } from 'vitest';
 import { buildReportModel } from '../../../src/core/report/reportModel';
-import { writeReportWorkbook } from '../../../src/core/report/excelWriter';
+import { EXCEL_CELL_CHARS, writeReportWorkbook } from '../../../src/core/report/excelWriter';
 import { createFlagStore } from '../../../src/core/flags/flagStore';
 import type { FillPattern } from 'exceljs';
 import type { ReportRowSource } from '../../../src/core/report/excelWriter';
@@ -197,5 +197,24 @@ describe('writeReportWorkbook round-trip', () => {
     );
     expect(argb(missing?.getCell('A2').fill)).toBeUndefined();
     expect(missing?.getCell('A3').text).toBe('');
+  });
+});
+
+describe('cells past Excel’s 32,767-character limit', () => {
+  it('cuts a long value and says so, instead of writing a workbook Excel calls corrupt', async () => {
+    const long = `[${'"abcdefghij",'.repeat(4_000)}"z"]`; // a nested value's JSON text, ~52 KB
+    const source: ReportRowSource = () =>
+      (async function* () {
+        await Promise.resolve();
+        yield [{ row: 0, values: { record_id: long, wage_income_annual: 1, age: 2 } }];
+      })();
+    const blob = await writeReportWorkbook(buildFixtureModel({ rowCount: 1 }), source);
+    const { default: ExcelJS } = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await blob.arrayBuffer());
+    const text = wb.getWorksheet('Data')?.getCell('A2').text ?? '';
+    expect(text.length).toBe(EXCEL_CELL_CHARS);
+    expect(text.startsWith(long.slice(0, 1_000))).toBe(true);
+    expect(text.endsWith(`… [cut: ${long.length.toLocaleString('en-US')} characters in all]`)).toBe(true);
   });
 });

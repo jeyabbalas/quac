@@ -220,31 +220,69 @@ describe('§D.6 keyword table (remaining rows)', () => {
     const flags = translateRowErrors(
       [
         err({
-          keyword: 'multipleOf',
+          keyword: 'unevaluatedItems',
           instancePath: '/score',
-          schemaPath: '#/properties/score/multipleOf',
-          params: { multipleOf: 5 },
-          data: 7,
+          schemaPath: '#/properties/score/unevaluatedItems',
+          params: { len: 2 },
+          data: [1, 2, 3],
         }),
       ],
       0,
       miniCtx,
     );
     expect(flags[0]?.message).toBe(
-      'value fails the \'multipleOf\' constraint {"multipleOf":5} (schema: #/properties/score/multipleOf)',
+      'value fails the \'unevaluatedItems\' constraint {"len":2} (schema: #/properties/score/unevaluatedItems).',
     );
     expect(flags[0]?.ruleId).toBe('schema:prop:score:value');
   });
 
   it('generic fallback omits the params summary when params are empty', () => {
     const flags = translateRowErrors(
-      [err({ keyword: 'contains', instancePath: '/score', schemaPath: '#/properties/score/contains' })],
+      [err({ keyword: 'x-custom', instancePath: '/score', schemaPath: '#/properties/score/x-custom' })],
       0,
       miniCtx,
     );
     expect(flags[0]?.message).toBe(
-      "value fails the 'contains' constraint (schema: #/properties/score/contains)",
+      "value fails the 'x-custom' constraint (schema: #/properties/score/x-custom).",
     );
+  });
+
+  it('numeric keywords beyond the HESP inventory read as sentences', () => {
+    const at = (keyword: string, params: Record<string, unknown>, data: unknown): string =>
+      translateRowErrors(
+        [err({ keyword, instancePath: '/score', schemaPath: `#/properties/score/${keyword}`, params, data })],
+        0,
+        miniCtx,
+      )[0]?.message ?? '';
+    expect(at('multipleOf', { multipleOf: 5 }, 7)).toBe('7 is not a multiple of 5.');
+    expect(at('exclusiveMinimum', { comparison: '>', limit: 0 }, 0)).toBe('0 must be greater than 0.');
+    expect(at('exclusiveMaximum', { comparison: '<', limit: 1 }, 1)).toBe('1 must be less than 1.');
+  });
+
+  it('string keywords: length counts characters, format names what it expects', () => {
+    const at = (keyword: string, params: Record<string, unknown>, data: unknown): string =>
+      translateRowErrors(
+        [err({ keyword, instancePath: '/id', schemaPath: `#/properties/id/${keyword}`, params, data })],
+        0,
+        miniCtx,
+      )[0]?.message ?? '';
+    expect(at('maxLength', { limit: 3 }, 'abcd')).toBe("'abcd' has 4 characters; at most 3 allowed.");
+    expect(at('minLength', { limit: 2 }, 'a')).toBe("'a' has 1 character; at least 2 required.");
+    expect(at('format', { format: 'date' }, '2024-02-30')).toBe(
+      "'2024-02-30' is not a valid date (YYYY-MM-DD).",
+    );
+    expect(at('format', { format: 'made-up' }, 'x')).toBe("'x' is not a valid 'made-up' value.");
+  });
+
+  it('a long value is cut in the message, never the flag', () => {
+    const long = 'x'.repeat(500);
+    const flags = translateRowErrors(
+      [err({ keyword: 'maxLength', instancePath: '/id', schemaPath: '#/properties/id/maxLength', params: { limit: 10 }, data: long })],
+      0,
+      miniCtx,
+    );
+    expect(flags[0]?.message).toBe(`'${'x'.repeat(77)}…' has 500 characters; at most 10 allowed.`);
+    expect(flags[0]?.value).toBe(long);
   });
 
   it('unattributable root-level error → row-scope generic flag', () => {
@@ -256,7 +294,7 @@ describe('§D.6 keyword table (remaining rows)', () => {
     expect(flags[0]).toMatchObject({ scope: 'row', row: 4, ruleId: 'schema:row:type' });
   });
 
-  it('deep instancePath attributes to the top segment with an (at `…`) suffix', () => {
+  it('deep instancePath attributes to the top segment with an (at `…`) suffix (no locate)', () => {
     const flags = translateRowErrors(
       [
         err({
@@ -271,7 +309,7 @@ describe('§D.6 keyword table (remaining rows)', () => {
       miniCtx,
     );
     expect(flags[0]?.column).toBe('age');
-    expect(flags[0]?.message).toBe('must be an integer, got string. (at `/2`)');
+    expect(flags[0]?.message).toBe('must be an integer, got string (at `/2`).');
   });
 
   it('minItems message builder (§D.6 dataset row)', () => {

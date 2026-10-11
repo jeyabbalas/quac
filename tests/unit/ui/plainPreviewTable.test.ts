@@ -2,9 +2,10 @@
  * Storage-type classification for the preview table's right-alignment
  * (UIX-4 §4). Node-tested: the module reads no DOM at import time.
  *
- * The vocabulary matters because `describeColumns` (casting.ts:60) has already
- * stripped type parameters and upper-cased, so DECIMAL(18,3) arrives here as
- * a bare `DECIMAL`.
+ * `describeColumns` (casting.ts) hands over DuckDB's whole type text —
+ * `DECIMAL(18,3)`, `STRUCT(x DOUBLE)[]` — and the classification reads its
+ * base name (core/duckdb-type.ts), so a parameterised number aligns right and
+ * a list of numbers does not.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -31,10 +32,15 @@ describe('isNumericStorageType', () => {
     }
   });
 
-  it('accepts DECIMAL as describeColumns delivers it — parameters already stripped', () => {
+  it('accepts DECIMAL with or without its parameters', () => {
     expect(isNumericStorageType('DECIMAL')).toBe(true);
-    // Belt and braces: an unstripped one must not silently pass as numeric.
-    expect(isNumericStorageType('DECIMAL(18,3)')).toBe(false);
+    expect(isNumericStorageType('DECIMAL(18,3)')).toBe(true);
+  });
+
+  it('rejects a list or struct OF numbers — the column holds containers', () => {
+    for (const type of ['BIGINT[]', 'DECIMAL(10,2)[]', 'DOUBLE[3]', 'STRUCT(x DOUBLE, y DOUBLE)', 'MAP(VARCHAR, BIGINT)']) {
+      expect(isNumericStorageType(type), type).toBe(false);
+    }
   });
 
   it('rejects text, boolean, temporal and nested types', () => {

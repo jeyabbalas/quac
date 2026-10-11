@@ -9,7 +9,12 @@ import type { RefResolver, SchemaSite } from './deref';
 
 export type JsonPrimitive = string | number | boolean | null;
 
-export type JsonTypeName = 'integer' | 'number' | 'string' | 'boolean' | 'null';
+/**
+ * JSON Schema's type names. `array` and `object` are what a nested column —
+ * a LIST, STRUCT or MAP from a JSON or Parquet dataset — holds; they decide
+ * its storage (`JSON`, below) and never a scalar cast.
+ */
+export type JsonTypeName = 'integer' | 'number' | 'string' | 'boolean' | 'null' | 'array' | 'object';
 
 export interface Sentinel {
   value: string | number;
@@ -34,10 +39,33 @@ export type ValueSpec =
       sentinels: Sentinel[];
     }
   | { kind: 'string-free' | 'boolean'; sentinels: Sentinel[] }
+  /** A list: what each item must be, and how many there may be. */
+  | { kind: 'array'; items?: ValueSpec; minItems?: number; maxItems?: number }
+  /** A record: its declared fields, in schema order; `closed` = no others allowed. */
+  | { kind: 'object'; fields: string[]; required: string[]; closed: boolean }
   // Spec §E.1 writes these as one `'mixed' | 'opaque'` member; split so the
   // discriminant narrows (TS keeps a two-literal member un-split).
   | { kind: 'mixed'; rendered?: string }
   | { kind: 'opaque'; rendered?: string };
+
+/** The missing-value codes a spec carries — none for containers, mixed or opaque. */
+export function sentinelsOf(spec: ValueSpec): readonly Sentinel[] {
+  switch (spec.kind) {
+    case 'numeric':
+    case 'codes':
+    case 'string-pattern':
+    case 'string-free':
+    case 'boolean':
+      return spec.sentinels;
+    default:
+      return [];
+  }
+}
+
+/** Every labelled value a spec knows: its codes (if any), then its sentinels. */
+export function labelledValuesOf(spec: ValueSpec): readonly Sentinel[] {
+  return spec.kind === 'codes' ? [...spec.codes, ...spec.sentinels] : sentinelsOf(spec);
+}
 
 /** Digest walk guard (§C.1): refs are chased at most this deep per property. */
 const MAX_DEPTH = 12;
@@ -66,8 +94,20 @@ function typeOfValue(v: unknown): JsonTypeName | null {
   if (typeof v === 'boolean') return 'boolean';
   if (typeof v === 'string') return 'string';
   if (typeof v === 'number') return Number.isInteger(v) ? 'integer' : 'number';
+  if (Array.isArray(v)) return 'array';
+  if (typeof v === 'object') return 'object';
   return null;
 }
+
+const JSON_TYPE_NAMES: ReadonlySet<string> = new Set<JsonTypeName>([
+  'integer',
+  'number',
+  'string',
+  'boolean',
+  'null',
+  'array',
+  'object',
+]);
 
 /** null ⇒ unconstrained (any type). */
 function jsonTypesOf(
@@ -89,8 +129,7 @@ function jsonTypesOf(
     }
     if (typeof node.type === 'string' || Array.isArray(node.type)) {
       const names = (Array.isArray(node.type) ? node.type : [node.type]).filter(
-        (t): t is JsonTypeName =>
-          t === 'integer' || t === 'number' || t === 'string' || t === 'boolean' || t === 'null',
+        (t): t is JsonTypeName => typeof t === 'string' && JSON_TYPE_NAMES.has(t),
       );
       contributions.push(new Set(names));
     }
@@ -156,7 +195,26 @@ export function deriveJsonTypes(site: SchemaSite, resolver: RefResolver): Readon
   return jsonTypesOf(site, resolver, 0, new Set()) ?? new Set();
 }
 
-export type StorageType = 'BIGINT' | 'DOUBLE' | 'VARCHAR' | 'BOOLEAN';
+/**
+ * Whether a value at `site` may be null: true when its type set includes
+ * `null`, and when the schema leaves the type open (no `type`, `const` or
+ * `enum` anywhere in reach) — where `deriveJsonTypes` cannot say, since it
+ * reports "any type" and "no type" alike as an empty set.
+ */
+export function allowsNull(site: SchemaSite, resolver: RefResolver): boolean {
+  const types = jsonTypesOf(site, resolver, 0, new Set());
+  return types === null || types.has('null');
+}
+
+/**
+ * `JSON` is the target of a variable that holds arrays or objects. A nested
+ * column (LIST, STRUCT, MAP) or a JSON one keeps the type the dataset gave it
+ * — every nested or JSON column does, whatever its schema says (casting.ts) —
+ * so `JSON` only ever converts TEXT: a CSV, TSV or Excel cell holding
+ * `[1, 2, 3]` is parsed into DuckDB's JSON type, and one that does not parse
+ * is a cast finding like any other.
+ */
+export type StorageType = 'BIGINT' | 'DOUBLE' | 'VARCHAR' | 'BOOLEAN' | 'JSON';
 
 /** §C.1 storage mapping. Mixed/empty/opaque type sets land VARCHAR + mixed. */
 export function storageTypeFor(jsonTypes: ReadonlySet<JsonTypeName>): {
@@ -171,6 +229,9 @@ export function storageTypeFor(jsonTypes: ReadonlySet<JsonTypeName>): {
   if (has('number') || has('integer', 'number')) return { storageType: 'DOUBLE', mixed: false };
   if (has('string')) return { storageType: 'VARCHAR', mixed: false };
   if (has('boolean')) return { storageType: 'BOOLEAN', mixed: false };
+  if (has('array') || has('object') || has('array', 'object')) {
+    return { storageType: 'JSON', mixed: false };
+  }
   return { storageType: 'VARCHAR', mixed: true };
 }
 
@@ -184,10 +245,15 @@ type Atom =
   | { kind: 'pattern'; pattern: string; title?: string; description?: string }
   | { kind: 'string' }
   | { kind: 'boolean' }
+  /** `type: "null"`, `const: null`, a null in an `enum`: allowed, but never what a value IS. */
+  | { kind: 'null' }
+  | { kind: 'array'; site: SchemaSite }
+  | { kind: 'object'; site: SchemaSite }
   | { kind: 'opaque' };
 
 function constAtom(node: Record<string, unknown>, viaRef: boolean): Atom | null {
   const value = node.const;
+  if (value === null) return { kind: 'null' };
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const label = typeof node.title === 'string' ? node.title : undefined;
   return { kind: 'const', value, viaRef, ...(label === undefined ? {} : { label }) };
@@ -198,6 +264,42 @@ function notValues(node: Record<string, unknown>): (string | number)[] {
   if (!isObject(not)) return [];
   const raw = Array.isArray(not.enum) ? not.enum : Object.hasOwn(not, 'const') ? [not.const] : [];
   return raw.filter((v): v is string | number => typeof v === 'string' || typeof v === 'number');
+}
+
+/** The atom one JSON type name yields, with the keywords that apply to it. */
+function typeAtom(type: string, site: SchemaSite): Atom {
+  const node = site.node as Record<string, unknown>;
+  switch (type) {
+    case 'integer':
+    case 'number':
+      return {
+        kind: 'numeric',
+        numType: type,
+        ...(typeof node.minimum === 'number' ? { min: node.minimum } : {}),
+        ...(typeof node.maximum === 'number' ? { max: node.maximum } : {}),
+        notEnum: notValues(node),
+      };
+    case 'string':
+      if (typeof node.pattern === 'string') {
+        return {
+          kind: 'pattern',
+          pattern: node.pattern,
+          ...(typeof node.title === 'string' ? { title: node.title } : {}),
+          ...(typeof node.description === 'string' ? { description: node.description } : {}),
+        };
+      }
+      return { kind: 'string' };
+    case 'boolean':
+      return { kind: 'boolean' };
+    case 'null':
+      return { kind: 'null' };
+    case 'array':
+      return { kind: 'array', site };
+    case 'object':
+      return { kind: 'object', site };
+    default:
+      return { kind: 'opaque' };
+  }
 }
 
 function flatten(site: SchemaSite, resolver: RefResolver, viaRef: boolean, depth: number): Atom[] {
@@ -246,38 +348,28 @@ function flatten(site: SchemaSite, resolver: RefResolver, viaRef: boolean, depth
   }
   if (Array.isArray(node.enum)) {
     return node.enum.map((v): Atom => {
+      if (v === null) return { kind: 'null' };
       return typeof v === 'string' || typeof v === 'number'
         ? { kind: 'const', value: v, viaRef }
         : { kind: 'opaque' };
     });
   }
 
-  const type = node.type;
-  if (type === 'integer' || type === 'number') {
-    return [
-      {
-        kind: 'numeric',
-        numType: type,
-        ...(typeof node.minimum === 'number' ? { min: node.minimum } : {}),
-        ...(typeof node.maximum === 'number' ? { max: node.maximum } : {}),
-        notEnum: notValues(node),
-      },
-    ];
-  }
-  if (type === 'string') {
-    if (typeof node.pattern === 'string') {
-      return [
-        {
-          kind: 'pattern',
-          pattern: node.pattern,
-          ...(typeof node.title === 'string' ? { title: node.title } : {}),
-          ...(typeof node.description === 'string' ? { description: node.description } : {}),
-        },
-      ];
-    }
-    return [{ kind: 'string' }];
-  }
-  if (type === 'boolean') return [{ kind: 'boolean' }];
+  // `type: "integer"` or `type: ["integer", "null"]`: one atom per name, the
+  // node's keywords applying to each (JSON Schema applies `minimum` to the
+  // numbers and `pattern` to the strings of a multi-type node alike).
+  const typeNames =
+    typeof node.type === 'string'
+      ? [node.type]
+      : Array.isArray(node.type)
+        ? node.type.filter((t): t is string => typeof t === 'string')
+        : null;
+  if (typeNames !== null && typeNames.length > 0) return typeNames.map((t) => typeAtom(t, site));
+
+  // No `type`: a node that only says what its items or properties are still
+  // describes an array or an object.
+  if (isObject(node.items) || Array.isArray(node.prefixItems)) return [{ kind: 'array', site }];
+  if (isObject(node.properties)) return [{ kind: 'object', site }];
 
   return [{ kind: 'opaque' }];
 }
@@ -286,13 +378,93 @@ function toSentinel(atom: Extract<Atom, { kind: 'const' }>): Sentinel {
   return { value: atom.value, ...(atom.label === undefined ? {} : { label: atom.label }) };
 }
 
-export function deriveValueSpec(site: SchemaSite, resolver: RefResolver): ValueSpec {
-  const atoms = flatten(site, resolver, false, 0);
-  const opaquePointer = `${site.file.relativePath}#${site.pointer}`;
+const stringKeys = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
-  if (atoms.some((a) => a.kind === 'opaque')) {
+const nonNegativeInt = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined;
+
+function arraySpec(site: SchemaSite, resolver: RefResolver, depth: number): ValueSpec {
+  const node = site.node as Record<string, unknown>;
+  const minItems = nonNegativeInt(node.minItems);
+  const maxItems = nonNegativeInt(node.maxItems);
+  const items = isObject(node.items)
+    ? specAt(childSite(site, 'items', node.items), resolver, depth + 1)
+    : undefined;
+  return {
+    kind: 'array',
+    ...(items === undefined || items.kind === 'opaque' ? {} : { items }),
+    ...(minItems === undefined ? {} : { minItems }),
+    ...(maxItems === undefined ? {} : { maxItems }),
+  };
+}
+
+function objectSpec(site: SchemaSite): ValueSpec {
+  const node = site.node as Record<string, unknown>;
+  const fields = isObject(node.properties) ? Object.keys(node.properties) : [];
+  const closed =
+    !isObject(node.patternProperties) &&
+    (node.additionalProperties === false || node.unevaluatedProperties === false);
+  return { kind: 'object', fields, required: stringKeys(node.required), closed };
+}
+
+/** The noun phrase one atom contributes to a mixed expectation (`an integer or an array`). */
+function atomNoun(atom: Atom): string | null {
+  switch (atom.kind) {
+    case 'numeric':
+      return atom.numType === 'integer' ? 'an integer' : 'a number';
+    case 'pattern':
+    case 'string':
+      return 'text';
+    case 'boolean':
+      return 'a boolean';
+    case 'array':
+      return 'an array';
+    case 'object':
+      return 'an object';
+    case 'const':
+      return 'a listed code';
+    default:
+      return null;
+  }
+}
+
+function joinOr(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} or ${words.at(-1) ?? ''}`;
+}
+
+function specAt(site: SchemaSite, resolver: RefResolver, depth: number): ValueSpec {
+  const opaquePointer = `${site.file.relativePath}#${site.pointer}`;
+  if (depth > MAX_DEPTH) {
     return { kind: 'opaque', rendered: `a value satisfying the schema at ${opaquePointer}` };
   }
+  const all = flatten(site, resolver, false, depth);
+
+  if (all.some((a) => a.kind === 'opaque')) {
+    return { kind: 'opaque', rendered: `a value satisfying the schema at ${opaquePointer}` };
+  }
+  // Null never decides what a value is: `["integer", "null"]` is an integer
+  // spec (the tooltip's Type line says the null).
+  const atoms = all.filter((a) => a.kind !== 'null');
+  if (atoms.length === 0) {
+    return all.length === 0
+      ? { kind: 'opaque', rendered: `a value satisfying the schema at ${opaquePointer}` }
+      : { kind: 'opaque', rendered: 'null' };
+  }
+
+  const containers = atoms.filter((a) => a.kind === 'array' || a.kind === 'object');
+  if (containers.length > 0) {
+    const only = containers[0];
+    if (atoms.length === 1 && only !== undefined) {
+      return only.kind === 'array' ? arraySpec(only.site, resolver, depth) : objectSpec(only.site);
+    }
+    // A container among other shapes (`shifty`: a number, a word or a list):
+    // name every shape, once each, in schema order.
+    const nouns = [...new Set(atoms.map(atomNoun).filter((n): n is string => n !== null))];
+    return { kind: 'mixed', rendered: joinOr(nouns) };
+  }
+
   const numerics = atoms.filter((a) => a.kind === 'numeric');
   const consts = atoms.filter((a) => a.kind === 'const');
   const patterns = atoms.filter((a) => a.kind === 'pattern');
@@ -344,10 +516,11 @@ export function deriveValueSpec(site: SchemaSite, resolver: RefResolver): ValueS
   if (booleans.length > 0 && numerics.length === 0 && patterns.length === 0 && strings.length === 0) {
     return { kind: 'boolean', sentinels: consts.map(toSentinel) };
   }
-  if (atoms.length === 0) {
-    return { kind: 'opaque', rendered: `a value satisfying the schema at ${opaquePointer}` };
-  }
   return { kind: 'mixed' };
+}
+
+export function deriveValueSpec(site: SchemaSite, resolver: RefResolver): ValueSpec {
+  return specAt(site, resolver, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +576,36 @@ function exclusionsOverlapRange(spec: Extract<ValueSpec, { kind: 'numeric' }>): 
   });
 }
 
+const itemCount = (n: number): string => `${formatBound(n)} item${n === 1 ? '' : 's'}`;
+
+/** `an array of at most 3 items, each an integer 0–9`. */
+function renderArrayExpectation(spec: Extract<ValueSpec, { kind: 'array' }>): string {
+  const { minItems: min, maxItems: max } = spec;
+  let text = 'an array';
+  if (min !== undefined && max !== undefined) {
+    text += min === max ? ` of exactly ${itemCount(min)}` : ` of ${formatBound(min)}–${itemCount(max)}`;
+  } else if (max !== undefined) {
+    text += ` of at most ${itemCount(max)}`;
+  } else if (min !== undefined && min > 0) {
+    text += ` of at least ${itemCount(min)}`;
+  }
+  if (spec.items !== undefined) text += `, each ${renderExpectation(spec.items)}`;
+  return text;
+}
+
+/** Fields past this many are summarised (`… and 4 more`). */
+const OBJECT_FIELD_CAP = 8;
+
+/** `an object with fields x, y, tier (no other fields)`. */
+function renderObjectExpectation(spec: Extract<ValueSpec, { kind: 'object' }>): string {
+  if (spec.fields.length === 0) return spec.closed ? 'an empty object' : 'an object';
+  const shown = spec.fields.slice(0, OBJECT_FIELD_CAP);
+  const more = spec.fields.length - shown.length;
+  const list = more > 0 ? `${shown.join(', ')} and ${String(more)} more` : shown.join(', ');
+  const noun = spec.fields.length === 1 ? 'field' : 'fields';
+  return `an object with ${noun} ${list}${spec.closed ? ' (no other fields)' : ''}`;
+}
+
 /** §D.4 expectation string. Pure; the P08 translator embeds it verbatim. */
 export function renderExpectation(spec: ValueSpec): string {
   switch (spec.kind) {
@@ -441,6 +644,10 @@ export function renderExpectation(spec: ValueSpec): string {
       }
       return text;
     }
+    case 'array':
+      return renderArrayExpectation(spec);
+    case 'object':
+      return renderObjectExpectation(spec);
     case 'mixed':
       return spec.rendered ?? 'a value of one of several types (see schema)';
     case 'opaque':

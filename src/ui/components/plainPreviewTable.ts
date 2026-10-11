@@ -7,6 +7,7 @@
  * Given `columnTypes`, it grows a second header row carrying each column's
  * DuckDB storage type, and right-aligns numeric columns whole.
  */
+import { duckTypeBase, readsAsJson } from '../../core/duckdb-type';
 import './plainPreviewTable.css';
 
 export interface PreviewTableOptions {
@@ -19,9 +20,9 @@ export interface PreviewTableOptions {
 }
 
 /**
- * DuckDB types that read as numbers, so the whole column right-aligns.
- * `describeColumns` has already stripped parameters and upper-cased, so
- * `DECIMAL(18,3)` arrives as `DECIMAL`.
+ * DuckDB types that read as numbers, so the whole column right-aligns —
+ * compared by base name, so `DECIMAL(18,3)` counts and `DECIMAL(10,2)[]`, a
+ * list, does not.
  */
 export const NUMERIC_STORAGE_TYPES: ReadonlySet<string> = new Set([
   'TINYINT',
@@ -41,7 +42,22 @@ export const NUMERIC_STORAGE_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 export function isNumericStorageType(type: string): boolean {
-  return NUMERIC_STORAGE_TYPES.has(type.toUpperCase());
+  return NUMERIC_STORAGE_TYPES.has(duckTypeBase(type));
+}
+
+/**
+ * A nested or JSON cell is its JSON text, which runs to tens of kilobytes (a
+ * list of 10,000 items): the cell shows the start of it, the tooltip more.
+ */
+const NESTED_CELL_CHARS = 120;
+const NESTED_TITLE_CHARS = 2_000;
+/** A STRUCT's type runs as long as its field list. */
+const TYPE_LABEL_CHARS = 48;
+
+function clipText(text: string, cap: number): string {
+  if (text.length <= cap) return text;
+  const points = Array.from(text);
+  return points.length <= cap ? text : `${points.slice(0, cap - 1).join('')}…`;
 }
 
 export function renderPreviewTable(
@@ -110,12 +126,22 @@ export function renderPreviewTable(
     typeRow.className = 'q-preview-typerow';
     for (const col of columns) {
       const td = document.createElement('td');
-      td.textContent = columnTypes.get(col) ?? '';
+      const type = columnTypes.get(col) ?? '';
+      td.textContent = clipText(type, TYPE_LABEL_CHARS);
+      if (td.textContent !== type) td.title = type;
       if (numeric.has(col)) td.className = 'q-num';
       typeRow.append(td);
     }
     thead.append(typeRow);
   }
+  const nested = new Set(
+    columnTypes === undefined
+      ? []
+      : columns.filter((col) => {
+          const type = columnTypes.get(col);
+          return type !== undefined && readsAsJson(type);
+        }),
+  );
 
   const tbody = document.createElement('tbody');
   for (const row of rows) {
@@ -127,6 +153,11 @@ export function renderPreviewTable(
       if (value === null || value === undefined) {
         classes.push('q-preview-null');
         td.textContent = '—';
+      } else if (nested.has(col)) {
+        const text = stringifyCell(value);
+        classes.push('q-preview-nested');
+        td.textContent = clipText(text, NESTED_CELL_CHARS);
+        if (td.textContent !== text) td.title = clipText(text, NESTED_TITLE_CHARS);
       } else {
         td.textContent = stringifyCell(value);
       }
@@ -141,7 +172,11 @@ export function renderPreviewTable(
   container.replaceChildren(wrapper);
 }
 
-/** Engine rows arrive as strings/numbers/bigints/booleans; anything nested renders as JSON. */
+/**
+ * Engine rows arrive as strings/numbers/bigints/booleans — a nested column as
+ * its JSON text already (core/nested-json.ts); anything else nested renders
+ * as JSON.
+ */
 function stringifyCell(value: unknown): string {
   switch (typeof value) {
     case 'string':

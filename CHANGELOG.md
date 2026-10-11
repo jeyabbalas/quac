@@ -11,6 +11,110 @@ QuaC ships as two products from one repository, and they version together:
 
 Entries below say which half they apply to.
 
+## [1.2.0] — Unreleased
+
+> Prepared, not released: this section collects the 1.2.0 changes so far. Set the date when the version is
+> tagged.
+
+Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`
+0.7.0 → 0.10.0 holds a million annotations, so the report grid now paints every flag a run records.
+`json-schema-data-dictionary` 0.1.0 → 0.7.0 brings its own dictionary component, which now renders the JSON
+Schema preview. The CLI's flags, exit codes, summary record and `runQuac()` surface are unchanged.
+
+### Added — web app
+
+- **Every flag is painted on the grid.** The report grid used to colour at most 20,000 cells, errors first,
+  under a "Painting 20,000 of N" banner. data-table 0.10 renders annotations from per-row, per-column and
+  per-cell summaries instead of scanning them, so the cap and the banner are gone: every flag the run records is
+  on screen (a run materializes up to 200,000). Measured on a 2,000,000-row dataset with 170,000 flagged cells:
+  the run lands in about 12 seconds and the grid scrolls in 4–7 ms frames.
+- **<kbd>F8</kbd> / <kbd>Shift</kbd>+<kbd>F8</kbd> step through the flagged cells**, in the grid's order, across
+  the whole dataset — the severity checkboxes decide which flags count — and a screen reader hears where it
+  landed and what was flagged there ("Row 13 of 2,000,000, weight_kg: warning, …").
+- **The JSON Schema preview is a full data dictionary.** The Load view's JSON Schema tab is now
+  json-schema-data-dictionary's own component: skip patterns you can follow from either end (a **Skip logic**
+  panel listing every rule, a "Skips N" chip on each variable that drives one, conditions that link to the
+  variable they set), a **Metadata** panel, search that ranks the exact variable name first, a column header
+  that stays in view, resizable columns, and **Copy** / **CSV**. It wears QuaC's fonts and colours, stays light
+  on a dark-mode machine, and runs without semantic search, which would download a model.
+
+### Changed — web app
+
+- **Larger datasets fit.** The grid receives its data as a file it reads from disk rather than a buffer copied
+  into the database's memory, which keeps the copy out of the memory QuaC's working tables already fill (at
+  equal speed: 1.8 s for a million rows either way). Only the columns near the view are rendered, so a
+  266-column dataset carries a tenth of the controls it did.
+- **A date column with one bad value stays text in the grid**, as it is in the data QuaC validated. It used to be
+  converted to dates, which showed the bad value as `null`.
+- The annotation popover lists five entries per section and counts the rest ("+3 more"), and leaves out the
+  severities you have hidden.
+
+### Removed — web app
+
+- The "Painting N of M cell flags" banner, with the cap it reported.
+- QuaC's own dictionary table and its search, replaced by the component above.
+
+### Changed — both
+
+- **Run Info no longer lists "Cell annotations painted"** — in the browser's workbook and the CLI's alike — since
+  there is no such cap. "Flags materialized" stays.
+
+### Changed — CLI
+
+- **DuckDB 1.5.6** (`@duckdb/node-api` 1.5.6-r.1, was 1.5.5-r.4). The browser keeps DuckDB 1.5.4 inside
+  duckdb-wasm; the shared ground-truth manifests pass on both.
+- An install brings about 85 more small packages, transitively: `exceljs` → … → `traverse` 0.3.10 now depends
+  on a family of ECMAScript polyfills. npm resolves this fresh for every install, whatever QuaC's lockfile says.
+
+### Security
+
+- **`fast-uri` 3.1.8** under `ajv`, in the published package's runtime tree — the `$ref`-resolution path, which
+  the CLI uses for `--schema` URLs: authority injection via an unvalidated port, host confusion via an unclosed
+  bracket, and percent-encoded host case. **`brace-expansion`** under `exceljs` is patched too. `npm audit`: 6
+  findings → 2, the same `uuid`-under-`exceljs` pair as 1.1.0, whose only offered remedy is a downgrade to
+  `exceljs` 3.4.0 — declined.
+
+### Accessibility
+
+- data-table 0.10 re-measures clean: the grid is five tab stops (of 743 focusable controls on a 266-column
+  dataset, down from 6,923), crossed in seven <kbd>Tab</kbd> presses and back.
+- **Two findings inside the new dictionary component**, which QuaC's own table did not have: the column resize
+  handles are focusable separators without `aria-valuenow` (critical), and the Valid values list nests a bare
+  separator inside a `<dl>` (serious). They are upstream, recorded with their fixes in `ui-design.md` §9, and
+  outside the axe gate like every other third-party subtree.
+
+### Changed — dependencies
+
+- `@jeyabbalas/data-table` 0.7.0 → **0.10.0** and `json-schema-data-dictionary` 0.1.0 → **0.7.0**, both pinned
+  exactly. `vitest` and `@vitest/browser-playwright` 4 → 5, `es-module-lexer` 2 → 3, and every in-range update:
+  vite 8.3, playwright 1.64, eslint 10.12, typescript-eslint 8.71, CodeMirror and Lezer patches.
+- **Still held**, for 1.1.0's reasons: TypeScript 6.0 (typescript-eslint, through its latest canary, declares
+  `<6.1.0`) and `@types/node` 24 (the `engines` floor). duckdb-wasm stays at 1.33.1-dev57.0, data-table's peer
+  and the build the vendored extensions are hashed against; `xlsx` 0.20.3 is still SheetJS's latest.
+
+### Numbers
+
+| Measure                           | 1.1.0   | 1.2.0                    |
+| --------------------------------- | ------- | ------------------------ |
+| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 47.2 KB                  |
+| Cells the report grid can colour  | 20,000  | every recorded flag      |
+| Unit tests                        | 1,211   | 1,202                    |
+| Browser tests                     | 73      | 73                       |
+| CLI tests                         | 45      | 53                       |
+| End-to-end tests                  | 124     | 122                      |
+| `npm audit` findings              | 2       | 2                        |
+| Third-party a11y items open       | 0       | 2 (dictionary component) |
+
+The unit count falls because QuaC's own dictionary search and its tests went with it; the 1.2.0 numbers are
+from a local run (Node 26, macOS), the 1.1.0 ones from CI.
+
+### Known limitations
+
+Carried over from 1.1.0, minus the 20,000-highlight cap, which is gone. Still true: `external` rules are listed
+rather than executed; a rules-only run leaves every column `VARCHAR`; column names are matched case-sensitively;
+the Excel data sheet stops at 1,048,575 rows; Chromium is the only browser with automated coverage; and `xlsx`
+installs from `cdn.sheetjs.com` rather than the npm registry.
+
 ## [1.1.0] — 2026-09-02
 
 A dependency sweep, the accessibility debt it let us discharge, and a report
@@ -215,5 +319,6 @@ attached automatically. The one setting a human owns lives on npmjs.com:
 package `@jeyabbalas/quac` → Settings → Trusted Publisher → GitHub Actions, org
 `jeyabbalas`, repo `quac`, workflow `release.yml`, no environment.
 
+[1.2.0]: https://github.com/jeyabbalas/quac/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.0.0

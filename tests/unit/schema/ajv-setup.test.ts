@@ -11,6 +11,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   buildAjv,
   collectMetaErrors,
+  compileAt,
   compileRowValidator,
   registerSchemaFiles,
   schemaDraftOf,
@@ -115,7 +116,7 @@ describe('draft routing (§B.1)', () => {
     expect(buildAjv('unknown')).toBeInstanceOf(Ajv2020);
   });
 
-  test('schemaDraftOf reads $schema suffixes', () => {
+  test('schemaDraftOf reads $schema URIs, every spelling of a known one', () => {
     expect(schemaDraftOf({ $schema: 'https://json-schema.org/draft/2020-12/schema' })).toBe(
       '2020-12',
     );
@@ -123,6 +124,8 @@ describe('draft routing (§B.1)', () => {
       '2019-09',
     );
     expect(schemaDraftOf({ $schema: 'http://json-schema.org/draft-07/schema#' })).toBe('draft-07');
+    expect(schemaDraftOf({ $schema: 'https://json-schema.org/draft-07/schema' })).toBe('draft-07');
+    expect(schemaDraftOf({ $schema: 'http://json-schema.org/draft-06/schema#' })).toBe('draft-06');
     expect(schemaDraftOf({})).toBe('unknown');
     expect(schemaDraftOf(null)).toBe('unknown');
   });
@@ -149,14 +152,151 @@ describe('E_META collection (§B.2)', () => {
     expect(collectMetaErrors(ajv, [draft7File], '2020-12')).toEqual([]);
   });
 
-  test('registerSchemaFiles also skips different-known-draft files', () => {
+  test('registerSchemaFiles still registers different-known-draft files, unvalidated', () => {
     const ajv = buildAjv('2020-12');
     const draft7File = {
       uri: 'quac-set:/d7.json',
+      // Invalid against 2020-12's meta-schema; registered anyway — E_MIXED_DRAFT covers it.
       json: { $schema: 'http://json-schema.org/draft-07/schema#', type: 'object' },
     };
     registerSchemaFiles(ajv, [draft7File, good], '2020-12');
-    expect(ajv.getSchema('quac-set:/d7.json')).toBeUndefined();
+    expect(ajv.getSchema('quac-set:/d7.json')).toBeDefined();
     expect(ajv.getSchema('quac-set:/good.json')).toBeDefined();
+  });
+});
+
+describe('the engine QuaC builds (§B.1, workstream D)', () => {
+  /** Register `files`, then compile `#/items` of the first. */
+  function rowValidator(draft: Parameters<typeof buildAjv>[0], files: RegisterableFile[]) {
+    const ajv = buildAjv(draft);
+    expect(collectMetaErrors(ajv, files, draft)).toEqual([]);
+    registerSchemaFiles(ajv, files, draft);
+    return compileRowValidator(ajv, files[0]?.uri ?? '');
+  }
+
+  test('a 2020-12 root resolves a $ref into a draft-07 file (mixed drafts register)', () => {
+    const validate = rowValidator('2020-12', [
+      {
+        uri: 'quac-set:/root.json',
+        json: { type: 'array', items: { type: 'object', properties: { n: { $ref: 'defs.json#/definitions/posInt' } } } },
+      },
+      {
+        uri: 'quac-set:/defs.json',
+        json: { $schema: 'http://json-schema.org/draft-07/schema#', definitions: { posInt: { type: 'integer', minimum: 1 } } },
+      },
+    ]);
+    expect(validate({ n: 3 })).toBe(true);
+    expect(validate({ n: 0 })).toBe(false);
+  });
+
+  test('columns named like Object.prototype members are the data’s own properties', () => {
+    const validate = rowValidator('2020-12', [
+      {
+        uri: 'quac-set:/root.json',
+        json: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { constructor: { type: 'string' }, toString: { type: 'string' } },
+            required: ['constructor'],
+          },
+        },
+      },
+    ]);
+    expect(validate({ constructor: 'x' })).toBe(true);
+    // Absent: required fires (it used to find Object.prototype.constructor) …
+    expect(validate({ toString: 'y' })).toBe(false);
+    expect(validate.errors?.[0]).toMatchObject({ keyword: 'required', params: { missingProperty: 'constructor' } });
+    // … and an absent optional `toString` is not "a function where a string belongs".
+    expect(validate({ constructor: 'x' })).toBe(true);
+  });
+
+  test('a property literally named __proto__ is checked, and not "additional"', () => {
+    // JSON.parse, as a schema file is read: a `__proto__:` key in an object
+    // literal would set the prototype instead of declaring a property.
+    const json: unknown = JSON.parse(
+      '{"type":"array","items":{"type":"object","properties":{"__proto__":{"type":"number"},"id":{"type":"integer"}},' +
+        '"required":["__proto__"],"additionalProperties":false}}',
+    );
+    const validate = rowValidator('2020-12', [{ uri: 'quac-set:/root.json', json }]);
+    expect(validate(JSON.parse('{"__proto__": 12, "id": 1}'))).toBe(true);
+    expect(validate(JSON.parse('{"__proto__": "foo", "id": 1}'))).toBe(false);
+    expect(validate.errors?.map((e) => e.keyword)).toEqual(['type']);
+    expect(validate({ id: 1 })).toBe(false);
+    expect(validate.errors?.[0]).toMatchObject({ keyword: 'required', params: { missingProperty: '__proto__' } });
+  });
+
+  test('an empty enum compiles and rejects every value (a false subschema)', () => {
+    const validate = rowValidator('2020-12', [
+      { uri: 'quac-set:/root.json', json: { type: 'array', items: { type: 'object', properties: { k: { enum: [] } } } } },
+    ]);
+    expect(validate({})).toBe(true);
+    for (const k of ['a', 1, null, false]) expect(validate({ k }), String(k)).toBe(false);
+    expect(validate.errors?.[0]?.keyword).toBe('false schema');
+  });
+
+  test('draft-07 ignores keywords beside $ref; 2020-12 applies them', () => {
+    const items = {
+      type: 'object',
+      properties: { age: { $ref: '#/definitions/int', maximum: 120 } },
+    };
+    const draft7 = rowValidator('draft-07', [
+      {
+        uri: 'quac-set:/root.json',
+        json: { $schema: 'http://json-schema.org/draft-07/schema#', type: 'array', items, definitions: { int: { type: 'integer' } } },
+      },
+    ]);
+    expect(draft7({ age: 200 })).toBe(true);
+    expect(draft7({ age: 'x' })).toBe(false);
+    const draft2020 = rowValidator('2020-12', [
+      { uri: 'quac-set:/root.json', json: { type: 'array', items, definitions: { int: { type: 'integer' } } } },
+    ]);
+    expect(draft2020({ age: 200 })).toBe(false);
+  });
+
+  test('draft-06 validates on the draft-07 class with its own meta-schema', () => {
+    const ajv = buildAjv('draft-06');
+    expect(ajv).toBeInstanceOf(Ajv);
+    const file = {
+      uri: 'quac-set:/d6.json',
+      json: { $schema: 'http://json-schema.org/draft-06/schema#', type: 'array', items: { type: 'object', properties: { n: { exclusiveMaximum: 10 } } } },
+    };
+    expect(collectMetaErrors(ajv, [file], 'draft-06')).toEqual([]);
+    registerSchemaFiles(ajv, [file], 'draft-06');
+    const validate = compileRowValidator(ajv, file.uri);
+    expect(validate({ n: 9 })).toBe(true);
+    expect(validate({ n: 10 })).toBe(false);
+  });
+
+  test('an https or #-less draft-07 URI meta-validates as draft-07', () => {
+    const ajv = buildAjv('draft-07');
+    for (const $schema of ['https://json-schema.org/draft-07/schema', 'http://json-schema.org/draft-07/schema']) {
+      expect(collectMetaErrors(ajv, [{ uri: 'quac-set:/a.json', json: { $schema, type: 'object' } }], 'draft-07')).toEqual([]);
+      expect(collectMetaErrors(ajv, [{ uri: 'quac-set:/b.json', json: { $schema, type: 12 } }], 'draft-07')).toHaveLength(1);
+    }
+  });
+
+  test('draft-04 is refused by construction', () => {
+    expect(() => buildAjv('draft-04')).toThrow(/draft-04 is not supported/);
+  });
+
+  test('compileAt reaches $defs, URI-encoding the pointer', () => {
+    const ajv = buildAjv('2020-12');
+    registerSchemaFiles(ajv, [{ uri: 'quac-set:/root.json', json: { $defs: { 'a row': { type: 'object', required: ['id'] } } } }], '2020-12');
+    const validate = compileAt(ajv, 'quac-set:/root.json', '/$defs/a row');
+    expect(validate({ id: 1 })).toBe(true);
+    expect(validate({})).toBe(false);
+    expect(() => compileAt(ajv, 'quac-set:/root.json', '/$defs/nope')).toThrow();
+  });
+
+  test('formats are checked to RFC 3339: a naive or space-separated timestamp is not a date-time', () => {
+    const validate = buildAjv('2020-12').compile({ type: 'string', format: 'date-time' });
+    expect(validate('2024-01-15T03:00:00Z')).toBe(true);
+    expect(validate('2024-01-15T08:30:00+05:30')).toBe(true);
+    expect(validate('2024-01-15T08:30:00')).toBe(false);
+    expect(validate('2024-01-15 03:00:00+00')).toBe(false);
+    const iri = buildAjv('2020-12').compile({ type: 'string', format: 'iri' });
+    expect(iri('http://ƒøø.ßår/')).toBe(true);
+    expect(iri('not an iri')).toBe(false);
   });
 });

@@ -8,7 +8,8 @@
 export interface Rename {
   from: string;
   to: string;
-  reason: 'reserved' | 'duplicate' | 'empty';
+  /** `whitespace`: spaces trimmed off the ends of the name. */
+  reason: 'reserved' | 'duplicate' | 'empty' | 'whitespace';
 }
 
 export interface SanitizedColumns {
@@ -24,7 +25,7 @@ export function sanitizeColumnNames(names: readonly string[]): SanitizedColumns 
 
   names.forEach((original, index) => {
     let name = original.trim();
-    let reason: Rename['reason'] | null = null;
+    let reason: Rename['reason'] | null = name !== original && name !== '' ? 'whitespace' : null;
 
     if (name === '') {
       name = `column_${String(index + 1)}`;
@@ -40,7 +41,7 @@ export function sanitizeColumnNames(names: readonly string[]): SanitizedColumns 
       let n = 2;
       while (taken.has(`${base}_${String(n)}`.toLowerCase())) n += 1;
       name = `${base}_${String(n)}`;
-      reason ??= 'duplicate';
+      reason = reason === null || reason === 'whitespace' ? 'duplicate' : reason;
     }
 
     taken.add(name.toLowerCase());

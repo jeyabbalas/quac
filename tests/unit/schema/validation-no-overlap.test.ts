@@ -1,13 +1,12 @@
 /**
  * §H edge 20 — the schema and the dataset share no column at all.
  *
- * `selected` (the columns fed to the QC worker) is empty exactly then, and the
- * row loop used to interpolate it into `SELECT ${selectList} FROM …`, which
- * DuckDB rejects with `Parser Error: SELECT clause without selection list` —
- * raw engine text on a toast, and no report. The guard must skip the row loop
- * (no worker at all) and say so as one dataset-scope flag, while the
- * dataset-level SQL checks — which read row counts and the dataset's OWN
- * columns — still run.
+ * The row loop once fed the worker only the schema's columns, so here it had
+ * none and died on DuckDB's `SELECT clause without selection list`. Records
+ * now carry every dataset column (§C.3), so the run always has something to
+ * read; what remains to pin is the outcome: each absent variable named once,
+ * one dataset-scope sentence, and the schema's own verdict on the columns it
+ * does not know.
  *
  * SQL parity per testing-strategy §1: real DuckDB via @duckdb/node-api.
  */
@@ -16,37 +15,12 @@ import { createFlagStore } from '../../../src/core/flags/flagStore';
 import { columnDigest } from '../../../src/core/schema/column-meta';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
 import { runSchemaValidation } from '../../../src/core/schema/validation-run';
+import { createInProcessValidationWorker } from '../../../src/headless/validationWorker';
 import { openMemoryDb, seedRawTable } from './duckdb';
 import { entry } from './helpers';
 import type { SqlRunner } from '../../../src/core/schema/casting';
 import type { ColumnDigest } from '../../../src/core/schema/column-meta';
 import type { SchemaSet } from '../../../src/core/schema/types';
-import type { MainToWorker, WorkerToMain } from '../../../src/core/schema/worker-protocol';
-
-/**
- * Answers `init` with `ready` and nothing else — just enough for the row loop
- * to reach its first `fetchBatch`, which is where an empty select list dies.
- * With the guard in place it is never even constructed.
- */
-interface FakeWorker {
-  onmessage: ((event: { data: WorkerToMain }) => void) | null;
-  postMessage: (msg: MainToWorker) => void;
-  terminate: () => void;
-}
-
-function readyOnlyWorker(): Worker {
-  const fake: FakeWorker = {
-    onmessage: null,
-    postMessage(msg) {
-      if (msg.type !== 'init') return;
-      queueMicrotask(() => fake.onmessage?.({ data: { type: 'ready', compileMs: 0 } }));
-    },
-    terminate() {
-      /* nothing to tear down */
-    },
-  };
-  return fake as unknown as Worker;
-}
 
 /** A people schema; the dataset below is a city table — nothing in common. */
 const peopleSchema = (additionalProperties: unknown): unknown => ({
@@ -101,7 +75,7 @@ async function loadSchema(additionalProperties: unknown): Promise<{
 }
 
 describe('zero overlap between schema and dataset (§H edge 20)', () => {
-  test('closed universe: no worker, no SQL, one dataset flag — and the run completes', async () => {
+  test('the run completes: each record is still validated, and one dataset flag says why little matched', async () => {
     const { set, digest } = await loadSchema(false);
     const flagStore = createFlagStore();
     let workersCreated = 0;
@@ -114,57 +88,50 @@ describe('zero overlap between schema and dataset (§H edge 20)', () => {
       flagStore,
       createWorker: () => {
         workersCreated += 1;
-        return readyOnlyWorker();
+        return createInProcessValidationWorker();
       },
     });
 
-    // The whole point: it resolves. Before the guard this rejected with
-    // DuckDB's `Parser Error: SELECT clause without selection list`.
+    // Every record holds every dataset column, so there is always something
+    // to select — the old `SELECT FROM …` crash cannot recur — and the schema
+    // judges the columns it does not know (here: additionalProperties false).
     expect(summary.rowsTotal).toBe(2);
     expect(summary.aborted).toBe(false);
-    expect(summary.rowsWithErrors).toBe(0);
-    expect(workersCreated).toBe(0);
+    expect(workersCreated).toBe(1);
 
     const flags = flagStore.all().map((e) => e.flag);
     const noOverlap = flags.filter((f) => f.ruleId === 'schema:dataset:no-overlap');
     expect(noOverlap).toHaveLength(1);
     expect(noOverlap[0]?.scope).toBe('dataset');
     expect(noOverlap[0]?.severity).toBe('error');
-    expect(noOverlap[0]?.message).toBe(
-      "None of the schema's 2 variables are present among the dataset's 2 columns, " +
-        'so no records could be validated — check that the schema and the dataset ' +
-        'describe the same table.',
-    );
 
-    // Each absent variable is still named at column scope; the dataset-scope
-    // sentence explains why no record was validated, it does not replace them.
+    // Each absent variable is named once, at column scope — its per-record
+    // `required` errors are folded into that flag.
     expect(
       flags
         .filter((f) => f.ruleId.endsWith(':missing'))
         .map((f) => f.column)
         .sort(),
     ).toEqual(['age', 'person_id']);
+    expect(flags.filter((f) => f.ruleId.endsWith(':required'))).toEqual([]);
 
-    // The aggregating stage is NOT skipped with the row loop: 2 rows < minItems 5.
+    // The aggregating stage still runs: 2 rows < minItems 5.
     expect(flags.some((f) => f.ruleId === 'schema:dataset:min-items')).toBe(true);
   });
 
-  test('an open property universe still validates every column through the worker', async () => {
-    // `additionalProperties: {}` puts the dataset's own columns in scope, so
-    // `selected` is non-empty and the guard must NOT fire — a guard that
-    // over-triggered would silently report a clean dataset.
+  test('an open schema: the unknown columns are allowed — information, not errors', async () => {
     const { set, digest } = await loadSchema({});
-    await expect(
-      runSchemaValidation({
-        runner,
-        set,
-        digest,
-        datasetColumns: DATASET_COLUMNS,
-        flagStore: createFlagStore(),
-        createWorker: () => {
-          throw new Error('worker requested');
-        },
-      }),
-    ).rejects.toThrow('worker requested');
+    const flagStore = createFlagStore();
+    await runSchemaValidation({
+      runner,
+      set,
+      digest,
+      datasetColumns: DATASET_COLUMNS,
+      flagStore,
+      createWorker: createInProcessValidationWorker,
+    });
+    const flags = flagStore.all().map((e) => e.flag);
+    // `additionalProperties: {}` covers them with a schema: described, checked, fine.
+    expect(flags.filter((f) => f.column === 'city' || f.column === 'population')).toEqual([]);
   });
 });

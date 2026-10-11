@@ -33,6 +33,7 @@
 import { createBridgeRunner, runQC } from './rules/engine';
 import { runSchemaValidation } from './schema/validation-run';
 import { applyCastPlan, buildCastPlan, describeColumns } from './schema/casting';
+import { undeclaredColumnMeta } from './schema/column-meta';
 import { createFlagStore } from './flags/flagStore';
 import { hardenBridge } from './bridge/harden';
 import {
@@ -171,7 +172,9 @@ async function defaultRebuildTyped(
     return null;
   }
   const rawTypes = await describeColumns(bridge);
-  const plan = buildCastPlan(schema.digest.meta, datasetColumns, rawTypes);
+  const plan = buildCastPlan(schema.digest.meta, datasetColumns, rawTypes, (name) =>
+    undeclaredColumnMeta(schema.set, name),
+  );
   await applyCastPlan(bridge, plan);
   return plan;
 }

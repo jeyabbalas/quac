@@ -59,7 +59,7 @@ export async function openWorkbook(bytes: ArrayBuffer): Promise<Workbook> {
         if (address.startsWith('!')) continue;
         const cell = ws[address] as import('xlsx').CellObject;
         if (cell.t === 'd') {
-          const time = XLSX.utils.format_cell({ t: 'd', v: cell.v, z: 'hh:mm:ss' } as import('xlsx').CellObject);
+          const time = XLSX.utils.format_cell({ t: 'd', v: cell.v, z: 'hh:mm:ss' });
           cell.z = isoFormat(typeof cell.z === 'string' ? cell.z : undefined, time !== '00:00:00');
           delete cell.w;
         }

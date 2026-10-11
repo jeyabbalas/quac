@@ -258,7 +258,7 @@ export function createRowShaper(columns: readonly PresentedColumn[], mode: RowSo
           return;
         }
         if (t.kind === 'text') {
-          const raw = typeof v === 'string' ? v : String(v);
+          const raw = typeof v === 'string' ? v : JSON.stringify(v);
           const types = typesOf[i] ?? new Set<JsonTypeName>();
           const reading = readTextCell(raw, types);
           if (reading.kind === 'cast') {

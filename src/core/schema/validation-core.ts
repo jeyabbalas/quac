@@ -36,7 +36,6 @@ import type {
   DatasetChecks,
   MainToWorker,
   PresentedColumn,
-  SchemaRef,
   ValidationSummary,
   WorkerToMain,
 } from './worker-protocol';
@@ -93,8 +92,7 @@ function summarize(s: EngineState): ValidationSummary {
   };
 }
 
-function compileAt(ajv: AjvCore, ref: SchemaRef): ValidateFunction {
-  const id = `${ref.uri}#${ref.pointer}`;
+function compileAt(ajv: AjvCore, id: string): ValidateFunction {
   const validate = ajv.getSchema(id);
   if (validate === undefined) throw new Error(`schema engine: '${id}' failed to compile`);
   return validate;
@@ -108,7 +106,7 @@ function canonicalJson(value: unknown): string {
     const keys = Object.keys(record).sort();
     return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`).join(',')}}`;
   }
-  return JSON.stringify(value) ?? 'null';
+  return JSON.stringify(value === undefined ? null : value);
 }
 
 /**
@@ -238,13 +236,13 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
         if (first === undefined) s.seen.set(print, row);
         else s.datasetFlags.push(datasetFlag(SCHEMA_DATASET_RULE_IDS.duplicateRecords, duplicateRecordsMessage(first, row)));
       }
-      if (s.contains !== null && s.contains.validate(obj) === true) s.contains.matched += 1;
+      if (s.contains?.validate(obj)) s.contains.matched += 1;
 
       const validate = row < s.prefix.length ? s.prefix[row] : s.record;
       let errors: AjvErrorLike[] = [];
       if (validate === false) {
         s.extraRecords += 1;
-      } else if (validate !== null && validate !== undefined && validate(obj) !== true) {
+      } else if (validate !== null && validate !== undefined && !validate(obj)) {
         errors = (validate.errors ?? []) as AjvErrorLike[];
       }
       if (suppressPaths.length > 0) {

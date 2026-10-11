@@ -68,19 +68,24 @@ export function installTypedSync(ctx: ShellContext): void {
 
     const generation = dataset.generation;
     const frozenDigest = digest;
+    const frozenSetRef = schema.phase === 'ready' ? schema.set : null;
     void (async () => {
-      const [{ getBridge }, casting, tables, rulesStore] = await Promise.all([
+      const [{ getBridge }, casting, tables, rulesStore, columnMeta] = await Promise.all([
         import('../core/bridge/bridge'),
         import('../core/schema/casting'),
         import('../core/bridge/tables'),
         import('../core/rules/rules-store'),
+        import('../core/schema/column-meta'),
       ]);
       const bridge = await getBridge();
       const stale = (): boolean => ctx.store.dataset.get()?.generation !== generation;
       if (stale()) return;
       if (frozenDigest !== null) {
         const rawTypes = await casting.describeColumns(bridge);
-        const plan = casting.buildCastPlan(frozenDigest.meta, dataset.columns, rawTypes);
+        const frozenSet = frozenSetRef;
+        const plan = casting.buildCastPlan(frozenDigest.meta, dataset.columns, rawTypes, (name) =>
+          frozenSet === null ? null : columnMeta.undeclaredColumnMeta(frozenSet, name),
+        );
         if (stale()) return;
         await casting.applyCastPlan(bridge, plan);
       } else {

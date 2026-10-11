@@ -54,19 +54,17 @@ export interface PresentedColumn {
   fix?: { plan: NestedPlan; wideIntegers: boolean };
 }
 
-/** A schema node the worker compiles: `ajv.getSchema(`${uri}#${pointer}`)`. */
-export interface SchemaRef {
-  uri: string;
-  pointer: string;
-}
-
-/** What the dataset as a whole must satisfy, beyond each record's schema (§D.6). */
+/**
+ * What the dataset as a whole must satisfy, beyond each record's schema
+ * (§D.6, dataset-shape.ts). Schemas are named by their `ajv.getSchema` id
+ * (`schemaRefUri`).
+ */
 export interface DatasetChecks {
   /** Records past the prefix: their schema, `false` (no more records allowed) or null (anything). */
-  record: SchemaRef | false | null;
+  record: string | false | null;
   /** 2020-12 `prefixItems` / draft-07 tuple `items`: one schema per leading record. */
-  prefix: SchemaRef[];
-  contains?: { schema: SchemaRef; min: number; max?: number };
+  prefix: string[];
+  contains?: { schema: string; min: number; max?: number };
   uniqueItems: boolean;
 }
 

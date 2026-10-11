@@ -1,5 +1,5 @@
 {
-  "$comment": "Expected QCFlag output for nested-stress-tests.json validated against nested-stress-tests.schema.json (schema engine only). The dataset is valid against its schema, so there is no error: one precision warning per column holding an integer past ±(2^53−1), with its exact digits and where it sits (list positions counted from 1, as DuckDB SQL and the value inspector count them), and the root $comment as an advisory. Asserted on both runtimes (nestedParity.test.ts, nested.browser.test.ts).",
+  "$comment": "Expected QCFlag output for nested-stress-tests.json validated against nested-stress-tests.schema.json (schema engine only). The dataset is valid against its schema, so there is no error: one precision warning per column holding an integer past ±(2^53−1) — read from the file's own records, so `floats`' 2^64 counts: it is written as an integer — with its exact digits and where it sits (list positions counted from 1, as DuckDB SQL and the value inspector count them), and the root $comment as an advisory. Asserted on both runtimes (nestedParity.test.ts, nested.browser.test.ts).",
   "flags": [
     {
       "source": "schema",
@@ -33,6 +33,16 @@
     },
     {
       "source": "schema",
+      "ruleId": "schema:prop:floats:precision",
+      "scope": "cell",
+      "row": 3,
+      "column": "floats",
+      "severity": "warning",
+      "message": "value at floats[5] exceeds the exactly-representable integer range (±(2^53−1)) — schema checks used the nearest representable number.",
+      "value": "18446744073709551616"
+    },
+    {
+      "source": "schema",
       "ruleId": "schema:prop:mixed_list:precision",
       "scope": "cell",
       "row": 3,
@@ -48,7 +58,7 @@
       "row": 3,
       "column": "shifty",
       "severity": "warning",
-      "message": "value at shifty exceeds the exactly-representable integer range (±(2^53−1)) — schema checks used the nearest representable number.",
+      "message": "value exceeds the exactly-representable integer range (±(2^53−1)) — schema checks used the nearest representable number.",
       "value": "9007199254740993"
     },
     {

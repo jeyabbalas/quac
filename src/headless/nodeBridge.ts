@@ -93,7 +93,18 @@ export async function createNodeBridge(): Promise<NodeBridgeHandle> {
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
       const reader = await connection.runAndReadAll(sql);
-      return reader.getRowObjectsJS().map((row) => {
+      let rows: Record<string, unknown>[];
+      try {
+        rows = reader.getRowObjectsJS();
+      } catch (err) {
+        // A DATE or TIMESTAMP past what a JS Date can hold (`infinity`, year
+        // 300000) has no JS value; read such a result as JSON-friendly text
+        // instead of failing the query (the browser's Arrow read shows them
+        // as text too).
+        if (!(err instanceof Error) || !/out of range/i.test(err.message)) throw err;
+        rows = reader.getRowObjectsJson();
+      }
+      return rows.map((row) => {
         const out: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(row)) out[key] = normalizeValue(value);
         return out as T;

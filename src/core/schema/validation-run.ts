@@ -21,6 +21,8 @@ import { duckTypeBase, mayHoldWideIntegers, parseDuckType, readsAsJson } from '.
 import { computePertinence } from '../pertinence';
 import { quoteIdentifier } from '../sql-identifier';
 import { applyCastPlan, buildCastPlan, describeColumns } from './casting';
+import { undeclaredColumnMeta } from './column-meta';
+import { datasetShape, schemaRefUri } from './dataset-shape';
 import { createRefResolver } from './deref';
 import { decodeJsonText, jsonArrayElements } from './json-records';
 import { buildNestedPlan, propertySite } from './nested-values';
@@ -34,7 +36,7 @@ import { DEFAULT_BATCH_ROWS, DEFAULT_FLAG_CAP, serializeColumnMeta } from './wor
 import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
 import type { CastPlan, SqlRunner } from './casting';
-import type { ColumnDigest } from './column-meta';
+import type { ColumnDigest, ColumnMeta } from './column-meta';
 import type { RefResolver, SchemaSite } from './deref';
 import type { RowSourceSpec } from './row-source';
 import type { SchemaFile, SchemaSet } from './types';
@@ -208,69 +210,6 @@ function transportSql(ref: string, rawType: string, transport: CellTransport): s
   }
 }
 
-const ROOT_ARRAY_KEYWORDS = new Set([
-  'type',
-  'items',
-  'prefixItems',
-  'additionalItems',
-  'minItems',
-  'maxItems',
-  'uniqueItems',
-  'contains',
-  'minContains',
-  'maxContains',
-]);
-/** Root keywords that never constrain the dataset (identifiers, annotations, definitions). */
-const ROOT_INERT_KEYWORDS = new Set([
-  '$schema',
-  '$id',
-  'id',
-  '$anchor',
-  '$dynamicAnchor',
-  '$recursiveAnchor',
-  '$vocabulary',
-  '$comment',
-  '$defs',
-  'definitions',
-  'title',
-  'description',
-  'default',
-  'examples',
-  'deprecated',
-  'readOnly',
-  'writeOnly',
-]);
-
-/**
- * What the dataset (the root array) must satisfy, read off the root schema:
- * the record schema(s), `contains`, `uniqueItems` — and the root keywords
- * QuaC cannot check record by record, reported instead of ignored.
- */
-function datasetChecksOf(
-  root: SchemaFile,
-  rootJson: Record<string, unknown>,
-): { checks: DatasetChecks; unchecked: string[] } {
-  const uri = root.declaredId ?? root.retrievalUri;
-  const draft07Tuple = Array.isArray(rootJson.items);
-  const prefixItems = Array.isArray(rootJson.prefixItems) ? rootJson.prefixItems : draft07Tuple ? (rootJson.items as unknown[]) : [];
-  const prefixKey = Array.isArray(rootJson.prefixItems) ? 'prefixItems' : 'items';
-  const prefix = prefixItems.map((_, i) => ({ uri, pointer: `/${prefixKey}/${String(i)}` }));
-  const after = draft07Tuple ? rootJson.additionalItems : rootJson.items;
-  const afterKey = draft07Tuple ? 'additionalItems' : 'items';
-  const record: DatasetChecks['record'] =
-    after === undefined || after === true ? null : after === false ? false : { uri, pointer: `/${afterKey}` };
-  const checks: DatasetChecks = { record, prefix, uniqueItems: rootJson.uniqueItems === true };
-  if (rootJson.contains !== undefined) {
-    const min = typeof rootJson.minContains === 'number' ? rootJson.minContains : 1;
-    const max = typeof rootJson.maxContains === 'number' ? rootJson.maxContains : undefined;
-    checks.contains = { schema: { uri, pointer: '/contains' }, min, ...(max === undefined ? {} : { max }) };
-  }
-  const unchecked = Object.keys(rootJson).filter(
-    (k) => !ROOT_ARRAY_KEYWORDS.has(k) && !ROOT_INERT_KEYWORDS.has(k) && !k.startsWith('x-'),
-  );
-  return { checks, unchecked };
-}
-
 /**
  * End-to-end schema validation (§F): column-scope findings → the worker's
  * record loop (single-slot pipeline: the fetch of batch N+1 overlaps
@@ -287,7 +226,6 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   const flagCap = deps.config?.flagCap ?? DEFAULT_FLAG_CAP;
   const corrected = deps.corrected === true;
   const root = rootFileOf(set);
-  const rootJson = (root.json ?? {}) as Record<string, unknown>;
   const meta = digest.meta;
   const metaByName = new Map(meta.map((m) => [m.name, m]));
 
@@ -415,7 +353,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   // ---- quac_typed: the schema's cast, for the rules (§C.1) ----
   emitProgress('casting', 0, true);
   if (deps.castPlan === undefined) {
-    const plan = buildCastPlan(meta, datasetColumns, rawTypes);
+    const plan = buildCastPlan(meta, datasetColumns, rawTypes, (name) => undeclaredColumnMeta(set, name));
     await applyCastPlan(runner, plan);
   }
 
@@ -455,20 +393,32 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   let extras = columnScope.extras;
   if (records === null) addFlags(columnScope.flags);
 
-  const { checks, unchecked } = datasetChecksOf(root, rootJson);
-  const minItems = typeof rootJson.minItems === 'number' ? rootJson.minItems : undefined;
-  const maxItems = typeof rootJson.maxItems === 'number' ? rootJson.maxItems : undefined;
-  if (unchecked.length > 0) {
-    addFlags([
-      datasetFlag(
-        SCHEMA_DATASET_RULE_IDS.unchecked,
-        'warning',
-        `The schema's root keyword${unchecked.length === 1 ? '' : 's'} ${unchecked.map((k) => `'${k}'`).join(', ')} ` +
-          `constrain${unchecked.length === 1 ? 's' : ''} the dataset as a whole, which QuaC does not check — only each record, ` +
-          'and the record count, uniqueness and `contains`.',
-      ),
-    ]);
-  }
+  // ---- What the dataset as a whole must satisfy (dataset-shape.ts) ----
+  const shape = datasetShape(set);
+  const checks: DatasetChecks = {
+    record:
+      shape === null
+        ? null
+        : shape.record === null || shape.record === false
+          ? shape.record
+          : schemaRefUri(shape.record),
+    prefix: shape?.prefix.map(schemaRefUri) ?? [],
+    uniqueItems: shape?.uniqueItems === true,
+    ...(shape?.contains === undefined
+      ? {}
+      : {
+          contains: {
+            schema: schemaRefUri(shape.contains.schema),
+            min: shape.contains.min,
+            ...(shape.contains.max === undefined ? {} : { max: shape.contains.max }),
+          },
+        }),
+  };
+  const minItems = shape?.minItems;
+  const maxItems = shape?.maxItems;
+  addFlags(
+    (shape?.warnings ?? []).map((warning) => datasetFlag(SCHEMA_DATASET_RULE_IDS.unchecked, 'warning', warning)),
+  );
 
   // ---- Empty dataset (§H edge 17): no worker run ----
   if (rowsTotal === 0) {
@@ -499,11 +449,17 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   // ---- The columns as the worker presents them ----
   const resolver = createRefResolver(set);
   const dataTypes = corrected ? await describeColumns(runner, sourceTable) : new Map<string, string>();
+  const undeclared = new Map<string, ColumnMeta | null>();
+  const undeclaredOf = (key: string): ColumnMeta | null => {
+    if (!undeclared.has(key)) undeclared.set(key, undeclaredColumnMeta(set, key));
+    return undeclared.get(key) ?? null;
+  };
   const columns: PresentedColumn[] = datasetColumns.map((column) => {
     const key = keyOf(column);
-    const m = metaByName.get(key);
-    // A column no property declares is read as the text it is; the schema
-    // decides whether it may be there at all.
+    // A column no property declares is read by the patternProperties or
+    // additionalProperties schema that covers it — or as the text it is when
+    // none does; the schema decides whether it may be there at all.
+    const m = metaByName.get(key) ?? undeclaredOf(key) ?? undefined;
     const jsonTypes: JsonTypeName[] = m === undefined ? ['string'] : [...m.jsonTypes].sort();
     const site = m === undefined ? null : propertySite(resolver.fileById(m.source.fileId), m.source.pointer);
     const rawType = rawTypes.get(column) ?? 'VARCHAR';
@@ -677,7 +633,9 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     const rejected = new Set(loop.rejectedColumns);
     for (const key of extras) {
       const column = columnOfKey.get(key) ?? key;
-      if (rejected.has(column)) continue;
+      // Rejected: its error is in. Covered by a patternProperties or
+      // additionalProperties schema: described, and its values were checked.
+      if (rejected.has(column) || undeclaredOf(key) !== null) continue;
       flags.push(columnFlag(schemaColumnRuleId(column, 'undescribed'), column, 'info', undescribedColumnMessage(key)));
     }
     addFlags(flags);

@@ -1,19 +1,20 @@
-# Spec: `@jeyabbalas/data-table` v0.5.1 — API Cheat Sheet & Integration Rules
+# Spec: `@jeyabbalas/data-table` — API Cheat Sheet & Integration Rules
 
 > Audience: any phase that touches the data grid, the shared DuckDB bridge, annotations, tooltips, or filters.
 > Source: library README/docs/types on GitHub `main` + npm registry (researched 2026-07-23), plus facts confirmed
-> by the library author against the **v0.5.1 tag** (marked ✅ AUTHOR-CONFIRMED). Treat this file as authoritative;
-> if the library's behavior contradicts it, follow the protocol in `00-master-plan.md` (verify ≤30 min, record in
-> `architecture.md → Verified facts`).
+> by the library author against the **v0.5.1 tag** (marked ✅ AUTHOR-CONFIRMED). Written against 0.5.1; QuaC is on
+> **0.10.0** since 2026-10-11, and **§10 records what changed on the way and what QuaC now relies on** — read it
+> before trusting a 0.5.1-era line below. Treat this file as authoritative; if the library's behavior contradicts
+> it, follow the protocol in `00-master-plan.md` (verify ≤30 min, record in `architecture.md → Verified facts`).
 
 ## 1. Identity & distribution
 
 | Field | Value |
 |---|---|
-| Package | `@jeyabbalas/data-table` **0.5.1** (published 2026-05-18), MIT |
+| Package | `@jeyabbalas/data-table` **0.10.0** (published 2026-10-11), MIT — pinned exactly. 0.5.1 → 0.7.0 at QuaC 1.1.0, → 0.10.0 at 1.2.0 |
 | Format | **ESM only** (`type: module`); entry `./dist/data-table.js`; extra exports `/advanced` (NOT semver-stable — pin if used) and `/styles` (CSS, required) |
 | Model | Vanilla TS **factory function** mounting into a host `HTMLElement`. No framework required |
-| Peer deps | `@duckdb/duckdb-wasm ^1.33.1-dev45.0` (required); 6× CodeMirror packages + `@lezer/highlight` (optional — only for its built-in SQL editor; QuaC installs CodeMirror anyway) |
+| Peer deps | `@duckdb/duckdb-wasm ^1.33.1-dev57.0` (required; since 0.9 — the build its worker is made with, and QuaC's exact pin); 6× CodeMirror packages + `@lezer/highlight` (optional — only for its built-in SQL editor; QuaC installs CodeMirror anyway) |
 | DuckDB loading | Worker via `new Worker(new URL(...), {type:'module'})`; WASM bundles from **jsDelivr by default**; QuaC **self-hosts** instead (see §8) |
 | COOP/COEP | **Not required.** Falls back to `mvp`/`eh` single-threaded bundles automatically → works on GitHub Pages |
 | Browser floor | Worker, WebAssembly, IndexedDB (unless `persistence:false`), ResizeObserver, BigInt, structuredClone (~Chrome/Edge 98+, FF 94+, Safari 15.4+). `checkBrowserSupport()` available |
@@ -114,7 +115,7 @@ scope: 'row' | 'column' | 'cell';  severity: 'error' | 'warning' | 'info';
 - `rowId` = the display table's **`__rowid__`** (BIGINT — convert with `Number()`). Because QuaC exports display bytes ordered by its own `__row__` key with `__row__` excluded, **`__rowid__ === __row__`** after load, so `QCFlag.row` maps directly (see `architecture.md §row identity`).
 - `code`/`source`/`metadata` carry QuaC provenance: `code = ruleId`, `source = flag.source`, `metadata = {scope, correction?}`.
 - Live: `add`/`update` after render repaint immediately; `setSeverityFilter` hides tiers without deleting.
-- Rendering: tinted backgrounds via CSS classes (`dt-cell--annotated dt-cell--annotation-error` etc.; highest severity wins per element) + hover/focus popover (ARIA `role="tooltip"`) listing all annotations grouped by scope. Color tokens: `--dt-annotation-{error|warning|info}-{fg|bg|bdr}`.
+- Rendering: tinted backgrounds via CSS classes (`dt-cell--annotated dt-cell--annotation-error` etc.; highest severity wins per element) + hover/focus popover (ARIA `role="tooltip"`) grouped by scope — since 0.10 at most five per section with a "+N more" count, leaving out the severities the severity filter hides. Color tokens: `--dt-annotation-{error|warning|info}-{fg|bg|bdr}`.
 - **Annotations do NOT survive `loadData()`** — re-apply from the FlagStore after every refresh (cheap: flags are the source of truth; `toJSON()/loadJSON()` exists but re-derivation is simpler and always correct).
 
 ## 5. Column-header tooltips
@@ -136,7 +137,7 @@ Not schema-aware: QuaC builds content per column from schema digests + rules tar
 ## 6. Sorting, filters, derived columns, visualizations
 
 - Sort: `actions.setSort(SortColumn[])`, `toggleSort(col)`, `addToSort(col)`, `clearSort()`.
-- Filters (7 types: `range|point|set|notset|null|pattern|raw-sql`): `addFilter`, `removeFilter(column, type?)`, `clearFilters()`, `loadFilterPreset(...)`.
+- Filters (8 types since 0.10: `range|point|set|notset|null|pattern|raw-sql|annotated`): `addFilter`, `removeFilter(column, type?)`, `clearFilters()`, `loadFilterPreset(...)`.
 - **Raw SQL filters (Studio live preview!):**
   ```
   addRawSQLFilter(sql, label?): string     updateRawSQLFilter(id, sql, label?)
@@ -185,9 +186,47 @@ Priority: `workerFactory > workerUrl > default`. ⚠️ Under the `/quac/` Pages
   the library's stylesheet turns the whole grid dark unless the instance carries `data-dt-color-scheme="light"`, and
   only the option sets that attribute — so **every** `createDataTable` call must pass `colorScheme: 'light'`
   explicitly, or a dark-OS user gets a dark grid inside QuaC's white work area.
-- **Accessibility debt** (P19, measured — V22 and `ui-design.md §9`): the grid is a WCAG 2.1.2 **keyboard trap**, and
-  axe reports `aria-required-children` (critical), `color-contrast` on `.dt-col-stats`/`.dt-hidden-chip-name`, and
-  `scrollable-region-focusable` on `.dt-body-scroll`. Re-check all of these on any version bump.
+- **Accessibility** (V22 and `ui-design.md §9`): 0.5.1 was a WCAG 2.1.2 **keyboard trap** with three axe findings;
+  0.6.0 cured all of it, and 0.10.0 re-measures clean — `.dt-root` is five tab stops. Re-check on any version
+  bump, with a keyboard walk as well as the axe pass (axe cannot see a trap).
 - Export dialog (CSV/JSON/Parquet) is a lazy ~71–77 kB chunk; QuaC keeps it enabled on the report grid (harmless, useful).
 - Bundle: library JS ~8 kB brotli + styles ~17 kB; the weight is DuckDB WASM itself.
-- Stale bits in upstream docs: exported `VERSION` constant says 0.1.0 (trust package.json); `docs/performance.md` lists CJS sizes but the package is ESM-only since 0.4.0.
+- Stale bits in upstream docs (at 0.5.1): exported `VERSION` constant said 0.1.0 — it reports the real version at
+  0.10.0; `docs/performance.md` listed CJS sizes but the package is ESM-only since 0.4.0.
+
+## 10. 0.5.1 → 0.10.0: what changed, as QuaC uses it
+
+Measured against QuaC's call sites, not taken from the changelog (V31–V34 hold the evidence).
+
+- **Annotations at a million (0.10).** The store indexes each scope and the grid renders from O(1) per-row, per-column
+  and per-cell summaries. QuaC therefore paints **every** flag the FlagStore materializes — the 20,000-cell
+  `ANNOTATION_CAP` and its banner are gone (V32) — in **one** `addMany`: it validates the whole batch (shape only:
+  severity, non-empty message, finite `rowId`, non-empty `column` — never the column against the table) before
+  storing any of it, and fires one `change` event. `clear()` no longer throws past ~125,000 annotations.
+- **Navigation (0.10).** `F8` / `Shift+F8` (and `Alt+↓` / `Alt+↑`) step between the annotations the severity filter
+  shows, in view order, wrapping at the ends, and announce each landing in the grid's `.dt-announce` live region
+  ("Row 99,928 of 100,000, height_cm: error, …"). QuaC leaves `annotationNavigation` at its default (on); the perf
+  gate uses `Shift+F8` to prove every cell is painted. Also new and unused by QuaC so far:
+  `actions.showAnnotatedRows()` (the `annotated` filter), `nextAnnotation()`, `revealRow(rowId)`.
+- **`getByCell` is the exact intersection (0.10)** — row-scope at the row, column-scope at the column, cell-scope at
+  exactly that cell. QuaC does not call it.
+- **Loading (0.9).** A `Blob`/`File` is registered as a file handle and read from disk as it decodes; an
+  `ArrayBuffer` is copied into DuckDB's wasm memory first. Both grids pass a `Blob` (`parquetSource`, V33). A load
+  is checked against a memory estimate first and refused with `LOAD_MEMORY_EXCEEDED` when it cannot fit. Unnamed
+  binary is taken to be Parquet.
+- **The loader names its own virtual file (0.9, `__dt_source_<n>`)**, so the UX-01 path collision cannot recur;
+  `nextDisplayTableName` stays but is no longer load-bearing (V31).
+- **Text dates (0.9)** convert to DATE/TIMESTAMP only when *every* value converts unchanged. H004's `interview_date`
+  (one unparseable value) now stays VARCHAR in the grid, as in QuaC's `data` view — the UX-03 divergence is gone
+  upstream (V34).
+- **Wide tables (0.9)** render, fetch and chart only the columns near the view: HESP's 266-column grid holds 743
+  focusable candidates where 0.7.0 held 6,923.
+- **Large row counts (0.7)**: the scroll spacer is capped and blocks are fetched by `__rowid__` range, so the last
+  row of a 2,000,000-row grid is reachable (`Ctrl+End`, a thumb drag, `F8`).
+- **A failed initial load tears the table down (0.9)** — `createDataTable` removes its half-built mount before
+  rejecting; QuaC replaces the host with its own note either way.
+- **The worker's new statements (0.9–0.10)**, audited against QuaC's hardening: `SET enable_external_file_cache`
+  and `SET prefetch_all_parquet_files` are reader settings, and `LOAD json` (for Parquet holding JSON) is a no-op
+  after `hardenBridge` pre-loads it. No new extension is reachable.
+- **Annotation persistence moved to its own IndexedDB database (0.10)**; both QuaC grids use `persistence: false`,
+  so neither database is touched.

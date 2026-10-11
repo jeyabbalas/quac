@@ -116,20 +116,12 @@ describe('buildDictionaryTable over HESP', () => {
 describe('the agreement invariant with columnDigest', () => {
   /**
    * Sets whose ROOT SHAPE §E.1 does not model, so the two are expected to
-   * disagree. §E.1 (json-schema-subsystem.md:403) walks `items.allOf` category
-   * refs and properties declared directly on `items`; `no-ids` puts the row
-   * object behind a `$ref` ON `items` itself, which `buildColumnMeta` does not
-   * follow — so the digest sees 0 variables there while the package sees 2.
-   * That is a pre-existing §E.1 scope limit, not a dictionary bug: widening it
-   * would newly subject those columns to casting, translation and Ajv
-   * attribution, which is a validation-path change, not a UI one.
-   *
-   * If §E.1 ever grows to follow `items.$ref`, this list is what tells you to
-   * delete the entry rather than silently keeping a skip.
+   * disagree — pinned with their exact counts, so a fix breaks here. None
+   * since the digest walks the record schema wherever it is declared: the
+   * `no-ids` set, which puts the row object behind a `$ref` ON `items`
+   * itself, once digested 0 variables against the package's 2.
    */
-  const KNOWN_DIVERGENT = new Map<string, { digest: number; dictionary: number }>([
-    ['no-ids', { digest: 0, dictionary: 2 }],
-  ]);
+  const KNOWN_DIVERGENT = new Map<string, { digest: number; dictionary: number }>();
 
   const agree = (set: SchemaSet, label: string): void => {
     const digest = columnDigest(set);
@@ -178,7 +170,7 @@ describe('the agreement invariant with columnDigest', () => {
       agree(set, `synthetic/${name}`);
       checked += 1;
     }
-    expect(checked, 'synthetic sets exercising the invariant').toBe(3); // draft7, mini, mixed
+    expect(checked, 'synthetic sets exercising the invariant').toBe(4); // draft7, mini, mixed, no-ids
   });
 });
 

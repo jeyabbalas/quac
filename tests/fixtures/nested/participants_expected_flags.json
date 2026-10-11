@@ -151,7 +151,7 @@
       "row": 18,
       "column": "labs",
       "severity": "error",
-      "message": "must be a number, got string (at labs.glucose).",
+      "message": "'high' is a string, not a number (at labs.glucose).",
       "value": "high"
     },
     {
@@ -162,12 +162,7 @@
       "column": "labs",
       "severity": "error",
       "message": "field name 'LDL-C' is not allowed (names must match ^[a-z][a-z0-9_]*$).",
-      "value": {
-        "hba1c": 6.5,
-        "ldl": 173,
-        "hdl": 75,
-        "LDL-C": 131
-      }
+      "value": "LDL-C"
     },
     {
       "source": "schema",

@@ -17,6 +17,7 @@ import {
   duplicateRecordsMessage,
   minItemsMessage,
   missingColumnMessage,
+  notAllowedColumnMessage,
   translateRowErrors,
   unexpectedColumnMessage,
 } from '../../../src/core/schema/translator';
@@ -156,13 +157,14 @@ describe('§D.6 keyword table (remaining rows)', () => {
     ...partial,
   });
 
-  it('type', () => {
-    const flags = translateRowErrors(
-      [err({ keyword: 'type', params: { type: 'integer' }, data: 'abc' })],
-      0,
-      miniCtx,
-    );
-    expect(flags[0]?.message).toBe('must be an integer, got string.');
+  it('type names the value, what it is, and what was expected', () => {
+    const at = (type: unknown, data: unknown): string =>
+      translateRowErrors([err({ keyword: 'type', params: { type }, data })], 0, miniCtx)[0]?.message ?? '';
+    expect(at('integer', 'abc')).toBe("'abc' is a string, not an integer.");
+    expect(at('integer', 1.5)).toBe('1.5 is a number, not an integer.');
+    expect(at(['integer', 'null'], [1, 2])).toBe('[1,2] is an array, not an integer or null.');
+    // An explicit null (a JSON record's) is a value the type must allow.
+    expect(at('string', null)).toBe('null is not allowed here — expected a string.');
   });
 
   it('minimum / maximum standalone (bare numeric column, no collapse)', () => {
@@ -213,16 +215,34 @@ describe('§D.6 keyword table (remaining rows)', () => {
       0,
       miniCtx,
     );
-    expect(flags[0]?.message).toBe('must be 1 (Yes).');
+    expect(flags[0]?.message).toBe('must be 1 (Yes) — found 5.');
   });
 
-  it('generic fallback keeps keyword, params summary, and schemaPath', () => {
+  it('items past the ones the schema admits read as a count (items: false, unevaluatedItems)', () => {
     const flags = translateRowErrors(
       [
         err({
           keyword: 'unevaluatedItems',
           instancePath: '/score',
           schemaPath: '#/properties/score/unevaluatedItems',
+          params: { limit: 2 },
+          data: [1, 2, 3],
+        }),
+      ],
+      0,
+      miniCtx,
+    );
+    expect(flags[0]?.message).toBe('has 3 items; at most 2 allowed.');
+    expect(flags[0]?.ruleId).toBe('schema:prop:score:value');
+  });
+
+  it('generic fallback keeps keyword, params summary, and schemaPath', () => {
+    const flags = translateRowErrors(
+      [
+        err({
+          keyword: 'x-checked',
+          instancePath: '/score',
+          schemaPath: '#/properties/score/x-checked',
           params: { len: 2 },
           data: [1, 2, 3],
         }),
@@ -231,7 +251,7 @@ describe('§D.6 keyword table (remaining rows)', () => {
       miniCtx,
     );
     expect(flags[0]?.message).toBe(
-      'value fails the \'unevaluatedItems\' constraint {"len":2} (schema: #/properties/score/unevaluatedItems).',
+      'value fails the \'x-checked\' constraint {"len":2} (schema: #/properties/score/x-checked).',
     );
     expect(flags[0]?.ruleId).toBe('schema:prop:score:value');
   });
@@ -309,7 +329,7 @@ describe('§D.6 keyword table (remaining rows)', () => {
       miniCtx,
     );
     expect(flags[0]?.column).toBe('age');
-    expect(flags[0]?.message).toBe('must be an integer, got string (at `/2`).');
+    expect(flags[0]?.message).toBe("'x' is a string, not an integer (at `/2`).");
   });
 
   it('minItems message builder (§D.6 dataset row)', () => {
@@ -343,10 +363,16 @@ describe('mini manifest parity', () => {
       readFileSync(join(fixtureDir('synthetic', 'mini'), 'mini_expected_flags.json'), 'utf8'),
     ) as { flags: (QCFlag & { row?: number })[] };
     // Translator scope: everything except cast flags (P09 SQL scan) and
-    // dataset-scope flags (P09 SQL checks).
-    const expected = manifest.flags.filter(
-      (f) => !f.ruleId.endsWith(':cast') && f.scope !== 'dataset',
-    );
+    // dataset-scope flags (P09 SQL checks). The manifest's unexpected-column
+    // flag is the pertinence check's wording; when Ajv itself rejects the key
+    // the translator names the keyword that does (notAllowedColumnMessage).
+    const expected = manifest.flags
+      .filter((f) => !f.ruleId.endsWith(':cast') && f.scope !== 'dataset')
+      .map((f) =>
+        f.ruleId === 'schema:column:notes:unexpected'
+          ? { ...f, message: notAllowedColumnMessage('notes', 'unevaluatedProperties') }
+          : f,
+      );
     const byScenario: Record<string, string> = {
       pattern: 'schema:prop:id:value',
       'anyof-range': 'schema:prop:age:value',

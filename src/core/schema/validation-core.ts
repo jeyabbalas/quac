@@ -23,17 +23,21 @@
 import { buildAjv, collectMetaErrors, compileRowValidator, registerSchemaFiles } from './ajv-engine';
 import { pointerSegments, renderNestedPath } from './nested-values';
 import { createRowShaper, shapingColumns } from './row-shaping';
+import { createSchemaProbe } from './schema-probe';
 import { createTranslateCtx, translateRowErrors } from './translator';
 import { deserializeColumnMeta } from './worker-protocol';
 import type { ValidateFunction } from 'ajv';
 import type { QCFlag } from '../flags/flag';
 import type { NestedColumn } from './nested-values';
 import type { RowShaper } from './row-shaping';
+import type { SchemaProbe } from './schema-probe';
 import type { AjvErrorLike, TranslateCtx } from './translator';
 import type { MainToWorker, ValidationSummary, WorkerToMain } from './worker-protocol';
 
 interface EngineState {
   validateRow: ValidateFunction;
+  /** Re-validation for the translator's exact applicator blocks (schema-probe.ts). */
+  probe: SchemaProbe;
   ctx: TranslateCtx;
   /** The live Set inside ctx — shaping-discovered castKeys are added here. */
   liveCastFailures: Set<string>;
@@ -91,6 +95,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
     }
     registerSchemaFiles(ajv, msg.files, msg.draft);
     const validateRow = compileRowValidator(ajv, msg.rootBase);
+    const probe = createSchemaProbe(ajv, msg.files, { rowSchema: `${msg.rootBase}#/items` });
     const compileMs = Math.round(performance.now() - t0);
 
     const meta = deserializeColumnMeta(msg.columnMeta);
@@ -100,6 +105,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
     });
     state = {
       validateRow,
+      probe,
       ctx,
       liveCastFailures: ctx.castFailures as Set<string>,
       ordinalByName: ctx.ordinalByName,
@@ -162,7 +168,8 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
         if (column === undefined) return '';
         return renderNestedPath(column, rest, obj[column], s.nestedByName.get(column)?.plan);
       };
-      const rowFlags = [...shapeFlags, ...translateRowErrors(errors, row, s.ctx, locate)].sort(
+      const translated = translateRowErrors(errors, row, s.ctx, { locate, probe: s.probe });
+      const rowFlags = [...shapeFlags, ...translated].sort(
         (a, b) =>
           ordinal(a.column) - ordinal(b.column) ||
           (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0),

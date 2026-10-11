@@ -56,14 +56,14 @@ describe('anyOf/oneOf collapse', () => {
     ]);
   });
 
-  it('oneOf multi-match appends the exclusive-option note (params.passingSchemas)', () => {
+  it('oneOf multi-match says the value matches too many alternatives — not that it is invalid', () => {
     const rec = scenario(multiRec, 'oneof-multi-match');
     expect(rec.errors[0]?.params.passingSchemas).toEqual([0, 1]);
     // The synthetic multi-match schema is not part of any digest → empty ctx.
     const flags = translateRowErrors(rec.errors, rec.row, createTranslateCtx([], []));
     expect(flags).toHaveLength(1);
     expect(flags[0]?.message).toBe(
-      '5 is not valid — expected a value satisfying the schema (matches more than one exclusive option).',
+      '5 matches more than one of the exclusive alternatives (options 1 and 2) — it must match exactly one.',
     );
   });
 

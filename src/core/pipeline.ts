@@ -43,7 +43,7 @@ import {
   copyToParquetBytes,
   ctas,
 } from './bridge/tables';
-import { ANNOTATION_CAP, buildAnnotationPlan } from './report/annotations';
+import { buildAnnotationPlan } from './report/annotations';
 import { buildHeaderTooltips } from './report/headerTooltips';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import type { CastPlan } from './schema/casting';
@@ -130,7 +130,6 @@ export interface PipelineExecutors {
 export interface PipelineConfig {
   batchRows?: number;
   schemaFlagCap?: number;
-  annotationCap?: number;
   rowCapPerRule?: number;
   datasetRowCap?: number;
   globalFlagCap?: number;
@@ -326,9 +325,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunArtifacts> {
     const t0 = performance.now();
     try {
       const displayBytes = await ex.exportDisplay(deps.bridge);
-      const annotations = buildAnnotationPlan(flagStore, {
-        cap: deps.config?.annotationCap ?? ANNOTATION_CAP,
-      });
+      const annotations = buildAnnotationPlan(flagStore);
       const tooltips = buildHeaderTooltips(
         schema?.digest ?? null,
         deps.ruleFiles,

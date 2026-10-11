@@ -16,8 +16,8 @@ Rendering (in `core/flags/messages.ts`): TWO renderers over the same parts. `ren
 ## 2. Mapping flags → data-table annotations (P14)
 
 - One annotation per flag: `scope` maps 1:1 (`cell`/`row`/`column`; `dataset` flags are NOT annotations — they go to panels/Sheet 3), severities map 1:1, `rowId = flag.row` (valid because `__rowid__ === __row__`, see `architecture.md §3`), `code = ruleId`, `source = flag.source`, `metadata = { scope, correction }`, `message` = `renderFlagMessage(flag)` — id-free, because `code` already carries the ruleId and the popover renders `code · source` beneath every entry (UX-09).
-- Use `annotations.addMany(batch)` in chunks; re-apply after every `loadData()` (annotations do not survive a reload).
-- **Cap:** paint at most `ANNOTATION_CAP = 20,000` cell annotations, filled errors-first, then warnings, then info; row/column-scope always applied (cheap). When capped, the Report view shows a persistent banner: "Painting 20,000 of {N} flags — full detail in the Excel report and the panels." Severity-filter toggles call `annotations.setSeverityFilter(...)`.
+- Use one `annotations.addMany(all)` — data-table 0.10 validates the whole batch before storing any of it and fires one change event per call; re-apply after every `loadData()` (annotations do not survive a reload).
+- **No paint cap (since data-table 0.10).** Every cell, row and column flag the FlagStore materialized is painted, in one `addMany` — the store's own cap (`FLAG_CAP_DEFAULT`, 200,000) is the only bound, and data-table 0.10 holds a million annotations. Through 0.9 the grid scanned every annotation per lookup and repainted every visible cell per change, so v1.0–1.1 painted at most `ANNOTATION_CAP = 20,000` cells (errors first, then warnings, then info) under a "Painting 20,000 of {N} flags" banner; both are gone. Severity-filter toggles call `annotations.setSeverityFilter(...)`, and data-table's `F8` / `Shift+F8` step between the annotations the filter shows.
 
 ## 3. Column-header tooltips (P14)
 

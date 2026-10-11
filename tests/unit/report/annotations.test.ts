@@ -1,12 +1,9 @@
-// Annotation plan (qc-report-spec.md §2): errors-first cell cap, row/column
-// always painted, dataset excluded, id-free (renderFlagMessage) messages,
-// dedupe-once.
+// Annotation plan (qc-report-spec.md §2): every cell, row and column flag
+// painted in store order, dataset excluded, id-free (renderFlagMessage)
+// messages, dedupe-once — and no paint cap.
 import { describe, expect, it } from 'vitest';
 import { createFlagStore } from '../../../src/core/flags/flagStore';
-import {
-  ANNOTATION_CAP,
-  buildAnnotationPlan,
-} from '../../../src/core/report/annotations';
+import { buildAnnotationPlan } from '../../../src/core/report/annotations';
 import type { QCFlag } from '../../../src/core/flags/flag';
 
 const flag = (overrides: Partial<QCFlag>): QCFlag => ({
@@ -21,7 +18,7 @@ const flag = (overrides: Partial<QCFlag>): QCFlag => ({
 });
 
 describe('buildAnnotationPlan', () => {
-  it('caps CELL annotations errors→warnings→info; row/column always painted; dataset excluded', () => {
+  it('paints every cell, row and column flag in store order; dataset excluded', () => {
     const store = createFlagStore();
     store.add([
       flag({ ruleId: 'E1', row: 0 }),
@@ -33,18 +30,15 @@ describe('buildAnnotationPlan', () => {
       flag({ ruleId: 'DS', scope: 'dataset', row: undefined, column: undefined }),
     ]);
 
-    const plan = buildAnnotationPlan(store, { cap: 3 });
-    expect(plan.cellTotal).toBe(4);
-    expect(plan.cellPainted).toBe(3);
-    expect(plan.capped).toBe(true);
-    // Row/column-scope lead (store order: column's row-less entries first);
-    // then cells errors-first — the info cell fell to the cap.
-    expect(plan.items.map((i) => i.code)).toEqual(['COL', 'ROW', 'E1', 'E2', 'W1']);
+    const plan = buildAnnotationPlan(store);
+    // The store's own order (row → pipeline category → ruleId; the row-less
+    // column flag sorts first). The info cell is there: nothing is dropped.
+    expect(plan.items.map((i) => i.code)).toEqual(['COL', 'E1', 'E2', 'W1', 'I1', 'ROW']);
     expect(plan.items.every((i) => i.code !== 'DS')).toBe(true);
 
-    const rowAnnotation = plan.items[1];
+    const rowAnnotation = plan.items[5];
     expect(rowAnnotation).toMatchObject({ scope: 'row', rowId: 4, severity: 'error' });
-    const cell = plan.items[2];
+    const cell = plan.items[1];
     expect(cell).toMatchObject({
       scope: 'cell',
       rowId: 0,
@@ -75,7 +69,6 @@ describe('buildAnnotationPlan', () => {
       scope: 'cell',
       correction: { before: 150000, after: 1500 },
     });
-    expect(plan.capped).toBe(false);
   });
 
   // UX-09: data-table renders `code · source` beneath every popover entry, so a
@@ -100,11 +93,28 @@ describe('buildAnnotationPlan', () => {
     expect(annotation?.source).toBe('schema');
   });
 
-  it('deduped repeats paint once; default cap is 20k', () => {
+  it('deduped repeats paint once', () => {
     const store = createFlagStore();
     store.add([flag({}), flag({})]); // identical → one entry, count 2
     const plan = buildAnnotationPlan(store);
     expect(plan.items).toHaveLength(1);
-    expect(ANNOTATION_CAP).toBe(20_000);
+  });
+
+  // data-table 0.10 holds a million annotations, so the 20,000-cell paint cap
+  // it once forced is gone. Past that old line, warnings and infos used to be
+  // the first to go — every one of them must survive now.
+  it('paints past the old 20,000-cell cap, every severity included', () => {
+    const store = createFlagStore();
+    const severities = ['error', 'warning', 'info'] as const;
+    store.add(
+      Array.from({ length: 25_000 }, (_, row) =>
+        flag({ ruleId: `R${String(row % 3)}`, row, severity: severities[row % 3] }),
+      ),
+    );
+
+    const plan = buildAnnotationPlan(store);
+    expect(plan.items).toHaveLength(25_000);
+    expect(plan.items.filter((i) => i.severity === 'info')).toHaveLength(8_333);
+    expect(plan.items.at(-1)).toMatchObject({ scope: 'cell', rowId: 24_999 });
   });
 });

@@ -165,8 +165,8 @@ Header banner (sky background, black bottom stroke): logo (40px) + wordmark "Qua
 |                                           | | Rows 101 · Cols 266 · run/skip| |
 |                                           | | Show annotations [x][x][x]   | |
 |                                           | | [ Download QC Report (.xlsx) ]| |
-|  ! Painting 20,000 of 143,201 flags —     | |            [ Re-run QC ]     | |
-|    full detail in Excel report            | +------------------------------+ |
+|                                           | |            [ Re-run QC ]     | |
+|                                           | +------------------------------+ |
 +-------------------------------------------+----------------------------------+
 ```
 

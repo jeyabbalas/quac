@@ -1,6 +1,7 @@
 /**
  * P22 task 2 — the performance gate: a 100,000 × 20 run completes in under
- * 60 seconds, the annotation cap engages cleanly, and every count stays exact.
+ * 60 seconds, every cell flag is painted on the grid, and every count stays
+ * exact.
  *
  * **It runs in the default `npm run test:e2e`**, which is what "gated in CI"
  * has to mean, but as its own serial Playwright project (`perf`, with
@@ -9,12 +10,12 @@
  * app.
  *
  * **The dataset is deterministic** (`support/perfDataset.mjs`, no PRNG), so
- * this asserts exact numbers rather than ranges — including the cap banner's
- * exact sentence, which is the whole point of the cap arithmetic: 24,000 error
- * error cells (three rules of 8,000, because a single rule is capped at 10,000
- * flags) and 9,000 correction cells is 33,000 candidates against an
- * `ANNOTATION_CAP` of 20,000 (the banner must engage) and a `FLAG_CAP_DEFAULT`
- * of 200,000 (nothing truncates, so every count on screen is real).
+ * this asserts exact numbers rather than ranges — including the exact row the
+ * grid's last annotation sits on: 24,000 error cells (three rules of 8,000,
+ * because a single rule is capped at 10,000 flags) and 9,000 correction cells
+ * is 33,000 against a `FLAG_CAP_DEFAULT` of 200,000 (nothing truncates, so
+ * every count on screen is real) — and 13,000 past the 20,000-cell paint cap
+ * QuaC kept until data-table 0.10, which never reached a correction.
  *
  * **Parquet, and that is a finding.** V20's delimited ceiling is
  * `rows × cols × rowJsonBytes ≈ 10⁹`; 100k × 20 is ~380× past it. The CSV
@@ -44,9 +45,10 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
-  PERF_CELL_FLAGS,
   PERF_ERRORS,
   PERF_COLS,
+  PERF_LAST_CORRECTION_ROW,
+  PERF_LAST_ERROR_ROW,
   PERF_ROWS,
   PERF_RULES_CSV,
   WIDE_COLS,
@@ -59,8 +61,6 @@ import {
 const GATE_MS = 60_000;
 /** Five times the gate, so a slow run reports rather than times out blind. */
 test.describe.configure({ timeout: 300_000 });
-
-const ANNOTATION_CAP = 20_000;
 
 let workDir: string;
 
@@ -152,11 +152,28 @@ test('100,000 × 20 runs end to end inside the 60 s gate', async ({ page }) => {
   expect(await statValue(page, 'Rules run')).toBe(5);
   expect(await statValue(page, 'Rules skipped')).toBe(0);
 
-  // The cap engaged, and said exactly what it was doing.
-  await expect(page.locator('.q-cap-banner')).toHaveText(
-    `Painting ${ANNOTATION_CAP.toLocaleString('en-US')} of ` +
-      `${PERF_CELL_FLAGS.toLocaleString('en-US')} cell flags — ` +
-      'full detail in the panels and the Excel report.',
+  // Every cell flag is painted. The grid renders only the rows in view, so
+  // counting cells cannot show it; data-table's own navigation can. Shift+F8
+  // from the first cell wraps to the LAST annotation in the view and says
+  // where it landed — the last error, 72 rows from the end. The old
+  // 20,000-cell cap stopped painting near row 83,333.
+  const grid = page.locator('.q-report-grid');
+  const lastAnnotation = async (): Promise<void> => {
+    await grid.locator('.dt-cell').first().click();
+    await page.keyboard.press('Shift+F8');
+  };
+  const rowOf = (row: number): string =>
+    `Row ${(row + 1).toLocaleString('en-US')} of ${PERF_ROWS.toLocaleString('en-US')}`;
+  await lastAnnotation();
+  await expect(grid.locator('.dt-announce')).toContainText(
+    `${rowOf(PERF_LAST_ERROR_ROW)}, height_cm: error`,
+  );
+  // And the 9,000 corrections, which the cap never reached at all: with errors
+  // hidden, navigation skips them, and the last annotation is a corrected city.
+  await page.getByRole('checkbox', { name: 'errors' }).uncheck();
+  await lastAnnotation();
+  await expect(grid.locator('.dt-announce')).toContainText(
+    `${rowOf(PERF_LAST_CORRECTION_ROW)}, city: info`,
   );
 
   // The report is usable and exportable — not clicked (V21: exceljs has no

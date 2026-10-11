@@ -4,6 +4,9 @@
  * arrayOfObjects shape heuristic, the four-way decision, manifest-hint
  * candidate ordering, post-selection checks, and `index=` resolution.
  */
+import { analyzeRootFile } from './dataset-shape';
+import { createFileResolver, createRefResolver } from './deref';
+import type { RefResolver } from './deref';
 import {
   autoPreferredMessage,
   indexBasenameMessage,
@@ -22,29 +25,36 @@ import type {
 } from './types';
 
 /**
- * §A.3.3 — root has `type:"array"` (or no `type` but `items`) AND `items` is
- * an object/$ref (not tuple/boolean).
+ * §A.3.3 — root has `type:"array"` (or a type list naming it, or no `type`
+ * but `items`) AND `items` is an object/$ref (not tuple/boolean). The file's
+ * own keywords only; `isArrayOfObjectsRoot` also follows a root `$ref`.
  */
 export function arrayOfObjects(json: unknown): boolean {
   if (json === null || typeof json !== 'object' || Array.isArray(json)) return false;
   const record = json as Record<string, unknown>;
-  const shapeOk =
-    record.type === 'array' || (record.type === undefined && record.items !== undefined);
-  if (!shapeOk) return false;
+  const typeOk =
+    record.type === 'array' ||
+    (Array.isArray(record.type) && record.type.includes('array')) ||
+    (record.type === undefined && record.items !== undefined);
+  if (!typeOk) return false;
   const items = record.items;
   return items !== null && typeof items === 'object' && !Array.isArray(items);
 }
 
-function hasItems(json: unknown): boolean {
-  return (
-    json !== null && typeof json === 'object' && !Array.isArray(json) && Object.hasOwn(json, 'items')
-  );
+/**
+ * §A.3.3 over the dataset shape: the root (followed through a `$ref` or an
+ * `allOf` of one, in any file) types an array and describes its records with
+ * a schema — an object `items`, or per-record `prefixItems` / a tuple.
+ */
+export function isArrayOfObjectsRoot(file: SchemaFile, resolver: RefResolver): boolean {
+  const analysis = analyzeRootFile(file, resolver);
+  return analysis.tabular && analysis.arrayTyped && analysis.objectRecords;
 }
 
-function candidateOf(file: SchemaFile, inDegree: number): RootCandidate {
+function candidateOf(file: SchemaFile, inDegree: number, resolver: RefResolver): RootCandidate {
   const candidate: RootCandidate = {
     fileId: file.fileId,
-    arrayOfObjects: arrayOfObjects(file.json),
+    arrayOfObjects: isArrayOfObjectsRoot(file, resolver),
     inDegree,
   };
   if (file.declaredId !== undefined) candidate.declaredId = file.declaredId;
@@ -90,6 +100,16 @@ export function detectRoot(args: DetectRootArgs): {
     for (const target of targets) inDegree.set(target, (inDegree.get(target) ?? 0) + 1);
   }
 
+  const resolver = createFileResolver(args.files);
+  const shaped = new Map<string, boolean>();
+  const arrayShaped = (file: SchemaFile): boolean => {
+    let shape = shaped.get(file.fileId);
+    if (shape === undefined) {
+      shape = isArrayOfObjectsRoot(file, resolver);
+      shaped.set(file.fileId, shape);
+    }
+    return shape;
+  };
   const byPath = (file: SchemaFile) => file.relativePath;
   const hintRank = (fileId: string) => {
     const index = args.manifestHints.indexOf(fileId);
@@ -99,12 +119,12 @@ export function detectRoot(args: DetectRootArgs): {
     [...list].sort((a, b) => {
       const hint = hintRank(a.fileId) - hintRank(b.fileId);
       if (hint !== 0) return hint;
-      const shape = Number(arrayOfObjects(b.json)) - Number(arrayOfObjects(a.json));
+      const shape = Number(arrayShaped(b)) - Number(arrayShaped(a));
       if (shape !== 0) return shape;
       return byPath(a) < byPath(b) ? -1 : byPath(a) > byPath(b) ? 1 : 0;
     });
   const toCandidates = (list: SchemaFile[]): RootCandidate[] =>
-    list.map((f) => candidateOf(f, inDegree.get(f.fileId) ?? 0));
+    list.map((f) => candidateOf(f, inDegree.get(f.fileId) ?? 0, resolver));
 
   const unreferenced = schemas.filter((f) => inDegree.get(f.fileId) === 0);
 
@@ -118,9 +138,9 @@ export function detectRoot(args: DetectRootArgs): {
   }
 
   if (unreferenced.length > 1) {
-    const arrayShaped = unreferenced.filter((f) => arrayOfObjects(f.json));
-    if (arrayShaped.length === 1) {
-      const root = arrayShaped[0];
+    const arrayRoots = unreferenced.filter(arrayShaped);
+    if (arrayRoots.length === 1) {
+      const root = arrayRoots[0];
       if (root === undefined) throw new Error('unreachable');
       const others = unreferenced.filter((f) => f.fileId !== root.fileId).map(byPath);
       return {
@@ -193,23 +213,21 @@ const POST_SELECTION_CODES = new Set(['W_ROOT_NOT_ARRAY', 'E_ROOT_NOT_TABULAR'])
 /**
  * Record a root choice (auto, `index=` match, or modal pick): sets
  * `rootFileId` + `indexFileId`, replaces previous post-selection findings
- * (§A.3.5: non-array roots warn; an `items`-less root is fatal). Pure — a
+ * (§A.3.5: non-array roots warn; a root describing no records — no `items`,
+ * no `prefixItems`, followed through a root `$ref` — is fatal). Pure — a
  * fresh SchemaSet snapshot comes back.
  */
 export function applyRootSelection(set: SchemaSet, fileId: string): SchemaSet {
   const file = set.files.find((f) => f.fileId === fileId);
   if (file === undefined) return set;
   const errors = set.errors.filter((e) => !POST_SELECTION_CODES.has(e.code));
-  if (!arrayOfObjects(file.json)) {
-    if (!hasItems(file.json)) {
-      errors.push(
-        loadError('E_ROOT_NOT_TABULAR', rootNotTabularMessage(file.relativePath), { fileId }),
-      );
-    } else {
-      errors.push(
-        loadError('W_ROOT_NOT_ARRAY', rootNotArrayMessage(file.relativePath), { fileId }),
-      );
-    }
+  const analysis = analyzeRootFile(file, createRefResolver(set));
+  if (!analysis.tabular) {
+    errors.push(
+      loadError('E_ROOT_NOT_TABULAR', rootNotTabularMessage(file.relativePath), { fileId }),
+    );
+  } else if (!analysis.arrayTyped || !analysis.objectRecords) {
+    errors.push(loadError('W_ROOT_NOT_ARRAY', rootNotArrayMessage(file.relativePath), { fileId }));
   }
   return {
     ...set,

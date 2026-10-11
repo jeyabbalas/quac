@@ -262,7 +262,8 @@ async function testJsCorrection(
 async function testDataset(rule: QCRule, deps: RuleTestDeps): Promise<RuleTestResult> {
   // The engine's cap+1 idiom: the exact count query runs only on overflow —
   // when the fetch fits, its length already IS the exact count.
-  const fetched = await datasetRows(deps.runner, rule.condition, PREVIEW_ROW_CAP + 1);
+  // Nested result columns stay their exact JSON text, as the finding prints them.
+  const { rows: fetched } = await datasetRows(deps.runner, rule.condition, PREVIEW_ROW_CAP + 1);
   const rows = fetched.slice(0, PREVIEW_ROW_CAP);
   const truncated = fetched.length > PREVIEW_ROW_CAP;
   const count = truncated

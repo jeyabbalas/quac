@@ -31,6 +31,7 @@ export const NESTED_RULES_CSV = [
   'N4,correct,row,labs,cardinality(labs) > 0,js,"(value) => Object.fromEntries(Object.entries(value).map(([k, v]) => [k, v * 2]))",info,Labs doubled.,true',
   'N5,validate,dataset,visits,"SELECT id, visits FROM data WHERE len(visits) = 1",,,info,One visit only.,true',
   'N6,validate,row,tags,"len(list_filter(tags, t -> t IS NULL)) > 0",,,error,A tag is missing.,true',
+  "N7,validate,dataset,,\"SELECT id, {'big': 9223372036854775807::BIGINT, 'dec': 99999999999999999999999999999999999999::DECIMAL(38,0)} AS edge FROM data WHERE id = 'A'\",,,info,Edges kept exact.,true",
 ].join('\r\n');
 
 /**
@@ -124,7 +125,7 @@ export const NESTED_RULES_EXPECTED_FLAGS: QCFlag[] = [
     ruleId: 'N5',
     scope: 'dataset',
     severity: 'info',
-    message: 'One visit only. — id=\'B\'; visits=[{"d":"2023-12-31","w":80}]',
+    message: 'One visit only. — id=\'B\'; visits=[{"d":"2023-12-31","w":80.0}]',
   },
   {
     source: 'rules',
@@ -135,6 +136,16 @@ export const NESTED_RULES_EXPECTED_FLAGS: QCFlag[] = [
     severity: 'error',
     message: 'A tag is missing.',
     value: ['x', null],
+  },
+  {
+    // A dataset finding prints a nested value as its exact JSON text: every
+    // digit of a BIGINT and a DECIMAL(38,0), which a JavaScript number rounds.
+    source: 'rules',
+    ruleId: 'N7',
+    scope: 'dataset',
+    severity: 'info',
+    message:
+      'Edges kept exact. — id=\'A\'; edge={"big":9223372036854775807,"dec":99999999999999999999999999999999999999}',
   },
 ];
 

@@ -38,6 +38,7 @@ test('rules read, correct and select nested values as the JSON they hold', async
     ['N1', 'ok', 1],
     ['N5', 'ok', 1],
     ['N6', 'ok', 1],
+    ['N7', 'ok', 1],
   ]);
   expect(run.flags).toEqual(NESTED_RULES_EXPECTED_FLAGS);
   expect(run.correctedCells).toBe(5);

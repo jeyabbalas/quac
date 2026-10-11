@@ -169,10 +169,17 @@ function formatValue(v: unknown): string {
   return JSON.stringify(v);
 }
 
-/** `wave=1; n_rows=13`-style rendering of a dataset-rule result row (format §9). */
-function renderRowPairs(row: Record<string, unknown>): string {
+/**
+ * `wave=1; n_rows=13`-style rendering of a dataset-rule result row (format §9).
+ * A `nested` column's value is already its exact JSON text and is written as
+ * it is — parsed and stringified again, a DECIMAL(38,0) or a BIGINT inside it
+ * would come out rounded.
+ */
+function renderRowPairs(row: Record<string, unknown>, nested: ReadonlySet<string>): string {
   return Object.entries(row)
-    .map(([key, value]) => `${key}=${formatValue(value)}`)
+    .map(([key, value]) =>
+      `${key}=${nested.has(key) && typeof value === 'string' ? value : formatValue(value)}`,
+    )
     .join('; ');
 }
 
@@ -318,16 +325,18 @@ async function runColumnAggregate(
 }
 
 /**
- * The rule's own SELECT, its nested result columns read as JSON text. A
- * SELECT without one runs exactly as written; one with any is wrapped, so
- * `people` in `SELECT id, people FROM data …` reads `[{"name":"Ada",…}]`
- * with its dates and wide numbers intact.
+ * The rule's own SELECT, its nested result columns read as JSON text — and
+ * left as text: a dataset finding only ever prints them, and the text is
+ * exact where a parsed value would round. A SELECT without one runs exactly
+ * as written; one with any is wrapped, so `people` in
+ * `SELECT id, people FROM data …` reads `[{"name":"Ada",…}]` with its dates
+ * and wide numbers intact. `nested` names those columns.
  */
 export async function datasetRows(
   runner: SQLRunner,
   condition: string,
   cap: number,
-): Promise<Record<string, unknown>[]> {
+): Promise<{ rows: Record<string, unknown>[]; nested: ReadonlySet<string> }> {
   const body = stripTrailingSemicolon(condition);
   let nested = new Set<string>();
   try {
@@ -338,12 +347,11 @@ export async function datasetRows(
   } catch {
     // The fetch below reports whatever is wrong with the SQL, in its own words.
   }
-  if (nested.size === 0) return runner.query(datasetFetchSQL(condition, cap));
+  if (nested.size === 0) return { rows: await runner.query(datasetFetchSQL(condition, cap)), nested };
   const rows = await runner.query(
     `SELECT *${nestedReplaceClause(nested)} FROM (\n${body}\n) LIMIT ${String(cap)}`,
   );
-  parseNestedColumns(rows, nested);
-  return rows;
+  return { rows, nested };
 }
 
 async function runDatasetSelect(
@@ -353,14 +361,14 @@ async function runDatasetSelect(
   sink: FlagSink,
 ): Promise<ExecOutcome> {
   const message = flagMessage(rule);
-  const rows = await datasetRows(runner, rule.condition, datasetCap + 1);
+  const { rows, nested } = await datasetRows(runner, rule.condition, datasetCap + 1);
   for (const row of rows.slice(0, datasetCap)) {
     sink.emit({
       source: 'rules',
       ruleId: rule.ruleId,
       scope: 'dataset',
       severity: rule.severity,
-      message: `${message} — ${renderRowPairs(row)}`,
+      message: `${message} — ${renderRowPairs(row, nested)}`,
     });
   }
   if (rows.length <= datasetCap) {

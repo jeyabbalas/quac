@@ -72,7 +72,7 @@
     "fixtures:check": "npm run fixtures && git diff --exit-code -- tests/fixtures && node -e \"const{execSync}=require('node:child_process');const s=execSync('git ls-files --others --exclude-standard -- tests/fixtures').toString().trim();if(s){console.error('untracked fixture files:\\n'+s);process.exit(1)}\""
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.5-r.4",
+    "@duckdb/node-api": "1.5.6-r.1",
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

@@ -4,6 +4,7 @@
  * SELECT cache is NOT invalidated by DDL/DML (Verified facts V2).
  */
 import type { WorkerBridge } from '@jeyabbalas/data-table';
+import { nestedReplaceClause } from '../nested-json';
 import { quoteIdentifier } from '../sql-identifier';
 
 export const QUAC_RAW = 'quac_raw';
@@ -49,22 +50,28 @@ export const DISPLAY_EXPORT_SQL = `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} 
  * Excel-export row page (qc-report-spec.md §5): post-correction values ordered
  * by __row__, `__row__` INCLUDED — it keys the report model's per-row
  * decoration lookup and is dropped when the workbook cell array is built.
+ * `nested` names the LIST/STRUCT/MAP/JSON columns, read as their exact JSON
+ * text (core/nested-json.ts) — what a cell of the Data sheet shows.
  */
-export const reportRowsSQL = (offset: number, limit: number): string =>
-  `SELECT * FROM ${DATA_VIEW} ORDER BY __row__ LIMIT ${String(limit)} OFFSET ${String(offset)}`;
+export const reportRowsSQL = (offset: number, limit: number, nested: Iterable<string> = []): string =>
+  `SELECT *${nestedReplaceClause(nested)} FROM ${DATA_VIEW} ORDER BY __row__ ` +
+  `LIMIT ${String(limit)} OFFSET ${String(offset)}`;
 
 /** Load-view Preview sample size (ingestion.md §2). */
 export const PREVIEW_ROW_CAP = 50;
 
 /**
  * Load-view Preview rows: the first 50 in canonical order with `__row__`
- * excluded. One constant, so the cap cannot drift between the SQL, the
- * "first 50 of 101 rows" meta line, and the table's accessible name — it used
- * to be a literal in all three.
+ * excluded, nested columns as their JSON text. One builder, so the cap cannot
+ * drift between the SQL, the "first 50 of 101 rows" meta line, and the table's
+ * accessible name — it used to be a literal in all three.
  */
-export const PREVIEW_SQL =
-  `SELECT * EXCLUDE (__row__) FROM ${DATA_VIEW} ORDER BY __row__ ` +
+export const previewSQL = (nested: Iterable<string> = []): string =>
+  `SELECT * EXCLUDE (__row__)${nestedReplaceClause(nested)} FROM ${DATA_VIEW} ORDER BY __row__ ` +
   `LIMIT ${String(PREVIEW_ROW_CAP)}`;
+
+/** The preview over a flat dataset. */
+export const PREVIEW_SQL = previewSQL();
 
 /** Studio live-preview sample size (P18): the browsing grid caps at 10k rows;
  *  rule-test counts always run against the FULL `data` view. */

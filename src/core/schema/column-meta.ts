@@ -8,7 +8,7 @@ import { createRefResolver, escapePointerSegment } from './deref';
 import type { RefResolver, SchemaSite } from './deref';
 import { extractConditionals } from './conditionals';
 import type { ConditionalRule, SentinelLabelFor } from './conditionals';
-import { deriveJsonTypes, deriveValueSpec, storageTypeFor } from './value-spec';
+import { deriveJsonTypes, deriveValueSpec, labelledValuesOf, storageTypeFor } from './value-spec';
 import type { JsonTypeName, StorageType, ValueSpec } from './value-spec';
 import type { SchemaSet } from './types';
 
@@ -139,13 +139,8 @@ function buildDigest(set: SchemaSet, rootFileId: string): ColumnDigest {
 
   const labelFor: SentinelLabelFor = (columnName, value) => {
     const spec = byName.get(columnName)?.valueSpec;
-    if (spec === undefined || spec.kind === 'mixed' || spec.kind === 'opaque') return undefined;
-    const pools = spec.kind === 'codes' ? [spec.codes, spec.sentinels] : [spec.sentinels];
-    for (const pool of pools) {
-      const hit = pool.find((s) => s.value === value);
-      if (hit?.label !== undefined) return hit.label;
-    }
-    return undefined;
+    if (spec === undefined) return undefined;
+    return labelledValuesOf(spec).find((s) => s.value === value && s.label !== undefined)?.label;
   };
   const conditionals = extractConditionals(set, rootFileId, labelFor);
 

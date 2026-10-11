@@ -69,6 +69,7 @@ function initMessage(flagCap: number): Extract<MainToWorker, { type: 'init' }> {
     conditionals: digest.conditionals,
     missingColumns: [],
     castFailures: CAST_FAILURES,
+    nested: [],
     config: { flagCap },
   };
 }

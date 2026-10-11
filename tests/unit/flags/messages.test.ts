@@ -39,6 +39,34 @@ describe('renderFlag', () => {
   });
 });
 
+describe('corrections of nested values', () => {
+  it('names the struct fields that changed', () => {
+    const f = flag({
+      correction: {
+        before: { street: '611 Pine Ct', city: 'Lakeside', country: 'us', unit: null },
+        after: { street: '611 Pine Ct', city: 'Lakeside', country: 'US', unit: null },
+      },
+    });
+    expect(renderFlagMessage(f)).toBe("150 exceeds the maximum 100. (corrected: country: 'us' → 'US')");
+  });
+
+  it('names the list items that changed, counted from 1', () => {
+    const f = flag({ correction: { before: ['e11.9', 'I10'], after: ['E11.9', 'I10'] } });
+    expect(renderFlagMessage(f)).toBe("150 exceeds the maximum 100. (corrected: [1]: 'e11.9' → 'E11.9')");
+  });
+
+  it('prints the whole value when everything changed — cut at 80 characters', () => {
+    expect(renderFlagMessage(flag({ correction: { before: ['+1 555-010-2030'], after: ['+15550102030'] } }))).toBe(
+      '150 exceeds the maximum 100. (corrected: ["+1 555-010-2030"] → ["+15550102030"])',
+    );
+    const long = Array.from({ length: 100 }, (_, i) => i);
+    const message = renderFlagMessage(flag({ correction: { before: long, after: [] } }));
+    expect(message).toBe(
+      `150 exceeds the maximum 100. (corrected: ${JSON.stringify(long).slice(0, 79)}… → [])`,
+    );
+  });
+});
+
 /** UX-09 — the id-free half, for surfaces that print the ruleId themselves. */
 describe('renderFlagMessage', () => {
   /** The live repro id: 106 chars, and the message already names the file. */

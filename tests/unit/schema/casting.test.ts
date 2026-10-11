@@ -22,6 +22,7 @@ const JSON_TYPES: Record<StorageType, JsonTypeName> = {
   DOUBLE: 'number',
   VARCHAR: 'string',
   BOOLEAN: 'boolean',
+  JSON: 'array',
 };
 
 function metaStub(name: string, storageType: StorageType, mixed = false): ColumnMeta {
@@ -246,6 +247,79 @@ describe('execution on DuckDB (§C.2 goldens + edge ledger 14)', () => {
       row: 1,
       column: 'f',
       message: '42.5 is not a whole number — this variable takes integer values.',
+    });
+  });
+});
+
+describe('nested and JSON columns (§C.1, nested data)', () => {
+  test('a nested or JSON raw column keeps its type whatever the schema says', () => {
+    const meta = [
+      metaStub('list_as_int', 'BIGINT'),
+      metaStub('struct_as_text', 'VARCHAR'),
+      metaStub('list_mixed', 'VARCHAR', true),
+      metaStub('struct_as_json', 'JSON'),
+      metaStub('doc', 'DOUBLE'),
+    ];
+    const rawTypes = new Map([
+      ['list_as_int', 'BIGINT[]'],
+      ['struct_as_text', 'STRUCT(x DOUBLE, tier VARCHAR)'],
+      ['list_mixed', 'STRUCT("name" VARCHAR, age BIGINT)[]'],
+      ['struct_as_json', 'MAP(VARCHAR, BIGINT)'],
+      ['doc', 'JSON'],
+    ]);
+    const plan = buildCastPlan(meta, [...rawTypes.keys()], rawTypes);
+    for (const c of plan.columns) {
+      expect(c, c.column).toMatchObject({ castExpr: `"${c.column}"`, passthrough: true });
+    }
+  });
+
+  test('a list OF decimals is a list, not a DECIMAL to widen', () => {
+    const plan = buildCastPlan([metaStub('prices', 'DOUBLE')], ['prices'], new Map([['prices', 'DECIMAL(10,2)[]']]));
+    expect(plan.columns[0]).toMatchObject({ castExpr: '"prices"', passthrough: true });
+  });
+
+  test('text under an array/object schema parses into JSON; other scalars keep their type', () => {
+    const meta = [metaStub('tags', 'JSON'), metaStub('n', 'JSON')];
+    const plan = buildCastPlan(meta, ['tags', 'n'], new Map([['tags', 'VARCHAR'], ['n', 'BIGINT']]));
+    const byName = new Map(plan.columns.map((c) => [c.column, c]));
+    expect(byName.get('tags')).toMatchObject({
+      castExpr: 'TRY_CAST("tags" AS JSON)',
+      passthrough: false,
+      jsonShape: 'an array',
+    });
+    expect(byName.get('n')).toMatchObject({ castExpr: '"n"', passthrough: true });
+  });
+
+  describe('on DuckDB', () => {
+    let db: Awaited<ReturnType<typeof openMemoryDb>>;
+    beforeAll(async () => {
+      db = await openMemoryDb();
+    });
+    afterAll(() => {
+      db.close();
+    });
+
+    test('JSON text that does not parse is a cast finding, named for what the variable takes', async () => {
+      await seedRawTable(db.runner, [{ name: 'tags', type: 'VARCHAR' }], [['["a", "b"]'], ['[1, 2'], ['42'], [null]]);
+      const meta: ColumnMeta = {
+        ...metaStub('tags', 'JSON'),
+        jsonTypes: new Set<JsonTypeName>(['array', 'object']),
+      };
+      const plan = buildCastPlan([meta], ['tags'], allVarchar(['tags']));
+      await applyCastPlan(db.runner, plan);
+      const typed = await db.runner.query<{ t: string; v: string | null }>(
+        'SELECT typeof(tags) AS t, CAST(tags AS VARCHAR) AS v FROM quac_typed ORDER BY __row__',
+      );
+      expect(typed.map((r) => r.v)).toEqual(['["a", "b"]', null, '42', null]);
+      expect(typed[0]?.t).toBe('JSON');
+      const { flags, castFailures } = await scanCastFailures(db.runner, plan, ordinals(['tags']));
+      expect(flags.map((f) => ({ row: f.row, message: f.message }))).toEqual([
+        {
+          row: 1,
+          message: "'[1, 2' is not valid JSON — this variable takes an array or an object, written as JSON text.",
+        },
+      ]);
+      expect([...castFailures]).toEqual(['1 tags']);
     });
   });
 });

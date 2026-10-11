@@ -57,6 +57,24 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('Export cancelled');
 }
 
+/**
+ * Excel's own limit on one cell's text. A longer string is written anyway by
+ * exceljs, and Excel then calls the whole workbook corrupt and offers to
+ * "repair" it — a nested value's JSON (a list of 10,000 items) or a long text
+ * field gets there easily, so such a cell is cut, and says so.
+ */
+export const EXCEL_CELL_CHARS = 32_767;
+
+function fitCell(text: string): string {
+  if (text.length <= EXCEL_CELL_CHARS) return text;
+  const note = ` … [cut: ${text.length.toLocaleString('en-US')} characters in all]`;
+  let cut = EXCEL_CELL_CHARS - note.length;
+  // Never split a surrogate pair.
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return text.slice(0, cut) + note;
+}
+
 /** DuckDB scalars → exceljs-safe cell values (bigint past 2^53 → string). */
 function coerce(v: unknown): CellValue {
   if (v === null || v === undefined) return null;
@@ -68,9 +86,9 @@ function coerce(v: unknown): CellValue {
     case 'boolean':
       return v;
     case 'string':
-      return v;
+      return fitCell(v);
     default:
-      return v instanceof Date ? v : JSON.stringify(v);
+      return v instanceof Date ? v : fitCell(JSON.stringify(v));
   }
 }
 
@@ -119,8 +137,8 @@ export async function writeReportWorkbook(
       if (written >= total) break outer;
       const dec = model.data.decorations.get(dataRow.row);
       const values: CellValue[] = cols.map((col) => {
-        if (col.kind === 'row-review') return dec?.rowReview ?? '';
-        if (col.kind === 'review') return dec?.reviews.get(col.source ?? '') ?? '';
+        if (col.kind === 'row-review') return fitCell(dec?.rowReview ?? '');
+        if (col.kind === 'review') return fitCell(dec?.reviews.get(col.source ?? '') ?? '');
         return coerce(dataRow.values[col.source ?? '']);
       });
       const xlsxRow = ws.addRow(values);

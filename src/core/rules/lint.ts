@@ -45,6 +45,7 @@ import type {
   RuleType,
   SQLRunner,
 } from './types';
+import { duckTypeBase, parseDuckType, readsAsJson } from '../duckdb-type';
 import { computePertinence } from '../pertinence';
 
 export type { LintCode, RuleFileLintResult, RuleLintIssue } from './types';
@@ -111,6 +112,68 @@ function isUntypedColumnBinderError(firstLine: string): boolean {
   if (!firstLine.includes('Binder Error')) return false;
   if (!VARCHAR_TOKEN_RE.test(firstLine)) return false;
   return UNTYPED_BINDER_PHRASES.some((phrase) => firstLine.includes(phrase));
+}
+
+/**
+ * A nested type in the binder's first line: `BIGINT[]`, `FLOAT[3]`,
+ * `STRUCT(…)`, `MAP(…)`, `UNION(…)` or `JSON` — a comparison or a function
+ * that met a whole list, struct, map or JSON value where it wanted a scalar.
+ */
+const NESTED_TOKEN_RE = /\[\d*\]|\b(?:STRUCT|MAP|UNION)\(|\bJSON\b/;
+
+/** The binder classes UX-08 recognises, met by a nested value instead of text. */
+function isNestedColumnBinderError(firstLine: string): boolean {
+  if (!firstLine.includes('Binder Error')) return false;
+  if (!NESTED_TOKEN_RE.test(firstLine)) return false;
+  return UNTYPED_BINDER_PHRASES.some((phrase) => firstLine.includes(phrase));
+}
+
+/** What a column holds, and a way into it, by its DuckDB type. */
+function nestedReach(column: string, type: string): { holds: string; reach: string } {
+  const kind = parseDuckType(type).kind;
+  if (kind === 'list' || kind === 'array') {
+    return {
+      holds: 'lists',
+      reach: `check its items instead — e.g. list_max(${column}) > 5, len(${column}) > 3, or list_contains(${column}, 'x')`,
+    };
+  }
+  if (kind === 'struct') {
+    return { holds: 'structs', reach: `compare one of its fields instead — e.g. ${column}.field > 5` };
+  }
+  if (kind === 'map') {
+    return { holds: 'maps', reach: `compare one of its values instead — e.g. ${column}['key'] > 5` };
+  }
+  return {
+    holds: 'JSON values',
+    reach: `extract a value first — e.g. json_extract_string(${column}, '$.key'), or TRY_CAST(${column} AS DOUBLE)`,
+  };
+}
+
+/**
+ * The nested counterpart of `untypedColumnMessage`: a comparison, an
+ * arithmetic operator or a column assertion (`in_range`, `in_enum`,
+ * `monotonic`) met a whole list, struct, map or JSON value. One column is
+ * named with its type and a way in; several are named together, since the
+ * binder does not say which it met.
+ */
+function nestedColumnMessage(columns: readonly string[], types: ReadonlyMap<string, string>): string {
+  const [only] = columns;
+  if (columns.length === 1 && only !== undefined) {
+    const type = types.get(only) ?? '';
+    const { holds, reach } = nestedReach(only, type);
+    return (
+      `${only} holds ${holds} (${type}), which DuckDB can only compare or calculate with as a ` +
+      `whole value: ${reach} — in a row rule.`
+    );
+  }
+  const shown = columns.slice(0, UNTYPED_COLUMN_CAP);
+  const extra = columns.length - shown.length;
+  const list = extra > 0 ? `${shown.join(', ')} and ${String(extra)} more` : shown.join(', ');
+  return (
+    `${list} hold lists, structs, maps or JSON values, which DuckDB can only compare or calculate ` +
+    `with as whole values: reach inside them with list, struct or JSON functions ` +
+    `(list_max(col), col.field, col['key'], json_extract_string(col, '$.key')) — in a row rule.`
+  );
 }
 
 /** Word-bounded, case-insensitive mention of `column` anywhere in `text`. */
@@ -450,7 +513,9 @@ async function describeDataTypes(runner: SQLRunner): Promise<Map<string, string>
   const types = new Map<string, string>();
   for (const row of rows) {
     if (row.column_name === '__row__') continue;
-    types.set(row.column_name, row.column_type.replace(/\(.*$/, '').toUpperCase());
+    // DuckDB's whole type text: `duckTypeBase` reads the base name off it, and
+    // a nested type's text is what the nested diagnosis prints.
+    types.set(row.column_name, row.column_type);
   }
   return types;
 }
@@ -673,18 +738,38 @@ export async function lintRuleFilesWithDataset(
           // Fails CLOSED — unless the class is recognised AND at least one text
           // column can be named, the engine's own words stand exactly as before.
           let explanation = firstLine;
+          const isText = (type: string | undefined): boolean =>
+            type !== undefined && duckTypeBase(type) === 'VARCHAR';
+          const isNested = (type: string | undefined): boolean =>
+            type !== undefined && readsAsJson(type);
+          /**
+           * The columns this rule targets or mentions whose type `holds` —
+           * the scan is what reaches a column the rule uses but does not
+           * target (a schema is loaded, one un-schema'd column stays text).
+           */
+          const implicated = (types: ReadonlyMap<string, string>, holds: (t?: string) => boolean): string[] => {
+            const named = hintColumns.filter((c) => holds(types.get(c)));
+            for (const column of ctx.datasetColumns) {
+              if (!holds(types.get(column)) || named.includes(column)) continue;
+              if (mentionsColumn(text, column)) named.push(column);
+            }
+            return named;
+          };
           if (isUntypedColumnBinderError(firstLine)) {
             const types = await columnTypes(ctx.runner);
             if (types !== null) {
-              const named = hintColumns.filter((c) => types.get(c) === 'VARCHAR');
-              // The scan is what reaches a column the rule uses but does not
-              // target — a schema is loaded, one un-schema'd column stays text.
-              for (const column of ctx.datasetColumns) {
-                if (types.get(column) !== 'VARCHAR') continue;
-                if (named.includes(column)) continue;
-                if (mentionsColumn(text, column)) named.push(column);
-              }
+              const named = implicated(types, isText);
               if (named.length > 0) explanation = untypedColumnMessage(named);
+            }
+          }
+          // Not `else`: a nested type can carry VARCHAR in its own text
+          // (`MAP(VARCHAR, DOUBLE)`), and with no text column implicated the
+          // nested reading is the one left to try.
+          if (explanation === firstLine && isNestedColumnBinderError(firstLine)) {
+            const types = await columnTypes(ctx.runner);
+            if (types !== null) {
+              const named = implicated(types, isNested);
+              if (named.length > 0) explanation = nestedColumnMessage(named, types);
             }
           }
           issues.push({

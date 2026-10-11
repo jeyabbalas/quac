@@ -11,9 +11,12 @@
  * differs).
  */
 import { QUAC_TYPED } from '../bridge/tables';
+import { mayHoldWideIntegers, parseDuckType, readsAsJson } from '../duckdb-type';
 import { computePertinence } from '../pertinence';
 import { quoteIdentifier } from '../sql-identifier';
 import { applyCastPlan, buildCastPlan, describeColumns, scanCastFailures } from './casting';
+import { createRefResolver } from './deref';
+import { buildNestedPlan, propertySite } from './nested-values';
 import { hasOpenPropertyUniverse } from './row-shaping';
 import {
   SCHEMA_DATASET_RULE_IDS,
@@ -36,6 +39,7 @@ import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
 import type { CastPlan, SqlRunner } from './casting';
 import type { ColumnDigest } from './column-meta';
+import type { NestedColumn } from './nested-values';
 import type { SchemaFile, SchemaSet } from './types';
 import type {
   MainToWorker,
@@ -325,10 +329,36 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     .filter((c) => c.inSchema || includeExtras)
     .map((c) => c.column);
 
+  /**
+   * §C.4: a nested or JSON column crosses to the worker as `to_json` text,
+   * with the plan that reads it back (nested-values.ts). Its type is read off
+   * the table the loop reads — a correction may have rebuilt it.
+   */
+  const nestedColumns = async (): Promise<NestedColumn[]> => {
+    const sourceTypes = await describeColumns(runner, sourceTable);
+    const resolver = createRefResolver(set);
+    const nested: NestedColumn[] = [];
+    for (const column of selected) {
+      const type = sourceTypes.get(column);
+      if (type === undefined || !readsAsJson(type)) continue;
+      const m = metaByName.get(column);
+      const site =
+        m === undefined ? null : propertySite(resolver.fileById(m.source.fileId), m.source.pointer);
+      nested.push({
+        column,
+        plan: buildNestedPlan(type, site, resolver),
+        wideIntegers: mayHoldWideIntegers(parseDuckType(type)),
+      });
+    }
+    return nested;
+  };
+
   /** §F: worker init, then the single-slot batch pipeline over `selected`. */
   const runRowLoop = async (): Promise<ValidationSummary> => {
     // ---- Worker init (§F) ----
     emitProgress('compiling', 0, true);
+    const nested = await nestedColumns();
+    const encoded = new Set(nested.map((n) => n.column));
     const worker = (deps.createWorker ?? defaultCreateWorker)();
     try {
       const channel = createChannel(worker);
@@ -344,6 +374,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
         conditionals: digest.conditionals,
         missingColumns,
         castFailures: [...scan.castFailures],
+        nested,
         config: { flagCap },
       });
       await channel.expect('ready');
@@ -351,7 +382,12 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       // ---- Single-slot batch pipeline (§B.4/§F) ----
       validateStartedAt = performance.now();
       emitProgress('validating', 0, true);
-      const selectList = selected.map((c) => quoteIdentifier(c)).join(', ');
+      const selectList = selected
+        .map((c) => {
+          const quoted = quoteIdentifier(c);
+          return encoded.has(c) ? `CAST(to_json(${quoted}) AS VARCHAR) AS ${quoted}` : quoted;
+        })
+        .join(', ');
       const fetchBatch = async (start: number): Promise<unknown[][]> => {
         const end = Math.min(start + batchRows, rowsTotal);
         const rows = await runner.query(

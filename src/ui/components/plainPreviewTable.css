@@ -68,6 +68,13 @@
   background: var(--q-hover-surface);
 }
 
+/* A nested value is JSON text, clipped in the cell (plainPreviewTable.ts):
+   mono, like the type row that names it, so brackets and quotes line up. */
+.q-preview-nested {
+  font-family: var(--q-font-mono);
+  font-size: var(--q-text-xs);
+}
+
 /* The em-dash stands in for NULL, so it is meaningful text, not decoration —
    gray-400 measures 2.52 on paper. gray-500 is 4.74 and still recedes. */
 .q-preview-null {

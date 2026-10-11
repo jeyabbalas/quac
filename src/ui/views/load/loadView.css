@@ -200,3 +200,19 @@
 .q-example .q-example-load {
   flex: none;
 }
+
+/* The HESP example leads; the nested one sits under it, quieter (base .q-btn
+   is the secondary look). One column, so the two read as a choice. */
+.q-example-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--q-space-2);
+}
+
+.q-example-pitch--nested {
+  margin-top: var(--q-space-1);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-600);
+}

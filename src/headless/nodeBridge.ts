@@ -67,6 +67,11 @@ const sqlLiteral = (path: string): string => `'${path.replaceAll("'", "''")}'`;
 export async function createNodeBridge(): Promise<NodeBridgeHandle> {
   const instance = await DuckDBInstance.create(':memory:');
   const connection: DuckDBConnection = await instance.connect();
+  // Browser parity: data-table sets the session time zone to UTC on every
+  // load, so a TIMESTAMP WITH TIME ZONE reads as UTC text there. Without this
+  // the CLI wrote the machine's own zone — `…-05` in a nested value's JSON,
+  // or in a timestamp cast to text for a string-typed schema column.
+  await connection.run("SET TimeZone = 'UTC'");
   const tempDir = await mkdtemp(join(tmpdir(), 'quac-headless-'));
   let loadSeq = 0;
 

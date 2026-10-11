@@ -24,7 +24,8 @@
 import { stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { APP_VERSION } from '../app/version';
-import { QUAC_TYPED, refreshDataView, reportRowsSQL, swapWorkTable } from '../core/bridge/tables';
+import { DATA_VIEW, QUAC_TYPED, refreshDataView, reportRowsSQL, swapWorkTable } from '../core/bridge/tables';
+import { nestedColumnsOf } from '../core/nested-json';
 import { ingestDataset } from '../core/ingest/ingest';
 import { runPipeline } from '../core/pipeline';
 import { writeReportWorkbook } from '../core/report/excelWriter';
@@ -204,13 +205,17 @@ const needsJsSandbox = (files: readonly RuleFile[], applyCorrections: boolean): 
     f.rules.some((r) => r.enabled && r.ruleType === 'correct' && r.updateLanguage === 'js'),
   );
 
-/** Page `data` by __row__, clearing the SELECT cache after every chunk. */
+/**
+ * Page `data` by __row__, clearing the SELECT cache after every chunk. Nested
+ * and JSON columns come out as their exact JSON text (core/nested-json.ts).
+ */
 function pageRows(bridge: WorkerBridge, rowLimit: number): ReportRowSource {
   return async function* stream(signal?: AbortSignal) {
+    const nested = nestedColumnsOf(await describeColumns(bridge, DATA_VIEW));
     for (let offset = 0; offset < rowLimit; offset += CHUNK_ROWS) {
       if (signal?.aborted === true) throw new Error('Report export cancelled');
       const limit = Math.min(CHUNK_ROWS, rowLimit - offset);
-      const rows = await bridge.query(reportRowsSQL(offset, limit), signal);
+      const rows = await bridge.query(reportRowsSQL(offset, limit, nested), signal);
       bridge.clearQueryCache();
       yield rows.map<ReportDataRow>((r) => ({ row: Number(r.__row__), values: r }));
     }

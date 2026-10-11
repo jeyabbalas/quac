@@ -14,9 +14,10 @@
  * precision via the BIGINT branch for values beyond 2^53.
  */
 import { QUAC_RAW, QUAC_TYPED } from '../bridge/tables';
+import { duckTypeBase, readsAsJson } from '../duckdb-type';
 import { quoteIdentifier } from '../sql-identifier';
 import { schemaPropRuleId } from './rule-ids';
-import { castNonIntegralMessage, castNonNumericMessage } from './translator';
+import { castNonIntegralMessage, castNonNumericMessage, castNotJsonMessage } from './translator';
 import type { QCFlag } from '../flags/flag';
 import type { ColumnMeta } from './column-meta';
 import type { StorageType } from './value-spec';
@@ -42,6 +43,11 @@ export interface ColumnCast {
   /** True when the expression can never turn non-empty text into NULL (scan-exempt). */
   passthrough: boolean;
   inSchema: boolean;
+  /**
+   * What a `JSON` target holds — `an array`, `an object` or `an array or an
+   * object` — for the message when a text cell does not parse.
+   */
+  jsonShape?: string;
 }
 
 export interface CastPlan {
@@ -56,7 +62,13 @@ export interface CastScanResult {
   castFailures: Set<string>;
 }
 
-/** `DESCRIBE quac_raw` → column name → DuckDB type (parameters stripped), `__row__` excluded. */
+/**
+ * `DESCRIBE quac_raw` → column name → DuckDB type, `__row__` excluded. The
+ * type is DuckDB's whole text (`DECIMAL(10,2)`, `STRUCT(x DOUBLE)[]`): read it
+ * with `core/duckdb-type` — `duckTypeBase` for the scalar name the casting
+ * ladder compares against. Stripping parameters off the text, as this once
+ * did, read `DECIMAL(10,2)[]` as `DECIMAL` and a list of structs as `STRUCT`.
+ */
 export async function describeColumns(
   runner: SqlRunner,
   table: string = QUAC_RAW,
@@ -67,7 +79,7 @@ export async function describeColumns(
   const types = new Map<string, string>();
   for (const row of rows) {
     if (row.column_name === '__row__') continue;
-    types.set(row.column_name, row.column_type.replace(/\(.*$/, '').toUpperCase());
+    types.set(row.column_name, row.column_type);
   }
   return types;
 }
@@ -106,9 +118,26 @@ function castExprFor(
   quoted: string,
   target: StorageType,
   mixed: boolean,
-  rawType: string,
+  rawTypeText: string,
 ): { castExpr: string; passthrough: boolean } {
+  // A nested or JSON column keeps the type the dataset gave it, whatever the
+  // schema says: the validator reads it as JSON and judges its shape itself,
+  // so a list where the schema wants a number is a type finding with the list
+  // in it, not a cast failure on DuckDB's text for it — and the rules still
+  // get a list to call list functions on. Casting one to VARCHAR (as a
+  // mixed or string target once did) turned every nested cell into a string
+  // the schema then rejected, and took nested rendering from the grids.
+  if (readsAsJson(rawTypeText)) return { castExpr: quoted, passthrough: true };
+  const rawType = duckTypeBase(rawTypeText);
   const asVarchar = rawType === 'VARCHAR' ? quoted : `CAST(${quoted} AS VARCHAR)`;
+  if (target === 'JSON') {
+    // Text holding JSON — a CSV, TSV or Excel cell with `[1, 2, 3]` in it —
+    // becomes DuckDB's JSON type, and text that does not parse is a cast
+    // finding. Any other scalar keeps its type: an array schema over a number
+    // column is a type finding Ajv names.
+    if (rawType === 'VARCHAR') return { castExpr: `TRY_CAST(${quoted} AS JSON)`, passthrough: false };
+    return { castExpr: quoted, passthrough: true };
+  }
   if (mixed || target === 'VARCHAR') {
     // String targets never fail; CAST-to-VARCHAR exists for every DuckDB type.
     return { castExpr: asVarchar, passthrough: true };
@@ -130,6 +159,13 @@ function castExprFor(
   // BOOLEAN
   if (rawType === 'BOOLEAN') return { castExpr: quoted, passthrough: true };
   return { castExpr: `TRY_CAST(${asVarchar} AS BOOLEAN)`, passthrough: false };
+}
+
+function jsonShapeOf(meta: ColumnMeta): string {
+  const array = meta.jsonTypes.has('array');
+  const object = meta.jsonTypes.has('object');
+  if (array && object) return 'an array or an object';
+  return object ? 'an object' : 'an array';
 }
 
 /**
@@ -167,6 +203,7 @@ export function buildCastPlan(
       castExpr,
       passthrough,
       inSchema: true,
+      ...(m.storageType === 'JSON' ? { jsonShape: jsonShapeOf(m) } : {}),
     };
   });
   const selectList = columns
@@ -196,6 +233,7 @@ const CAST_NOUN: Record<StorageType, string> = {
   DOUBLE: 'number',
   BOOLEAN: 'true/false value',
   VARCHAR: 'value', // unreachable: VARCHAR targets are passthrough
+  JSON: 'JSON value', // unused: JSON targets get castNotJsonMessage
 };
 
 interface ScanHit {
@@ -235,7 +273,7 @@ export async function scanCastFailures(
     hits.push(...(await runner.query<ScanHit>(parts.join(' UNION ALL '))));
   }
 
-  const storageByName = new Map(plan.columns.map((c) => [c.column, c.storageType]));
+  const castByName = new Map(plan.columns.map((c) => [c.column, c]));
   const ordinal = (col: string): number => ordinalByName.get(col) ?? Number.MAX_SAFE_INTEGER;
   hits.sort((a, b) => Number(a.row) - Number(b.row) || ordinal(a.col) - ordinal(b.col));
 
@@ -243,11 +281,14 @@ export async function scanCastFailures(
   const castFailures = new Set<string>();
   for (const hit of hits) {
     const row = Number(hit.row);
-    const storage = storageByName.get(hit.col) ?? 'VARCHAR';
+    const cast = castByName.get(hit.col);
+    const storage = cast?.storageType ?? 'VARCHAR';
     const message =
-      storage === 'BIGINT' && hit.numeric_like
-        ? castNonIntegralMessage(hit.raw)
-        : castNonNumericMessage(hit.raw, CAST_NOUN[storage]);
+      storage === 'JSON'
+        ? castNotJsonMessage(hit.raw, cast?.jsonShape ?? 'an array or an object')
+        : storage === 'BIGINT' && hit.numeric_like
+          ? castNonIntegralMessage(hit.raw)
+          : castNonNumericMessage(hit.raw, CAST_NOUN[storage]);
     flags.push({
       source: 'schema',
       ruleId: schemaPropRuleId(hit.col, 'cast'),

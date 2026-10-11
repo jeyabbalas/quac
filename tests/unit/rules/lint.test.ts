@@ -744,6 +744,73 @@ describe('stages 4–6 — dataset-dependent lint (P12)', () => {
     });
   });
 
+  // UX-08's nested counterpart: a JSON or Parquet dataset's lists, structs and
+  // maps reach rules natively, and a scalar comparison on one is a binder error.
+  describe('stage 4 — nested-column diagnosis', () => {
+    const openNested = (): Promise<QcFixtureDb> =>
+      openDuckDb([
+        'CREATE TABLE tn (__row__ BIGINT, counts BIGINT[], point STRUCT(x DOUBLE, y DOUBLE), ' +
+          'labs MAP(VARCHAR, DOUBLE), n INTEGER)',
+        'CREATE VIEW data AS SELECT * FROM tn',
+      ]);
+    const COLUMNS = ['counts', 'point', 'labs', 'n'];
+    const withNested = async (fn: (ctx: DatasetLintContext) => Promise<void>): Promise<void> => {
+      const db = await openNested();
+      try {
+        await fn({ runner: db.runner, datasetColumns: COLUMNS });
+      } finally {
+        db.close();
+      }
+    };
+
+    it('a column assertion on a list names the list and a way into it', async () => {
+      await withNested(async (ctx) => {
+        const { issues } = await lintWith(`${HEADER}R1,validate,column,counts,"in_range(0, 5)",c\n`, ctx);
+        expect(issues.map((i) => i.code)).toEqual(['sql-error']);
+        expect(issues[0]?.message).toBe(
+          'condition failed the SQL dry-run: counts holds lists (BIGINT[]), which DuckDB can only ' +
+            'compare or calculate with as a whole value: check its items instead — e.g. ' +
+            "list_max(counts) > 5, len(counts) > 3, or list_contains(counts, 'x') — in a row rule.",
+        );
+        expect(issues[0]?.detail).toContain('Binder Error');
+      });
+    });
+
+    it('a struct compared as a whole points at its fields; a map at its keys', async () => {
+      await withNested(async (ctx) => {
+        const struct = await lintWith(`${HEADER}R1,validate,row,point,point > 2,c\n`, ctx);
+        expect(struct.issues[0]?.message).toContain(
+          'point holds structs (STRUCT(x DOUBLE, y DOUBLE)), which DuckDB can only compare or ' +
+            'calculate with as a whole value: compare one of its fields instead — e.g. point.field > 5',
+        );
+        const map = await lintWith(`${HEADER}R1,validate,row,labs,labs + 1 > 2,c\n`, ctx);
+        expect(map.issues[0]?.message).toContain("labs holds maps (MAP(VARCHAR, DOUBLE))");
+        expect(map.issues[0]?.message).toContain("labs['key'] > 5");
+      });
+    });
+
+    it('two nested columns are named together', async () => {
+      await withNested(async (ctx) => {
+        const { issues } = await lintWith(`${HEADER}R1,validate,row,counts|point,counts > point,c\n`, ctx);
+        expect(issues[0]?.message).toContain(
+          'counts, point hold lists, structs, maps or JSON values',
+        );
+      });
+    });
+
+    it('GUARD: reaching inside correctly lints clean, and a typo keeps the engine words', async () => {
+      await withNested(async (ctx) => {
+        const ok = await lintWith(
+          `${HEADER}R1,validate,row,counts|point|labs,"list_max(counts) > 5 AND point.x > 2 AND labs['ldl'] > 1",c\n`,
+          ctx,
+        );
+        expect(ok.issues).toEqual([]);
+        const typo = await lintWith(`${HEADER}R1,validate,row,counts,no_col > 1,c\n`, ctx);
+        expect(typo.issues[0]?.message).toContain('Binder Error: Referenced column');
+      });
+    });
+  });
+
   // UX-08. A DELIBERATELY SEPARATE scratch: `openScratch` above is fully typed,
   // and adding VARCHAR columns to it would drag every stage-4/5/6 assertion in
   // this file through the new code path. Leaving it typed is itself the pin

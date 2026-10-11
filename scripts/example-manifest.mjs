@@ -71,3 +71,33 @@ export function buildExampleIndex(fixtures) {
     },
   };
 }
+
+/**
+ * The nested-data example (examples/nested/): one JSON dataset whose columns
+ * hold lists, structs, a map-like object and a JSON column, its single-file
+ * schema and its QC rules. Staged into public/examples/nested/ next to an
+ * index.json of the same shape as the HESP one, which the Load view's
+ * "Load nested example" button fetches.
+ */
+export const NESTED_EXAMPLE = {
+  dir: 'nested',
+  dataset: 'participants.json',
+  schema: 'participants.schema.json',
+  rules: 'participants.quac.csv',
+};
+
+/**
+ * @returns {{ files: string[], index: { title: string, dataset: string, schema: string[], rules: string[] } }}
+ */
+export function buildNestedExampleIndex() {
+  const { dataset, schema, rules } = NESTED_EXAMPLE;
+  return {
+    files: [dataset, schema, rules],
+    index: {
+      title: 'Nested-data example — 40 study participants with lists, records and maps, their JSON Schema and QC rules',
+      dataset,
+      schema: [schema],
+      rules: [rules],
+    },
+  };
+}

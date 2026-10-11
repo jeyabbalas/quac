@@ -9,11 +9,15 @@
  *
  * All 14 schema files are COPIED; index.json lists only the root as a crawl
  * base (UX-07 — see example-manifest.mjs for why).
+ *
+ * The nested-data example rides along into public/examples/nested/, with an
+ * index.json of the same shape for the "Load nested example" button. Its
+ * source of truth is examples/nested/ (scripts/generate-nested-example.mjs).
  */
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DATASET, buildExampleIndex } from './example-manifest.mjs';
+import { DATASET, NESTED_EXAMPLE, buildExampleIndex, buildNestedExampleIndex } from './example-manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures = join(root, 'tests', 'fixtures', 'hesp');
@@ -30,7 +34,15 @@ for (const file of rulesFiles) cpSync(join(fixtures, file), join(out, file));
 
 writeFileSync(join(out, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
 
+// The nested-data example: examples/nested/ is its source of truth.
+const nested = buildNestedExampleIndex();
+const nestedOut = join(out, NESTED_EXAMPLE.dir);
+mkdirSync(nestedOut, { recursive: true });
+for (const file of nested.files) cpSync(join(root, 'examples', NESTED_EXAMPLE.dir, file), join(nestedOut, file));
+writeFileSync(join(nestedOut, 'index.json'), `${JSON.stringify(nested.index, null, 2)}\n`);
+
 console.log(
   `copy-example-assets: staged ${String(1 + schemaFiles.length + rulesFiles.length)} files → public/examples/ ` +
-    `(${String(index.schema.length)} schema crawl base)`,
+    `(${String(index.schema.length)} schema crawl base), ` +
+    `${String(nested.files.length)} → public/examples/${NESTED_EXAMPLE.dir}/`,
 );

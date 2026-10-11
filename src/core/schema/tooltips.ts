@@ -7,7 +7,7 @@
  */
 import { conditionalOneLiner } from './conditionals';
 import type { ConditionalRule } from './conditionals';
-import { renderExpectation, renderValue } from './value-spec';
+import { renderExpectation, renderValue, sentinelsOf } from './value-spec';
 import type { Sentinel } from './value-spec';
 import type { ColumnMeta } from './column-meta';
 
@@ -27,7 +27,7 @@ export interface ColumnHeaderTooltipContent {
 const CODE_CAP = 12;
 const CONDITIONAL_CAP = 5;
 
-const JSON_TYPE_ORDER = ['integer', 'number', 'string', 'boolean', 'null'] as const;
+const JSON_TYPE_ORDER = ['integer', 'number', 'string', 'boolean', 'array', 'object', 'null'] as const;
 
 function typeText(meta: ColumnMeta): string {
   const names = JSON_TYPE_ORDER.filter((t) => meta.jsonTypes.has(t));
@@ -74,9 +74,7 @@ export function buildTooltip(
   } else {
     push('Allowed', renderExpectation(spec));
   }
-  if (spec.kind !== 'mixed' && spec.kind !== 'opaque') {
-    push('Missing-value codes', spec.sentinels.map(chip));
-  }
+  push('Missing-value codes', sentinelsOf(spec).map(chip));
   push('Unit', meta.unit);
   push('Universe', meta.universe);
   push('Role', meta.role);

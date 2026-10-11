@@ -22,6 +22,7 @@ import {
   dictionaryTable,
   rootUriOf,
   toSchemaDocuments,
+  topLevelRows,
 } from '../../../src/core/schema/data-dictionary';
 import { columnDigest } from '../../../src/core/schema/column-meta';
 import { applyRootSelection } from '../../../src/core/schema/root-detection';
@@ -42,6 +43,9 @@ function tableOf(set: SchemaSet): DataDictionaryTable {
 }
 
 const namesOf = (t: DataDictionaryTable): string[] => t.rows.map((r) => r['Variable name']);
+/** The variables: rows for fields inside a nested one excluded. */
+const variableNamesOf = (t: DataDictionaryTable): string[] =>
+  topLevelRows(t).map((r) => r['Variable name']);
 
 beforeAll(async () => {
   hesp = await buildSchemaSet(entriesFromDir(fixtureDir('hesp', 'json_schema')), {
@@ -131,8 +135,8 @@ describe('the agreement invariant with columnDigest', () => {
     const digest = columnDigest(set);
     if (digest === null) return; // digest blocks on fatals; the dictionary does not
     const dict = tableOf(set);
-    expect(dict.rows.length, `${label}: row count`).toBe(digest.meta.length);
-    expect(new Set(namesOf(dict)), `${label}: variable names`).toEqual(
+    expect(topLevelRows(dict).length, `${label}: variable count`).toBe(digest.meta.length);
+    expect(new Set(variableNamesOf(dict)), `${label}: variable names`).toEqual(
       new Set(digest.meta.map((m) => m.name)),
     );
   };
@@ -166,7 +170,7 @@ describe('the agreement invariant with columnDigest', () => {
       if (divergent !== undefined) {
         // Pinned, not skipped: assert the exact disagreement so a fix breaks here.
         expect(digest.meta.length, `synthetic/${name}: digest`).toBe(divergent.digest);
-        expect(tableOf(set).rows.length, `synthetic/${name}: dictionary`).toBe(
+        expect(topLevelRows(tableOf(set)).length, `synthetic/${name}: dictionary`).toBe(
           divergent.dictionary,
         );
         continue;
@@ -179,10 +183,10 @@ describe('the agreement invariant with columnDigest', () => {
 });
 
 describe('DICTIONARY_OPTIONS', () => {
-  it('pins all three extra-row flags off', () => {
+  it('pins the two pseudo-variable flags off and nested expansion on', () => {
     expect(DICTIONARY_OPTIONS.includePatternProperties).toBe(false);
     expect(DICTIONARY_OPTIONS.includeOpenContentRows).toBe(false);
-    expect(DICTIONARY_OPTIONS.expandNested).toBe(false);
+    expect(DICTIONARY_OPTIONS.expandNested).toBe(true);
   });
 
   it('emits no /regex/ pseudo-row for a patternProperties schema', async () => {
@@ -209,10 +213,10 @@ describe('DICTIONARY_OPTIONS', () => {
     expect(loose.rows.length).toBeGreaterThan(1);
   });
 
-  // 0.6.0 expands an object-valued column into a row per field by default.
-  // The dataset — and columnDigest — has ONE column there, so the dictionary
-  // keeps one row, which names what is inside it.
-  it('keeps an object-valued column as one row, as the digest does', async () => {
+  // A nested variable keeps its own row — the one dataset column, as in the
+  // digest — and is followed by a row per field inside it, which topLevelRows
+  // leaves out of every variable count.
+  it('follows an object-valued column with its fields, counted apart from the variables', async () => {
     const set = await buildSchemaSet(
       [
         entry('root.json', {
@@ -233,14 +237,28 @@ describe('DICTIONARY_OPTIONS', () => {
       ],
       { origin: 'upload' },
     );
-    expect(namesOf(tableOf(set))).toEqual(['id', 'address']);
+    const dict = tableOf(set);
+    expect(namesOf(dict)).toEqual(['id', 'address', 'address.city', 'address.zip']);
+    expect(dict.rows.map((r) => r.__depth ?? 0)).toEqual([0, 0, 1, 1]);
+    expect(variableNamesOf(dict)).toEqual(['id', 'address']);
     expect(columnDigest(set)?.meta.map((m) => m.name)).toEqual(['id', 'address']);
+  });
 
-    // …and the flag is what keeps it one row: with the package default it splits.
-    const expanded = schemaDocumentsToTable(toSchemaDocuments(set), {
-      rootUri: rootUriOf(set) ?? '',
-    });
-    expect(namesOf(expanded)).toEqual(['id', 'address', 'address.city', 'address.zip']);
+  it('the nested example: 11 variables, 15 fields inside them, agreeing with the digest', async () => {
+    const set = await buildSchemaSet(
+      entriesFromDir(fixtureDir('..', '..', 'examples', 'nested')).filter((e) =>
+        e.relativePath.endsWith('.schema.json'),
+      ),
+      { origin: 'upload' },
+    );
+    const dict = tableOf(set);
+    expect(topLevelRows(dict)).toHaveLength(11);
+    expect(dict.rows).toHaveLength(26);
+    expect(namesOf(dict)).toContain('visits[].date');
+    expect(namesOf(dict)).toContain('address.city');
+    expect(new Set(variableNamesOf(dict))).toEqual(
+      new Set(columnDigest(set)?.meta.map((m) => m.name)),
+    );
   });
 });
 

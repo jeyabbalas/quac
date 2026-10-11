@@ -10,8 +10,10 @@
  */
 import { schemaPropRuleId } from './rule-ids';
 import { createRefResolver, escapePointerSegment, getAtPointer } from './deref';
+import { decodeNestedValue, renderNestedPath, toInstancePath } from './nested-values';
 import type { QCFlag } from '../flags/flag';
 import type { ColumnMeta } from './column-meta';
+import type { NestedColumn, NestedPlan } from './nested-values';
 import type { SchemaFile, SchemaSet } from './types';
 
 /** Per-column facts the shaper needs (derived from ColumnMeta or absent for extras). */
@@ -23,6 +25,12 @@ export interface ShapingColumn {
   nullAllowed: boolean;
   /** mixed:true VARCHAR → numeric-looking strings present as numbers (§C.3 heuristic). */
   mixed: boolean;
+  /**
+   * A nested or JSON column, whose cells arrive as `to_json` text
+   * (nested-values.ts): the plan that reads them back, and whether to look
+   * for integers past 2^53.
+   */
+  nested?: { plan: NestedPlan; wideIntegers: boolean };
 }
 
 export interface ShapedRow {
@@ -30,6 +38,11 @@ export interface ShapedRow {
   flags: QCFlag[];
   /** `${row} ${column}` keys discovered while shaping (NaN/Inf) — feed castFailures. */
   castKeys: string[];
+  /**
+   * Ajv `instancePath`s inside nested values that held a NaN or ±Infinity —
+   * reported by a cast flag already, so any error AT or BELOW one is noise.
+   */
+  suppressPaths: string[];
 }
 
 export interface RowShaper {
@@ -46,17 +59,42 @@ const MIN_SAFE = -9007199254740991n;
 export function shapingColumns(
   batchColumns: readonly string[],
   metaByName: ReadonlyMap<string, ColumnMeta>,
+  nestedByName: ReadonlyMap<string, NestedColumn> = new Map(),
 ): ShapingColumn[] {
   return batchColumns.map((name) => {
     const m = metaByName.get(name);
+    const nested = nestedByName.get(name);
     return {
       name,
       inSchema: m !== undefined,
       nullAllowed: m?.jsonTypes.has('null') ?? false,
       mixed: m?.mixed ?? false,
+      ...(nested === undefined
+        ? {}
+        : { nested: { plan: nested.plan, wideIntegers: nested.wideIntegers } }),
     };
   });
 }
+
+/** Paths listed in one non-finite message before the rest are counted. */
+const NON_FINITE_PATH_CAP = 5;
+
+function nonFiniteMessage(tokens: readonly string[], paths: readonly string[]): string {
+  const distinct = [...new Set(tokens)];
+  const shown = paths.slice(0, NON_FINITE_PATH_CAP);
+  const more = paths.length - shown.length;
+  const where = more > 0 ? `${shown.join(', ')} and ${String(more)} more` : shown.join(', ');
+  const subject =
+    distinct.length === 1
+      ? `${distinct[0] ?? 'NaN'} is not a finite number`
+      : `${distinct.slice(0, -1).join(', ')} and ${distinct.at(-1) ?? ''} are not finite numbers`;
+  return `${subject} (at ${where}).`;
+}
+
+/** §C.3's precision warning; `at` names where inside a nested value. */
+const precisionMessage = (at?: string): string =>
+  `value${at === undefined ? '' : ` at ${at}`} exceeds the exactly-representable integer ` +
+  'range (±(2^53−1)) — schema checks used the nearest representable number.';
 
 export function createRowShaper(
   columns: readonly ShapingColumn[],
@@ -68,11 +106,57 @@ export function createRowShaper(
       const obj: Record<string, unknown> = {};
       const flags: QCFlag[] = [];
       const castKeys: string[] = [];
+      const suppressPaths: string[] = [];
       columns.forEach((col, i) => {
         if (!col.inSchema && !opts.includeExtras) return;
         const v = values[i];
         if (v === null || v === undefined) {
           if (col.inSchema && col.nullAllowed) obj[col.name] = null;
+          return;
+        }
+        if (col.nested !== undefined && typeof v === 'string') {
+          const { plan, wideIntegers } = col.nested;
+          const decoded = decodeNestedValue(v, plan, wideIntegers && !precisionFlagged.has(col.name));
+          // A JSON column's literal `null` is a null like any other (§C.3).
+          if (decoded.value === null) {
+            if (col.inSchema && col.nullAllowed) obj[col.name] = null;
+          } else {
+            obj[col.name] = decoded.value;
+          }
+          if (decoded.nonFinite.length > 0) {
+            const at = (path: readonly (string | number)[]): string =>
+              renderNestedPath(col.name, path, decoded.value, plan);
+            flags.push({
+              source: 'schema',
+              ruleId: schemaPropRuleId(col.name, 'cast'),
+              scope: 'cell',
+              row,
+              column: col.name,
+              severity: 'error',
+              message: nonFiniteMessage(
+                decoded.nonFinite.map((n) => n.token),
+                decoded.nonFinite.map((n) => at(n.path)),
+              ),
+              value: v,
+            });
+            for (const { path } of decoded.nonFinite) {
+              suppressPaths.push(toInstancePath(col.name, path));
+            }
+          }
+          const unsafe = decoded.unsafeInteger;
+          if (unsafe !== null && !precisionFlagged.has(col.name)) {
+            precisionFlagged.add(col.name);
+            flags.push({
+              source: 'schema',
+              ruleId: schemaPropRuleId(col.name, 'precision'),
+              scope: 'cell',
+              row,
+              column: col.name,
+              severity: 'warning',
+              message: precisionMessage(renderNestedPath(col.name, unsafe.path, decoded.value, plan)),
+              value: unsafe.text,
+            });
+          }
           return;
         }
         if (typeof v === 'bigint') {
@@ -85,9 +169,7 @@ export function createRowShaper(
               row,
               column: col.name,
               severity: 'warning',
-              message:
-                'value exceeds the exactly-representable integer range (±(2^53−1)) — ' +
-                'schema checks used the nearest representable number.',
+              message: precisionMessage(),
               value: String(v),
             });
           }
@@ -114,7 +196,7 @@ export function createRowShaper(
         }
         obj[col.name] = v;
       });
-      return { obj, flags, castKeys };
+      return { obj, flags, castKeys, suppressPaths };
     },
   };
 }

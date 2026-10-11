@@ -14,12 +14,17 @@
  *   verbatim (the engine's broken-rule text minus the prefix).
  */
 import { expandAssertion, parseAssertion } from '../../../core/rules/assertions';
-import { JS_CHUNK_TIMEOUT_MS_DEFAULT, marshalJsValue } from '../../../core/rules/engine';
+import {
+  JS_CHUNK_TIMEOUT_MS_DEFAULT,
+  datasetRows,
+  marshalJsValue,
+  nestedOf,
+} from '../../../core/rules/engine';
+import { parseNestedColumns } from '../../../core/nested-json';
 import {
   correctionCaptureSQL,
   correctionCountSQL,
   datasetCountSQL,
-  datasetFetchSQL,
   expandValueToken,
   jsChunkFetchSQL,
   violCountSQL,
@@ -81,6 +86,10 @@ export type RuleTestResult =
   | { kind: 'not-testable'; reason: string }
   | { kind: 'error'; message: string };
 
+const NONE: ReadonlySet<string> = new Set();
+/** The two columns a correction capture returns. */
+const BEFORE_AFTER: ReadonlySet<string> = new Set(['before', 'after']);
+
 /** First column of the first row (COUNT results come back as `count_star()`). */
 function firstScalar(rows: Record<string, unknown>[]): number {
   const row = rows[0];
@@ -88,16 +97,31 @@ function firstScalar(rows: Record<string, unknown>[]): number {
   return Number(Object.values(row)[0] ?? 0);
 }
 
+/**
+ * Rows of a fetch whose nested columns came back as JSON text, parsed — what
+ * the engine shows in a finding (core/nested-json.ts).
+ */
+async function fetchParsed(
+  deps: RuleTestDeps,
+  sql: string,
+  nested: ReadonlySet<string>,
+): Promise<Record<string, unknown>[]> {
+  const rows = await deps.runner.query(sql);
+  parseNestedColumns(rows, nested);
+  return rows;
+}
+
 async function testValidate(
   rule: QCRule,
   targets: string[],
   deps: RuleTestDeps,
+  nested: ReadonlySet<string>,
 ): Promise<RuleTestResult> {
   const count = firstScalar(await deps.runner.query(violCountSQL(rule.condition)));
   const rows =
     count === 0
       ? []
-      : await deps.runner.query(violFetchSQL(rule.condition, targets, PREVIEW_ROW_CAP));
+      : await fetchParsed(deps, violFetchSQL(rule.condition, targets, PREVIEW_ROW_CAP, nested), nested);
   return {
     kind: 'validate',
     count,
@@ -111,6 +135,7 @@ async function testAssert(
   rule: QCRule,
   targets: string[],
   deps: RuleTestDeps,
+  nested: ReadonlySet<string>,
 ): Promise<RuleTestResult> {
   const parsed = parseAssertion(rule.condition);
   if (!parsed.ok) throw new Error(parsed.error);
@@ -129,7 +154,7 @@ async function testAssert(
       const rows =
         count === 0
           ? []
-          : await deps.runner.query(violFetchSQL(exp.sql, [target], PREVIEW_ROW_CAP));
+          : await fetchParsed(deps, violFetchSQL(exp.sql, [target], PREVIEW_ROW_CAP, nested), nested);
       perTarget.push({ target, sql: exp.sql, count, rows, truncated: count > PREVIEW_ROW_CAP });
     }
   }
@@ -138,7 +163,11 @@ async function testAssert(
 
 /** SQL correction: exact per-pair change counts + `__row__|before|after`
  *  captures, exactly the engine's pre-swap reads — the CTAS never runs. */
-async function testSqlCorrection(rule: QCRule, deps: RuleTestDeps): Promise<RuleTestResult> {
+async function testSqlCorrection(
+  rule: QCRule,
+  deps: RuleTestDeps,
+  nested: ReadonlySet<string>,
+): Promise<RuleTestResult> {
   let count = 0;
   const captures: CorrectionCapture[] = [];
   for (const pair of expandValueToken(rule)) {
@@ -147,8 +176,11 @@ async function testSqlCorrection(rule: QCRule, deps: RuleTestDeps): Promise<Rule
     );
     count += n;
     if (n === 0) continue;
-    const rows = await deps.runner.query(
-      correctionCaptureSQL(pair.condition, pair.expression, pair.target, PREVIEW_ROW_CAP),
+    const nestedTarget = nested.has(pair.target);
+    const rows = await fetchParsed(
+      deps,
+      correctionCaptureSQL(pair.condition, pair.expression, pair.target, PREVIEW_ROW_CAP, nestedTarget),
+      nestedTarget ? BEFORE_AFTER : NONE,
     );
     for (const row of rows) {
       captures.push({
@@ -164,7 +196,11 @@ async function testSqlCorrection(rule: QCRule, deps: RuleTestDeps): Promise<Rule
 
 /** js correction: exact match counts from SQL; the user function runs
  *  sandboxed on the first ≤20 matching rows per pair only. */
-async function testJsCorrection(rule: QCRule, deps: RuleTestDeps): Promise<RuleTestResult> {
+async function testJsCorrection(
+  rule: QCRule,
+  deps: RuleTestDeps,
+  nested: ReadonlySet<string>,
+): Promise<RuleTestResult> {
   if (deps.loadSandbox === undefined) {
     throw new Error('JS corrections require the QuickJS sandbox; rule not executed');
   }
@@ -176,9 +212,7 @@ async function testJsCorrection(rule: QCRule, deps: RuleTestDeps): Promise<RuleT
   const captures: CorrectionCapture[] = [];
   for (const pair of expandValueToken(rule)) {
     count += firstScalar(await deps.runner.query(violCountSQL(pair.condition)));
-    const chunk: Record<string, unknown>[] = await deps.runner.query(
-      jsChunkFetchSQL(pair.condition, -1, PREVIEW_ROW_CAP),
-    );
+    const chunk = await fetchParsed(deps, jsChunkFetchSQL(pair.condition, -1, PREVIEW_ROW_CAP, nested), nested);
     if (chunk.length === 0) continue;
     const batch = chunk.map((row) => {
       const rowData: Record<string, unknown> = {};
@@ -228,7 +262,8 @@ async function testJsCorrection(rule: QCRule, deps: RuleTestDeps): Promise<RuleT
 async function testDataset(rule: QCRule, deps: RuleTestDeps): Promise<RuleTestResult> {
   // The engine's cap+1 idiom: the exact count query runs only on overflow —
   // when the fetch fits, its length already IS the exact count.
-  const fetched = await deps.runner.query(datasetFetchSQL(rule.condition, PREVIEW_ROW_CAP + 1));
+  // Nested result columns stay their exact JSON text, as the finding prints them.
+  const { rows: fetched } = await datasetRows(deps.runner, rule.condition, PREVIEW_ROW_CAP + 1);
   const rows = fetched.slice(0, PREVIEW_ROW_CAP);
   const truncated = fetched.length > PREVIEW_ROW_CAP;
   const count = truncated
@@ -265,15 +300,16 @@ export async function runRuleTest(draft: QCRule, deps: RuleTestDeps): Promise<Ru
     };
   }
   try {
+    const nested = await nestedOf(deps.runner);
     if (draft.ruleType === 'correct') {
       return draft.updateLanguage === 'js'
-        ? await testJsCorrection(draft, deps)
-        : await testSqlCorrection(draft, deps);
+        ? await testJsCorrection(draft, deps, nested)
+        : await testSqlCorrection(draft, deps, nested);
     }
     if (draft.ruleScope === 'dataset') return await testDataset(draft, deps);
-    if (draft.ruleScope === 'column') return await testAssert(draft, targets, deps);
+    if (draft.ruleScope === 'column') return await testAssert(draft, targets, deps, nested);
     // row + longitudinal execute identically (uniform SELECT-list wrapping).
-    return await testValidate(draft, targets, deps);
+    return await testValidate(draft, targets, deps, nested);
   } catch (err) {
     return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
   }

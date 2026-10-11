@@ -22,9 +22,10 @@
  * a `const` reached through a `$ref`'d def is a sentinel); the package uses a
  * word/number heuristic. What the dictionary adds is category titles and
  * descriptions, `format`, itemized constraints QuaC does not model, open `x-*`
- * passthrough, and a third `measurement` value kind. The row count is pinned
- * equal to `columnDigest`'s in CI (tests/unit/schema/data-dictionary.test.ts)
- * so the two descriptions can never disagree about WHICH variables exist.
+ * passthrough, a third `measurement` value kind, and a row per field inside a
+ * nested variable. The top-level row count is pinned equal to `columnDigest`'s
+ * in CI (tests/unit/schema/data-dictionary.test.ts) so the two descriptions can
+ * never disagree about WHICH variables exist.
  * Replacing column-meta with the package is out of scope.
  */
 import type {
@@ -42,24 +43,34 @@ export type SchemaToTable = (
 ) => DataDictionaryTable;
 
 /**
- * Pinned so the dictionary's row count always equals `columnDigest`'s.
+ * Pinned so the dictionary's TOP-LEVEL rows always equal `columnDigest`'s
+ * variables.
  *
  * All three flags default to TRUE in the package. With the first two on, a
  * schema carrying `patternProperties` or open `additionalProperties` gains
  * pseudo-variable rows (`/regex/`, `…`) that QuaC's digest has no concept of —
  * the dictionary would then print "268 variables" two sections below a
- * pertinence strip printing "265/265" on the same page. `expandNested` (0.6.0)
- * would do the same for an object- or array-valued column: every field inside
- * it becomes a row of its own (`address.city`), where the digest — and the
- * dataset — has one column. Off, the column keeps its single row and names what
- * is inside it (`Fields: …`). HESP is flat, so it produces exactly 265 rows / 12
- * categories either way, equal to `columnDigest(set).meta.length`.
+ * pertinence strip printing "265/265" on the same page.
+ *
+ * `expandNested` stays ON: an object- or array-valued variable keeps its own
+ * row and is followed by one row per field inside it (`address.city`,
+ * `visits[].date`), indented, with `__depth` ≥ 1. That is how a reader learns
+ * what a nested column holds, and since QuaC validates nested values field by
+ * field it is also where a finding like `(at visits[2].date)` points. The
+ * dataset still has ONE column for `visits`: those rows are fields, not
+ * variables, and `topLevelRows` keeps them out of every variable count. HESP
+ * is flat — 265 rows / 12 categories either way.
  */
 export const DICTIONARY_OPTIONS: SchemaToTableOptions = {
   includePatternProperties: false,
   includeOpenContentRows: false,
-  expandNested: false,
+  expandNested: true,
 };
+
+/** The rows that are variables — dataset columns — not fields inside one. */
+export function topLevelRows(table: DataDictionaryTable): DataDictionaryTable['rows'] {
+  return table.rows.filter((row) => (row.__depth ?? 0) === 0);
+}
 
 // ---------------------------------------------------------------------------
 // Input mapping

@@ -1,0 +1,17 @@
+rule_id,rule_type,rule_scope,target_variables,condition,update_language,update_expression,severity,comment,enabled
+R01,validate,column,participant_id,unique,,,error,Participant ID appears more than once.,true
+R02,validate,row,household,"NOT list_contains(list_transform(household, m -> m.relation), 'self')",,,warning,The household roster does not list the participant (relation 'self').,true
+R03,validate,row,visits|enrolled_on,"len(list_filter(visits, v -> TRY_CAST(v.date AS DATE) < TRY_CAST(enrolled_on AS DATE))) > 0",,,error,A visit is dated before the participant enrolled.,true
+R04,validate,row,visits,"list_max(list_transform(visits, v -> v.systolic_bp)) > 180",,,warning,Systolic blood pressure above 180 mmHg at a visit — confirm the reading.,true
+R05,validate,row,labs|diagnoses,"labs['hba1c'] >= 6.5 AND NOT list_contains(diagnoses, 'E11.9')",,,warning,HbA1c in the diabetes range (6.5% or more) with no E11.9 diagnosis — check the problem list.,true
+R06,correct,row,diagnoses,"len(list_filter(__value__, d -> d <> upper(trim(d)))) > 0",sql,"list_transform(__value__, d -> upper(trim(d)))",info,Diagnosis codes upper-cased and trimmed.,true
+R07,correct,row,phones,"len(list_filter(phones, p -> regexp_matches(p, '[^0-9+]'))) > 0",js,"(value) => value.map((p) => p.replace(/[^0-9+]/g, ''))",info,"Spaces, dashes and brackets removed from phone numbers.",true
+R08,correct,row,address,address.country <> upper(address.country),sql,"struct_update(address, country := upper(address.country))",info,Country code upper-cased.,true
+R09,validate,dataset,visits,"SELECT participant_id,
+       list_max(list_transform(visits, v -> v.weight_kg))
+         - list_min(list_transform(visits, v -> v.weight_kg)) AS weight_change_kg
+FROM data
+WHERE list_max(list_transform(visits, v -> v.weight_kg))
+        - list_min(list_transform(visits, v -> v.weight_kg)) > 15
+ORDER BY participant_id",,,info,Weight changed by more than 15 kg across a participant's visits — confirm the readings.,true
+R10,validate,row,notes,"json_type(notes) = 'OBJECT' AND json_extract_string(notes, '$.interpreter') IS NULL",,,info,Notes are a record with no interpreter language — name the language or write the note as text.,true

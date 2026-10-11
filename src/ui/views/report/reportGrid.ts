@@ -23,6 +23,7 @@ import {
   QUAC_DISPLAY,
   copyToParquetBytes,
   nextDisplayTableName,
+  parquetSource,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { rowFocusSQL } from '../../../core/report/rowFocus';
@@ -85,7 +86,7 @@ async function ensureTable(
     // a fresh table for every refresh. (Through 0.8 this was also what kept
     // re-runs off one virtual parquet path — the UX-01 failure; since 0.9 the
     // loader names that file itself. See nextDisplayTableName.)
-    if (bytes !== null) await table.loadData(bytes.slice().buffer);
+    if (bytes !== null) await table.loadData(parquetSource(bytes), { sourceFormat: 'parquet' });
     return table;
   }
 
@@ -110,7 +111,7 @@ async function ensureTable(
     const source = bytes ?? (await copyToParquetBytes(bridge, DISPLAY_EXPORT_SQL));
     const t = await createDataTable({
       container: gridHost,
-      source: source.slice().buffer,
+      source: parquetSource(source),
       sourceFormat: 'parquet',
       // A fresh name per build (UX-01, see nextDisplayTableName — no longer
       // load-bearing since data-table 0.9, kept because it costs nothing).

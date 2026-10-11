@@ -115,6 +115,26 @@ export async function copyToParquetBytes(
 }
 
 /**
+ * Display bytes as the grids hand them to data-table: a Blob, not an
+ * ArrayBuffer. Since 0.9 data-table registers a Blob as a file handle and
+ * DuckDB reads it from disk as it decodes; an ArrayBuffer is copied into
+ * DuckDB's wasm memory first — the whole file, in a heap that grows to its
+ * high-water mark and never shrinks — and its loader's memory check counts the
+ * file against the load. Unnamed binary data is taken to be Parquet.
+ *
+ * The Blob constructor refuses a view over a SharedArrayBuffer, so such a view
+ * is copied out first. None arrives in practice: the worker's export transfers
+ * a plain ArrayBuffer, and the page is not cross-origin isolated.
+ */
+export function parquetSource(bytes: Uint8Array): Blob {
+  return new Blob([onArrayBuffer(bytes) ? bytes : bytes.slice()]);
+}
+
+function onArrayBuffer(bytes: Uint8Array): bytes is Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer;
+}
+
+/**
  * Dataset clear (UIX-7): actually free the memory — drop the `data` view
  * first (it reads quac_work), then the three canonical tables. IF EXISTS
  * throughout makes it idempotent. quac_display/quac_studio_display are NOT

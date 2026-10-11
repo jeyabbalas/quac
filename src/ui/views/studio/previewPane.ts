@@ -23,6 +23,7 @@ import {
   STUDIO_SAMPLE_SQL,
   copyToParquetBytes,
   nextDisplayTableName,
+  parquetSource,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { renderPreviewTable } from '../../components/plainPreviewTable';
@@ -109,7 +110,7 @@ export function createPreviewPane(): PreviewPane {
       if (!refresh) return;
       const bytes = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);
       // Option-less, as in reportGrid.ts: a generated table name per refresh.
-      await table.loadData(bytes.slice().buffer);
+      await table.loadData(parquetSource(bytes), { sourceFormat: 'parquet' });
       return;
     }
 
@@ -129,7 +130,7 @@ export function createPreviewPane(): PreviewPane {
       const source = await copyToParquetBytes(bridge, STUDIO_SAMPLE_SQL);
       table = await createDataTable({
         container: gridHost,
-        source: source.slice().buffer,
+        source: parquetSource(source),
         sourceFormat: 'parquet',
         // Fresh per build, like the report grid (UX-01; not load-bearing
         // since data-table 0.9 — see nextDisplayTableName).

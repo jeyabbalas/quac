@@ -2,13 +2,16 @@
  * Nested data end to end on native DuckDB: LIST, STRUCT, MAP and JSON columns
  * through ingest → casting → schema validation → rules → the Excel report.
  *
- * The `*_expected_flags.json` manifests are the cross-runtime contract —
+ * The two `*_expected_flags.json` manifests are the cross-runtime contract —
  * `tests/browser/nested.browser.test.ts` asserts the same files on
  * duckdb-wasm, so the browser and the CLI cannot read a nested value
  * differently (they did, through their row reads: epoch milliseconds for a
  * date inside a list in one, a Date object in the other).
  *
  *   (a) the upstream stress fixture — valid, so no error at all
+ *   (b) QuaC's own example, schema only — one finding per planted problem
+ *   (c) the example with its QC rules — corrections fix what they should,
+ *       rules read nested values, the workbook holds exact JSON text
  *   (d) JSON written into a CSV cell, under an array/object schema
  *   (e) a Parquet file's NaN, DECIMAL and DATE inside lists
  */
@@ -22,12 +25,14 @@ import { columnDigest } from '../../../src/core/schema/column-meta';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
 import { runSchemaValidation } from '../../../src/core/schema/validation-run';
 import { createNodeBridge } from '../../../src/headless/nodeBridge';
+import { runQuac } from '../../../src/headless/run';
 import { createInProcessValidationWorker } from '../../../src/headless/validationWorker';
 import type { QCFlag } from '../../../src/core/flags/flag';
 import type { IngestFormat } from '../../../src/core/ingest/sniff';
 
 const ROOT = resolve(__dirname, '..', '..', '..');
 const NESTED = join(ROOT, 'tests', 'fixtures', 'nested');
+const EXAMPLE = join(ROOT, 'examples', 'nested');
 const SLOW = 120_000;
 
 let outDir: string;
@@ -127,6 +132,118 @@ describe('(a) the upstream nested stress fixture is valid against its schema', (
       const want = canonicalSort(await manifest('stress_expected_flags.json'), columns);
       expect(flags.map(normalize)).toEqual(want.map(normalize));
       expect(flags.filter((f) => f.severity === 'error')).toEqual([]);
+    },
+    SLOW,
+  );
+});
+
+describe('(b) the nested example, schema only', () => {
+  test(
+    'one finding per planted problem, each naming where it is',
+    async () => {
+      const { flags, columns } = await schemaFlags(
+        {
+          name: 'participants.json',
+          bytes: toArrayBuffer(await readFile(join(EXAMPLE, 'participants.json'))),
+          format: 'json',
+        },
+        {
+          name: 'participants.schema.json',
+          raw: await readFile(join(EXAMPLE, 'participants.schema.json'), 'utf8'),
+        },
+      );
+      const want = canonicalSort(await manifest('participants_expected_flags.json'), columns);
+      expect(flags.map(normalize)).toEqual(want.map(normalize));
+      // Nothing about the records that are clean — DuckDB's NULL-filled struct
+      // fields (`unit`, `pulse`, the lab names) must not read as findings.
+      expect(new Set(flags.map((f) => f.row))).toEqual(
+        new Set([2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 32, 33]),
+      );
+    },
+    SLOW,
+  );
+});
+
+describe('(c) the nested example with its QC rules', () => {
+  test(
+    'rules read nested values, corrections fix what they should, the workbook holds JSON',
+    async () => {
+      const result = await runQuac({
+        dataset: join(EXAMPLE, 'participants.json'),
+        schema: [join(EXAMPLE, 'participants.schema.json')],
+        rules: [join(EXAMPLE, 'participants.quac.csv')],
+        out: outDir,
+      });
+      const flags = result.artifacts.flagStore.all().map((e) => e.flag);
+      // The totals examples/nested/README.md promises.
+      const summary = result.artifacts.flagStore.summary(result.artifacts.rowsTotal);
+      expect(summary.severityTotals).toEqual({ error: 25, warning: 5, info: 5 });
+      expect(summary.rowsAffected).toBe(31);
+      const perRule = result.artifacts.rules?.perRule ?? [];
+      expect(perRule.filter((r) => r.status !== 'ok')).toEqual([]);
+      const violations = Object.fromEntries(perRule.map((r) => [r.ruleId, r.violationCount]));
+      expect(violations).toEqual({
+        R01: 2,
+        R02: 1,
+        R03: 1,
+        R04: 2,
+        R05: 1,
+        R06: 1,
+        R07: 1,
+        R08: 1,
+        R09: 1,
+        R10: 1,
+      });
+
+      const corrections = flags
+        .filter((f) => f.correction !== undefined)
+        .sort((a, b) => (a.row ?? 0) - (b.row ?? 0));
+      expect(
+        corrections.map((f) => ({ ruleId: f.ruleId, row: f.row, ...f.correction })),
+      ).toEqual([
+        {
+          ruleId: 'R08',
+          row: 3,
+          before: { street: '611 Pine Ct', city: 'Lakeside', postcode: '16664', country: 'us', unit: null },
+          after: { street: '611 Pine Ct', city: 'Lakeside', postcode: '16664', country: 'US', unit: null },
+        },
+        { ruleId: 'R07', row: 8, before: ['+1 555-010-2030'], after: ['+15550102030'] },
+        { ruleId: 'R06', row: 20, before: ['e11.9', 'I10'], after: ['E11.9', 'I10'] },
+      ]);
+
+      // Corrected before validation: the three corrected cells pass the schema.
+      const schemaRows = new Set(
+        flags.filter((f) => f.source === 'schema' && f.scope === 'cell').map((f) => `${String(f.row)} ${String(f.column)}`),
+      );
+      for (const fixed of ['3 address', '8 phones', '20 diagnoses']) {
+        expect(schemaRows.has(fixed), fixed).toBe(false);
+      }
+
+      // A dataset rule's nested arithmetic arrives as plain values.
+      const r09 = flags.find((f) => f.ruleId === 'R09');
+      expect(r09?.message).toContain("participant_id='P0035'; weight_change_kg=18");
+
+      // The Data sheet: nested cells are their exact JSON text — dates as
+      // dates, the corrected values already in.
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(result.outPath);
+      const sheet = workbook.getWorksheet('Data');
+      if (sheet === undefined) throw new Error('no Data sheet');
+      const header = (sheet.getRow(1).values as unknown[]).slice(1).map(String);
+      const cell = (row: number, column: string): unknown =>
+        sheet.getRow(row + 2).getCell(header.indexOf(column) + 1).value;
+      const source = JSON.parse(await readFile(join(EXAMPLE, 'participants.json'), 'utf8')) as {
+        visits: Record<string, unknown>[];
+        consent: Record<string, unknown>;
+      }[];
+      const first = source[0];
+      if (first === undefined) throw new Error('empty example');
+      // DuckDB's struct holds every key any record has: `pulse`, NULL here.
+      expect(cell(0, 'visits')).toBe(JSON.stringify(first.visits.map((v) => ({ ...v, pulse: null }))));
+      expect(cell(0, 'visits')).toMatch(/^\[\{"date":"\d{4}-\d{2}-\d{2}"/);
+      expect(cell(0, 'consent')).toBe(JSON.stringify(first.consent));
+      expect(cell(8, 'phones')).toBe('["+15550102030"]');
     },
     SLOW,
   );

@@ -24,6 +24,9 @@ import { runSchemaValidation } from '../../src/core/schema/validation-run';
 import stressDataUrl from '../fixtures/nested/nested-stress-tests.json?url';
 import stressSchemaUrl from '../fixtures/nested/nested-stress-tests.schema.json?url';
 import stressExpectedUrl from '../fixtures/nested/stress_expected_flags.json?url';
+import participantsExpectedUrl from '../fixtures/nested/participants_expected_flags.json?url';
+import participantsUrl from '../../examples/nested/participants.json?url';
+import participantsSchemaUrl from '../../examples/nested/participants.schema.json?url';
 import { fetchFixtureBytes } from './fixtures';
 import type { QCFlag } from '../../src/core/flags/flag';
 
@@ -138,3 +141,11 @@ test('the preview reads a nested value as its exact JSON text — dates and 64-b
     '[null,{"name":null,"age":null,"langs":null},{"name":"Ada","age":36,"langs":["en",null]}]',
   );
 }, 60_000);
+
+test('the nested example: one finding per planted problem, as on Node', async () => {
+  const { flags, columns } = await validate(
+    { name: 'participants.json', url: participantsUrl },
+    { name: 'participants.schema.json', url: participantsSchemaUrl },
+  );
+  expect(flags.map(normalize)).toEqual(await expected(participantsExpectedUrl, columns));
+}, 120_000);

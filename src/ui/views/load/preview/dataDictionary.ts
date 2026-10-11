@@ -3,7 +3,7 @@
  * rendered by json-schema-data-dictionary's own `<json-data-dictionary>`
  * component (0.7.0) — ranked search, skip patterns you can follow from either
  * end, a Metadata panel, a sticky column header, resizable columns, Copy and
- * CSV. It replaced the table, search and row projection QuaC used to build
+ * CSV, and a nested variable's fields as indented rows of their own. It replaced the table, search and row projection QuaC used to build
  * itself; the package owns that interaction now, and its tests pin it.
  *
  * The TAB is named for the input (`JSON Schema`, the slot card's name); the
@@ -23,11 +23,12 @@ import type {
   RenderOptions,
 } from 'json-schema-data-dictionary';
 import { effect } from '../../../../app/signals';
-import { dictionaryTable } from '../../../../core/schema/data-dictionary';
+import { dictionaryTable, topLevelRows } from '../../../../core/schema/data-dictionary';
 import { needsRootChoice, schemaState } from '../../../../core/schema/schema-store';
 import { note } from './previewDom';
 
 const variables = (n: number): string => `${String(n)} variable${n === 1 ? '' : 's'}`;
+const fields = (n: number): string => `${String(n)} nested field${n === 1 ? '' : 's'}`;
 
 /**
  * - `theme: 'light'`: the default, `'auto'`, follows prefers-color-scheme and
@@ -144,11 +145,14 @@ export function mountDataDictionary(panel: HTMLElement): void {
       return;
     }
     // The head carries the SHAPE of the dictionary; the component's own count
-    // beside its search box is the live readout as you type.
+    // beside its search box is the live readout as you type. Variables are
+    // the dataset's columns; a nested one's field rows are counted apart.
     const categories = table.categories.length;
-    meta.textContent = `${String(categories)} categor${categories === 1 ? 'y' : 'ies'} · ${variables(
-      table.rows.length,
-    )}`;
+    const top = topLevelRows(table).length;
+    const nested = table.rows.length - top;
+    meta.textContent =
+      `${String(categories)} categor${categories === 1 ? 'y' : 'ies'} · ${variables(top)}` +
+      (nested > 0 ? ` · ${fields(nested)}` : '');
 
     // The frame is detached here — a note always precedes this — so a reused
     // element takes its new table while disconnected and renders once, on

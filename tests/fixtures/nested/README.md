@@ -24,5 +24,8 @@ two cannot drift apart. Before nested support, QuaC reported 15,308 errors for
 this valid file: every list, struct and map cell, cast to text and then
 rejected as text.
 
+`participants_expected_flags.json` pins the schema findings for QuaC's own
+nested example (`examples/nested/`), schema only, before any correction runs.
+
 To refresh the copies, copy the two files again from the upstream `main`
 branches, update the table above, and re-run the parity tests.

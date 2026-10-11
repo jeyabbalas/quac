@@ -56,15 +56,32 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
   examplePitch.textContent =
     'One click loads the bundled HESP example — a dirty dataset, its 14-file JSON Schema, ' +
     'and 3 QC rules files — ready for a full QC run.';
-  exampleBody.append(exampleTitle, examplePitch);
+  const nestedPitch = document.createElement('p');
+  nestedPitch.className = 'q-example-pitch q-example-pitch--nested';
+  nestedPitch.textContent =
+    'Lists, records or maps in your data? The nested example shows how QuaC checks them.';
+  exampleBody.append(exampleTitle, examplePitch, nestedPitch);
+
   const exampleButton = document.createElement('button');
   exampleButton.type = 'button';
   exampleButton.className = 'q-btn q-btn--primary q-example-load';
   exampleButton.textContent = 'Load example files';
-  exampleButton.addEventListener('click', () => {
-    exampleButton.disabled = true;
+  const nestedButton = document.createElement('button');
+  nestedButton.type = 'button';
+  nestedButton.className = 'q-btn q-example-load-nested';
+  nestedButton.textContent = 'Load nested example';
+  const exampleButtons = [exampleButton, nestedButton];
+
+  /**
+   * Fill all three slots from a staged example's index.json — `dir` is under
+   * examples/ (scripts/copy-example-assets.mjs stages both). Both buttons
+   * lock while either loads: two examples racing into the same slots would
+   * leave a mix of both.
+   */
+  const loadExample = (dir: string): void => {
+    for (const button of exampleButtons) button.disabled = true;
     void (async () => {
-      const base = `${import.meta.env.BASE_URL}examples/`;
+      const base = `${import.meta.env.BASE_URL}examples/${dir}`;
       const abs = (path: string): string => new URL(base + path, window.location.href).toString();
       const response = await fetch(abs('index.json'));
       if (!response.ok) throw new Error(`example manifest HTTP ${String(response.status)}`);
@@ -79,10 +96,19 @@ export function mountLoadView(container: HTMLElement, ctx: ShellContext): void {
         reportError(err, { fallbackCode: 'FETCH_HTTP' });
       })
       .finally(() => {
-        exampleButton.disabled = false;
+        for (const button of exampleButtons) button.disabled = false;
       });
+  };
+  exampleButton.addEventListener('click', () => {
+    loadExample('');
   });
-  example.append(exampleDuck, exampleBody, exampleButton);
+  nestedButton.addEventListener('click', () => {
+    loadExample('nested/');
+  });
+  const exampleActions = document.createElement('div');
+  exampleActions.className = 'q-example-actions';
+  exampleActions.append(exampleButton, nestedButton);
+  example.append(exampleDuck, exampleBody, exampleActions);
 
   // UIX-6: the input contract, stated once above the cards; the Required /
   // Optional tags on the cards themselves carry the per-slot half.

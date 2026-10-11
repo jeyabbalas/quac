@@ -26,7 +26,8 @@ pipeline rather than on a screen.
 **In the browser.** Open [jeyabbalas.github.io/quac](https://jeyabbalas.github.io/quac/) and press
 **Load example files** — that fills all three slots from a 101-row synthetic health-survey dataset
 with a 14-file JSON Schema and 22 QC rules, so you can press **Run QC** and read a real report
-before committing any of your own data to anything.
+before committing any of your own data to anything. **Load nested example** does the same for data
+whose values are lists, records and maps — see [Nested data](#nested-data).
 
 With your own data: drop a file into **Dataset**, drop a JSON Schema or a `.quac.csv` rules file
 into one of the other two slots, press **Run QC**, then **Download QC Report (.xlsx)**.
@@ -82,9 +83,9 @@ governs.
 | ------- | ----------------- | ------------------------------------------------------------ |
 | CSV     | `.csv`            | Delimiter sniffed; every column arrives as text              |
 | TSV     | `.tsv`, `.tab`    | As above                                                     |
-| JSON    | `.json`           | Must be a top-level array of objects; native types preserved |
+| JSON    | `.json`           | Must be a top-level array of objects; native types preserved, nested values too |
 | Excel   | `.xlsx`           | See sheet choice below                                       |
-| Parquet | `.parquet`, `.pq` | Native types preserved; by far the fastest route             |
+| Parquet | `.parquet`, `.pq` | Native types preserved, nested values too; by far the fastest route |
 
 Format is decided by **magic bytes first**, then extension, then content — so a Parquet file
 someone renamed `.csv` is still read as Parquet rather than as garbage.
@@ -96,6 +97,38 @@ and prints every sheet name — name one with `--sheet`.
 **Size.** Files over 100 MB warn that the run will be slow; QuaC refuses above 500 MB to keep the
 browser responsive. Parquet is dramatically smaller than the same data as CSV, and if you are
 anywhere near these numbers it is the format to use.
+
+---
+
+## Nested data
+
+A JSON or Parquet dataset can hold more than one value per cell — a list of visits, an address
+record, lab results by test name, a field whose type changes from row to row. QuaC keeps them
+nested, the way DuckDB reads them (`LIST`, `STRUCT`, `MAP`, `JSON`), and checks the inside of each:
+
+- **The JSON Schema describes the inside** with ordinary keywords — `items` for a list's items,
+  `properties` / `required` / `additionalProperties` for a record, `uniqueItems`, `minItems`,
+  `maxItems`, `propertyNames`, `anyOf` for values of several shapes. **Preview → JSON Schema** lists
+  each nested variable's fields under it (`visits[].date`).
+- **Findings say where inside the value** the problem is:
+  `130 exceeds the maximum 120 (at household[2].age).` List positions count from 1, as DuckDB SQL and
+  the report's value inspector (**F2** on a cell) count them; arrays inside a `JSON` value count
+  from 0, as JSONPath does.
+- **QC rules use DuckDB's nested functions** — `list_filter(visits, v -> v.systolic_bp > 180)`,
+  `list_contains(diagnoses, 'E11.9')`, `address.city`, `labs['hba1c']`,
+  `struct_update(address, country := upper(address.country))`,
+  `json_extract_string(notes, '$.interpreter')` — and a JavaScript correction receives a nested value
+  as the JSON it holds (an array, an object, dates as `"2024-05-29"`).
+- **The Excel report** writes a nested cell as its exact JSON text.
+
+DuckDB cannot tell a struct field that is missing from one that is `null`, and gives a struct every
+key that any row has. QuaC reads a `NULL` field as missing where the schema does not allow `null`
+there, so neither turns into a false finding. A CSV, TSV or Excel cell can carry a nested value as
+JSON text (`["a", "b"]`): under an `array` or `object` schema QuaC parses it, and reports text that
+does not parse.
+
+The [nested-data example](examples/nested/) — 40 study participants with lists, records and maps,
+their schema and ten QC rules — walks through all of it, finding by finding.
 
 ---
 
@@ -469,6 +502,12 @@ Worth knowing before you rely on it:
   same data as CSV will not get there. Convert first if you can.
 - **The Excel report's data sheet truncates at 1,048,575 rows** — Excel's own limit. Every row is
   still validated and every finding still counted; both that sheet and Run Info say what was cut.
+  A cell longer than Excel's 32,767-character limit — a long list's JSON, a long note — is cut too,
+  and says so in the cell.
+- **One nested case goes unseen.** DuckDB stores a missing struct field and an explicit `null` the
+  same way, so an explicit `null` in a field the schema neither requires nor allows `null` in passes
+  unnoticed (a missing *required* field is still reported). Integers inside nested values past
+  ±(2^53 − 1) are checked as the nearest double, with a warning saying where.
 - **A run is capped, and says so.** At most 10,000 violating rows are individually flagged per rule
   (200 for a dataset-scope rule) and 200,000 flags are materialized per run. Exact counts survive
   the caps — the Repeat Offenders sheet and the summary panel report the true totals either way, and

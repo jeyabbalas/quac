@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jeyabbalas.github.io/quac/examples/nested/participants.schema.json",
+  "title": "Study participants",
+  "description": "One record per enrolled participant. Most variables hold more than one value: an address, the people in the household, every clinic visit, lab results by test name. QuaC's nested-data example.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "title": "Participant",
+    "allOf": [
+      {
+        "title": "Enrollment",
+        "description": "Who the participant is and when they joined.",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "title": "Participant ID",
+            "description": "P followed by four digits.",
+            "pattern": "^P[0-9]{4}$"
+          },
+          "enrolled_on": {
+            "$ref": "#/$defs/isoDate",
+            "title": "Enrollment date"
+          },
+          "age": {
+            "type": "integer",
+            "title": "Age at enrollment",
+            "minimum": 18,
+            "maximum": 100,
+            "x-unit": "years"
+          }
+        }
+      },
+      {
+        "title": "Contact",
+        "description": "Where and how to reach the participant.",
+        "properties": {
+          "address": {
+            "type": "object",
+            "title": "Home address",
+            "description": "A struct: one value with named fields.",
+            "properties": {
+              "street": { "type": "string", "title": "Street" },
+              "city": { "type": "string", "title": "City" },
+              "postcode": {
+                "type": "string",
+                "title": "Postcode",
+                "pattern": "^[A-Z0-9][A-Z0-9 -]{2,8}$"
+              },
+              "country": {
+                "type": "string",
+                "title": "Country",
+                "enum": ["US", "CA", "MX"],
+                "enumDescriptions": ["United States", "Canada", "Mexico"]
+              }
+            },
+            "required": ["city", "postcode"],
+            "additionalProperties": false
+          },
+          "phones": {
+            "type": "array",
+            "title": "Phone numbers",
+            "description": "A list of strings: digits with an optional leading +, no spaces.",
+            "items": { "$ref": "#/$defs/phone" },
+            "maxItems": 3,
+            "uniqueItems": true
+          }
+        }
+      },
+      {
+        "title": "Household",
+        "description": "Everyone who lives with the participant, the participant included.",
+        "properties": {
+          "household": {
+            "type": "array",
+            "title": "Household roster",
+            "description": "A list of structs: one entry per person, the participant as 'self'.",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "First name" },
+                "relation": {
+                  "type": "string",
+                  "title": "Relation to the participant",
+                  "enum": ["self", "spouse", "partner", "child", "parent", "sibling", "other"]
+                },
+                "age": {
+                  "type": ["integer", "null"],
+                  "title": "Age",
+                  "description": "Null when the participant did not know it.",
+                  "minimum": 0,
+                  "maximum": 120,
+                  "x-unit": "years"
+                }
+              },
+              "required": ["name", "relation"],
+              "additionalProperties": false
+            }
+          }
+        }
+      },
+      {
+        "title": "Clinical",
+        "description": "Clinic visits, lab results and diagnoses.",
+        "properties": {
+          "visits": {
+            "type": "array",
+            "title": "Clinic visits",
+            "description": "A list of structs, one per visit, at least one.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": { "$ref": "#/$defs/isoDate", "title": "Visit date" },
+                "weight_kg": {
+                  "type": ["number", "null"],
+                  "title": "Weight",
+                  "minimum": 30,
+                  "maximum": 250,
+                  "x-unit": "kg"
+                },
+                "systolic_bp": {
+                  "type": "integer",
+                  "title": "Systolic blood pressure",
+                  "minimum": 70,
+                  "maximum": 250,
+                  "x-unit": "mmHg"
+                },
+                "fasting": { "type": "boolean", "title": "Fasting at the visit" }
+              },
+              "required": ["date", "systolic_bp"],
+              "additionalProperties": false
+            }
+          },
+          "labs": {
+            "type": "object",
+            "title": "Lab results",
+            "description": "An open object: lab test name → result. Any lowercase test name is allowed; every result is a non-negative number.",
+            "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+            "additionalProperties": { "type": "number", "minimum": 0 }
+          },
+          "diagnoses": {
+            "type": "array",
+            "title": "Diagnoses",
+            "description": "A list of ICD-10 codes, each at most once.",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][0-9]{2}(\\.[0-9]{1,2})?$",
+              "title": "ICD-10 code"
+            },
+            "uniqueItems": true
+          }
+        }
+      },
+      {
+        "title": "Consent and notes",
+        "description": "What the participant agreed to, and anything else worth knowing.",
+        "properties": {
+          "consent": {
+            "type": "object",
+            "title": "Consent",
+            "properties": {
+              "data_sharing": { "type": "boolean", "title": "Agreed to data sharing" },
+              "recontact": { "type": "boolean", "title": "Agreed to be recontacted" },
+              "signed_on": { "$ref": "#/$defs/isoDate", "title": "Consent signed on" }
+            },
+            "required": ["data_sharing", "signed_on"],
+            "additionalProperties": false
+          },
+          "notes": {
+            "title": "Notes",
+            "description": "Free text, or an object with the interpreter language, or null. Its type changes from record to record, so DuckDB keeps it as JSON.",
+            "anyOf": [
+              { "type": "string", "maxLength": 500 },
+              {
+                "type": "object",
+                "properties": {
+                  "interpreter": {
+                    "type": "string",
+                    "title": "Interpreter language",
+                    "enum": ["es", "fr", "zh", "vi", "ar"]
+                  }
+                }
+              },
+              { "type": "null" }
+            ]
+          }
+        }
+      }
+    ],
+    "required": ["participant_id", "enrolled_on", "age", "address", "household", "visits", "consent"],
+    "unevaluatedProperties": false
+  },
+  "$defs": {
+    "isoDate": {
+      "type": "string",
+      "format": "date",
+      "description": "A calendar date, YYYY-MM-DD."
+    },
+    "phone": {
+      "type": "string",
+      "pattern": "^\\+?[0-9]{10,15}$",
+      "title": "Phone number"
+    }
+  }
+}

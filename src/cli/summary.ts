@@ -17,8 +17,32 @@ import type { FlagStoreSummary } from '../core/flags/flagStore';
 import type { RunStage } from '../core/pipeline';
 import type { RuleRunStatus } from '../core/rules/types';
 import type { RunQuacResult } from '../headless/run';
+import type { FailOn } from './args';
 
 export const SUMMARY_SCHEMA_VERSION = 1;
+
+/** headless.md §6 codes a finished run can end with (the rest are refusals). */
+export const EXIT_OK = 0;
+export const EXIT_RUN_FAILURE = 4;
+export const EXIT_FAIL_ON = 6;
+
+/**
+ * The exit code of a run that produced its report.
+ *
+ * A schema stage that did not finish is §6's exit 4 — a run failure — whatever
+ * `--fail-on` says: its findings are missing, not merely few, so a script
+ * gating on "no errors" must not read the partial report as a pass. (The
+ * report and summary are still written, as for exit 6.) Other non-prepare
+ * stage errors stay non-fatal, as §6 says. Otherwise `--fail-on`: `error`
+ * fails on any error, `warning` on any error or warning, `none` never.
+ */
+export function exitCodeFor(failOn: FailOn, result: RunQuacResult): number {
+  if (result.artifacts.stageErrors.some((e) => e.stage === 'schema')) return EXIT_RUN_FAILURE;
+  if (failOn === 'none') return EXIT_OK;
+  const { error, warning } = result.artifacts.flagStore.summary().severityTotals;
+  const hit = failOn === 'error' ? error > 0 : error + warning > 0;
+  return hit ? EXIT_FAIL_ON : EXIT_OK;
+}
 
 export interface SummaryJson {
   summarySchemaVersion: number;

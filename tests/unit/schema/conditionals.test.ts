@@ -4,7 +4,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { columnDigest } from '../../../src/core/schema/column-meta';
-import { extractConditionals } from '../../../src/core/schema/conditionals';
+import {
+  conditionalOneLiner,
+  describeCondition,
+  extractConditionals,
+} from '../../../src/core/schema/conditionals';
 import type { ConditionalRule } from '../../../src/core/schema/conditionals';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
 import type { SchemaSet } from '../../../src/core/schema/types';
@@ -131,5 +135,77 @@ describe('extractConditionals over HESP', () => {
     const bare = extractConditionals(set, 'core/core.schema.json');
     const rule = bare.find((r) => r.index === 12);
     expect(rule?.targets[0]?.text).toBe('must be -666');
+  });
+});
+
+describe('extractConditionals beyond the HESP shapes', () => {
+  const digest = (allOf: unknown[]): ConditionalRule[] =>
+    extractConditionals(
+      { files: [{ fileId: 'r.json', json: { type: 'array', items: { type: 'object', allOf } } }] } as unknown as SchemaSet,
+      'r.json',
+    );
+
+  it('digests else symmetrically: its targets are marked, its one-liner says "unless"', () => {
+    const [rule] = digest([
+      {
+        if: { properties: { kind: { const: 1 } }, required: ['kind'] },
+        then: { properties: { b: { const: 'x' } } },
+        else: { properties: { b: { const: 'y' } }, required: ['why'] },
+      },
+    ]);
+    expect(rule?.conditionText).toBe('kind = 1');
+    expect(rule?.targets).toEqual([
+      { column: 'b', kind: 'const', value: 'x', text: "must be 'x'" },
+      { column: 'b', kind: 'const', value: 'y', text: "must be 'y'", clause: 'else' },
+      { column: 'why', kind: 'required', text: 'is required', clause: 'else' },
+    ]);
+    if (rule === undefined) throw new Error('no rule');
+    expect(rule.targets.map((t) => conditionalOneLiner(rule, t))).toEqual([
+      "when kind = 1, must be 'x'",
+      "unless kind = 1, must be 'y'",
+      "'why' is required unless kind = 1",
+    ]);
+  });
+
+  it('never leaves the condition blank: a bare required, a range, an unwordable condition', () => {
+    const rules = digest([
+      { if: { required: ['kind'] }, then: { properties: { b: { maximum: 5 } } } },
+      { if: { properties: { age: { minimum: 18, maximum: 65 } }, required: ['age'] }, then: { required: ['job'] } },
+      { if: { properties: { tags: { contains: { const: 'x' } } } }, then: { required: ['t'] } },
+    ]);
+    expect(rules.map((r) => r.conditionText)).toEqual([
+      "'kind' is present",
+      'age is between 18 and 65',
+      'the condition at #/items/allOf/2/if holds',
+    ]);
+    expect(rules[0]?.targets).toEqual([{ column: 'b', kind: 'schema', text: 'must be at most 5' }]);
+  });
+
+  it('describes generic targets by what they ask, keeping the HESP cross-column fallback', () => {
+    const [rule] = digest([
+      {
+        if: { properties: { a: { const: 1 } }, required: ['a'] },
+        then: { properties: { e: { enum: ['x', 'y'] }, p: { pattern: '^Z' }, z: false } },
+      },
+    ]);
+    expect(rule?.targets.map((t) => t.text)).toEqual(["must be one of 'x', 'y'", 'must match ^Z', 'must be absent']);
+  });
+});
+
+describe('describeCondition', () => {
+  it('words the common shapes, and gives up (null) on what it cannot word', () => {
+    expect(describeCondition({ properties: { a: { const: 1 }, b: { const: 'x' } }, required: ['a', 'b'] })).toBe(
+      "a = 1 and b = 'x'",
+    );
+    expect(describeCondition({ anyOf: [{ properties: { a: { const: 1 } } }, { properties: { b: { const: 1 } } }] })).toBe(
+      'a = 1 or b = 1',
+    );
+    expect(describeCondition({ properties: { a: { not: { const: 0 } } } })).toBe('a is not 0');
+    expect(describeCondition({ properties: { a: { enum: [1, 2] } } })).toBe('a is one of 1, 2');
+    expect(describeCondition({ type: 'object', required: ['email'] })).toBe("'email' is present");
+    expect(describeCondition({ properties: { country: { const: 'US' } } }, 'address')).toBe("address.country = 'US'");
+    expect(describeCondition({ minimum: 18 }, 'age')).toBe('age is at least 18');
+    expect(describeCondition({ minProperties: 2 })).toBeNull();
+    expect(describeCondition(true)).toBeNull();
   });
 });

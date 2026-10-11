@@ -1,21 +1,25 @@
 /**
  * Flag → data-table annotation plan (qc-report-spec.md §2). Pure and
  * node-testable: the report view applies the plan via annotations.addMany
- * after every loadData (annotations do not survive a reload). Cap policy: at
- * most `cap` CELL annotations, filled errors → warnings → info; row/column
- * scope are always included (cheap); dataset-scope flags are never
+ * after every loadData (annotations do not survive a reload). Every cell, row
+ * and column flag the store holds is painted; dataset-scope flags are never
  * annotations — they belong to the panels / Sheet 3.
+ *
+ * There is no paint cap. Up to data-table 0.9 the grid scanned every
+ * annotation on each lookup and repainted every visible cell on each change,
+ * so QuaC painted at most 20,000 cells. 0.10 indexes the store and renders
+ * from O(1) per-row, per-column and per-cell summaries, holding a million;
+ * the FlagStore's own materialization cap (FLAG_CAP_DEFAULT, 200,000) is the
+ * only bound left, and it is well inside that.
  */
 import { renderFlagMessage } from '../flags/messages';
 import type { QCFlag } from '../flags/flag';
 import type { FlagStore } from '../flags/flagStore';
 
-export const ANNOTATION_CAP = 20_000;
-
 /**
- * Structural subset of data-table v0.5.1's NewAnnotation (kept local so this
- * module stays node-testable). rowId = flag.row is valid because the display
- * export orders by __row__ with __row__ excluded → __rowid__ === __row__ (V7).
+ * Structural subset of data-table's NewAnnotation (kept local so this module
+ * stays node-testable). rowId = flag.row is valid because the display export
+ * orders by __row__ with __row__ excluded → __rowid__ === __row__ (V7).
  */
 export interface PlannedAnnotation {
   scope: 'cell' | 'row' | 'column';
@@ -34,15 +38,9 @@ export interface PlannedAnnotation {
 }
 
 export interface AnnotationPlan {
-  /** Row/column-scope first, then capped cells in errors→warnings→info order. */
+  /** Every non-dataset flag the store holds, in the store's entry order. */
   items: PlannedAnnotation[];
-  /** Cell-scope candidates before the cap. */
-  cellTotal: number;
-  cellPainted: number;
-  capped: boolean;
 }
-
-const SEVERITY_ORDER: readonly QCFlag['severity'][] = ['error', 'warning', 'info'];
 
 function toAnnotation(flag: QCFlag): PlannedAnnotation | null {
   const base = {
@@ -74,38 +72,11 @@ function toAnnotation(flag: QCFlag): PlannedAnnotation | null {
  * Build the paint plan from the store's deterministic entry order (row →
  * pipeline category → ruleId). Dedupe entries paint once regardless of count.
  */
-export function buildAnnotationPlan(
-  flagStore: FlagStore,
-  opts: { cap?: number } = {},
-): AnnotationPlan {
-  const cap = opts.cap ?? ANNOTATION_CAP;
-  const rowCol: PlannedAnnotation[] = [];
-  const cellsBySeverity: Record<QCFlag['severity'], PlannedAnnotation[]> = {
-    error: [],
-    warning: [],
-    info: [],
-  };
-
+export function buildAnnotationPlan(flagStore: FlagStore): AnnotationPlan {
+  const items: PlannedAnnotation[] = [];
   for (const entry of flagStore.all()) {
     const annotation = toAnnotation(entry.flag);
-    if (annotation === null) continue;
-    if (annotation.scope === 'cell') cellsBySeverity[annotation.severity].push(annotation);
-    else rowCol.push(annotation);
+    if (annotation !== null) items.push(annotation);
   }
-
-  const cellTotal =
-    cellsBySeverity.error.length + cellsBySeverity.warning.length + cellsBySeverity.info.length;
-  const cells: PlannedAnnotation[] = [];
-  for (const severity of SEVERITY_ORDER) {
-    const room = cap - cells.length;
-    if (room <= 0) break;
-    cells.push(...cellsBySeverity[severity].slice(0, room));
-  }
-
-  return {
-    items: [...rowCol, ...cells],
-    cellTotal,
-    cellPainted: cells.length,
-    capped: cellTotal > cells.length,
-  };
+  return { items };
 }

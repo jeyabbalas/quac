@@ -23,6 +23,7 @@ import {
   QUAC_DISPLAY,
   copyToParquetBytes,
   nextDisplayTableName,
+  parquetSource,
 } from '../../../core/bridge/tables';
 import { PROGRESS_LABELS, createDuckProgress } from '../../components/duckProgress';
 import { rowFocusSQL } from '../../../core/report/rowFocus';
@@ -34,8 +35,6 @@ export interface SeverityToggles {
   warning: boolean;
   info: boolean;
 }
-
-const ADD_MANY_CHUNK = 2000;
 
 /**
  * The one thing said about a grid build that failed. Engine text (DuckDB
@@ -83,12 +82,11 @@ async function ensureTable(
   showLocalProgress: boolean,
 ): Promise<DataTable> {
   if (table !== undefined && tableGeneration === generation) {
-    // Deliberately option-less: with no tableName, data-table mints a fresh
-    // generated one (and so a fresh virtual parquet path) for every refresh.
-    // Do NOT "fix" this by passing a stable name — reusing one path across
-    // loads of different sizes is exactly the UX-01 failure (see
-    // nextDisplayTableName). This is why same-dataset re-runs never broke.
-    if (bytes !== null) await table.loadData(bytes.slice().buffer);
+    // Option-less: with no tableName, data-table loads under a generated one,
+    // a fresh table for every refresh. (Through 0.8 this was also what kept
+    // re-runs off one virtual parquet path — the UX-01 failure; since 0.9 the
+    // loader names that file itself. See nextDisplayTableName.)
+    if (bytes !== null) await table.loadData(parquetSource(bytes), { sourceFormat: 'parquet' });
     return table;
   }
 
@@ -113,10 +111,10 @@ async function ensureTable(
     const source = bytes ?? (await copyToParquetBytes(bridge, DISPLAY_EXPORT_SQL));
     const t = await createDataTable({
       container: gridHost,
-      source: source.slice().buffer,
+      source: parquetSource(source),
       sourceFormat: 'parquet',
-      // A FRESH name per build (UX-01) — never the bare constant. See
-      // nextDisplayTableName: the name is also the duckdb-wasm parquet path.
+      // A fresh name per build (UX-01, see nextDisplayTableName — no longer
+      // load-bearing since data-table 0.9, kept because it costs nothing).
       tableName: nextDisplayTableName(QUAC_DISPLAY),
       bridge,
       persistence: false,
@@ -166,8 +164,8 @@ export function renderGrid(host: HTMLElement, generation: number): Promise<void>
 
 /**
  * The run presenter body (pipeline annotate stage): refresh the display bytes,
- * repaint annotations (chunked addMany, they do not survive the reload),
- * re-apply the severity filter and the aggregated header tooltips.
+ * repaint annotations (they do not survive the reload), re-apply the severity
+ * filter and the aggregated header tooltips.
  */
 export function presentPayload(
   host: HTMLElement,
@@ -181,10 +179,12 @@ export function presentPayload(
     // PlannedAnnotation is structurally a NewAnnotation by construction
     // (annotations.ts emits rowId/column per scope); the cast bridges the
     // non-discriminated planner type to the library's union.
-    const items = payload.annotations.items as unknown as NewAnnotation[];
-    for (let i = 0; i < items.length; i += ADD_MANY_CHUNK) {
-      t.annotations.addMany(items.slice(i, i + ADD_MANY_CHUNK));
-    }
+    //
+    // ONE addMany, however many flags: data-table 0.10 checks the whole batch
+    // before storing any of it and fires one change event per call, which the
+    // grid hears once. Chunking bought nothing — the loop never yielded — and
+    // turned 200,000 flags into 100 events.
+    t.annotations.addMany(payload.annotations.items as unknown as NewAnnotation[]);
     t.annotations.setSeverityFilter(severityFilterShape(severity));
     setTooltips(t, payload.tooltips);
   });

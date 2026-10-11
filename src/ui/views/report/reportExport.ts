@@ -15,7 +15,6 @@ import { reportRowsSQL } from '../../../core/bridge/tables';
 import { triggerDownload } from '../../components/download';
 import { buildReportModel } from '../../../core/report/reportModel';
 import { writeReportWorkbook } from '../../../core/report/excelWriter';
-import { ANNOTATION_CAP } from '../../../core/report/annotations';
 import { FLAG_CAP_DEFAULT } from '../../../core/flags/flagStore';
 import { columnDigest } from '../../../core/schema/column-meta';
 import { schemaState } from '../../../core/schema/schema-store';
@@ -63,10 +62,7 @@ function buildRunInfo(dataset: { name: string; format: string }, artifacts: RunA
     ruleFileSummaries: ruleFiles.map((p) => ({ name: p.file.name, ruleCount: p.file.rules.length })),
     durations,
     correctionsApplied: artifacts.correctionsApplied,
-    caps: [
-      { label: 'Flags materialized', value: FLAG_CAP_DEFAULT.toLocaleString('en-US') },
-      { label: 'Cell annotations painted', value: ANNOTATION_CAP.toLocaleString('en-US') },
-    ],
+    caps: [{ label: 'Flags materialized', value: FLAG_CAP_DEFAULT.toLocaleString('en-US') }],
     stageErrors: artifacts.stageErrors.map((e) => ({ stage: e.stage, message: e.message })),
   };
 }

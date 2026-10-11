@@ -15,16 +15,22 @@ export const QUAC_STUDIO_DISPLAY = 'quac_studio_display';
 
 /**
  * Base names for the two data-table grids, suffixed per instance (UX-01).
- * data-table's parquet loader derives its duckdb-wasm virtual file from the
- * table name — `registerFileBuffer('<tableName>.parquet', bytes)` … `finally
- * { dropFile(...) }` — so a FIXED name means every grid build registers and
- * drops the same path with different-sized content. DuckDB keeps per-path
+ *
+ * Through data-table 0.8 the parquet loader derived its duckdb-wasm virtual
+ * file from the table name — `registerFileBuffer('<tableName>.parquet', …)` …
+ * `finally { dropFile(...) }` — so a FIXED name made every grid build register
+ * and drop the same path with different-sized content. DuckDB kept per-path
  * state across that cycle: the second build of a differently shaped dataset
- * reads the new bytes against the old file's extent and fails with
- * "No magic bytes found at end of file", unrecoverably (only a reload frees
- * the path). A fresh name per build gives a fresh path, so nothing is
- * inherited. Monotonic like ingestController's generation counter: never
- * reused within a session, even after a table is dropped.
+ * read the new bytes against the old file's extent and failed with "No magic
+ * bytes found at end of file", unrecoverably. A fresh name per build was the
+ * fix.
+ *
+ * Since 0.9 the loader names its file itself (`__dt_source_<n>`, upstream
+ * 9d2827c2), so that collision cannot recur: displayGridReshape's rebuild
+ * passes with the bare constant too (checked on 0.10.0). The suffix stays —
+ * it costs nothing and keeps every build's table distinct in DuckDB — but it
+ * is no longer load-bearing. Monotonic like ingestController's generation
+ * counter: never reused within a session, even after a table is dropped.
  */
 let displayTableSeq = 0;
 export function nextDisplayTableName(base: string): string {
@@ -106,6 +112,26 @@ export async function copyToParquetBytes(
   selectSql: string,
 ): Promise<Uint8Array> {
   return bridge.exportToBuffer(selectSql, 'parquet');
+}
+
+/**
+ * Display bytes as the grids hand them to data-table: a Blob, not an
+ * ArrayBuffer. Since 0.9 data-table registers a Blob as a file handle and
+ * DuckDB reads it from disk as it decodes; an ArrayBuffer is copied into
+ * DuckDB's wasm memory first — the whole file, in a heap that grows to its
+ * high-water mark and never shrinks — and its loader's memory check counts the
+ * file against the load. Unnamed binary data is taken to be Parquet.
+ *
+ * The Blob constructor refuses a view over a SharedArrayBuffer, so such a view
+ * is copied out first. None arrives in practice: the worker's export transfers
+ * a plain ArrayBuffer, and the page is not cross-origin isolated.
+ */
+export function parquetSource(bytes: Uint8Array): Blob {
+  return new Blob([onArrayBuffer(bytes) ? bytes : bytes.slice()]);
+}
+
+function onArrayBuffer(bytes: Uint8Array): bytes is Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer;
 }
 
 /**

@@ -5,8 +5,9 @@
  * Gate: serious + critical only, per `ui-design.md §7`.
  *
  * Third-party DOM is excluded from the gate (user decision): QuaC does not
- * author data-table's `.dt-root` or CodeMirror's `.cm-editor` markup and cannot
- * fix violations inside them from here. They are not ignored, though — every
+ * author data-table's `.dt-root`, CodeMirror's `.cm-editor` or
+ * json-schema-data-dictionary's `<json-data-dictionary>` markup and cannot fix
+ * violations inside them from here. They are not ignored, though — every
  * scan that has one of those subtrees on screen also runs a NON-GATING
  * diagnostic pass scoped to it and logs what it finds, so the upstream to-do
  * list in `phase-19-polish-a11y.md`'s Deferred notes stays honest.
@@ -33,7 +34,7 @@ test.describe.configure({ timeout: 300_000 });
 const GATED = new Set(['serious', 'critical']);
 
 /** Subtrees QuaC does not author. Excluded from the gate, scanned separately. */
-const THIRD_PARTY = ['.dt-root', '.cm-editor'] as const;
+const THIRD_PARTY = ['.dt-root', '.cm-editor', 'json-data-dictionary'] as const;
 
 /**
  * One readable line per violation. Asserting on THESE rather than on the raw
@@ -101,12 +102,16 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
 
   // axe skips [hidden] subtrees, so each Preview panel must be ACTIVATED
   // before it is scanned — otherwise two thirds of the component (the
-  // dictionary's twelve tables, its search field, the rules surface) escape
-  // the gate entirely.
+  // dictionary panel's head and notes, the rules surface) escape the gate
+  // entirely. The dictionary itself is the package's component: diagnosed,
+  // not gated, like the grid and the editors.
   for (const name of ['JSON Schema', 'QC rules']) {
     await page.locator('.q-preview .q-paneltab', { hasText: name }).click();
     if (name === 'JSON Schema') {
-      await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+      await expect(page.locator('json-data-dictionary [data-dd-category]')).toHaveCount(12, {
+        timeout: 30_000,
+      });
+      await diagnoseThirdParty(page, 'Load → JSON Schema');
     } else {
       // The highlighter is a lazy chunk; its spans are QuaC-authored markup
       // and must clear colour contrast, so wait for them before scanning.
@@ -119,15 +124,11 @@ test('Load view — first run, all slots filled, and the Share modal', async ({ 
   }
 
   // Collapsed is a state of its own — a stack of <summary> controls and
-  // nothing else — and by the same rule each panel needs its own scan.
+  // nothing else — and by the same rule it needs its own scan. (The QC rules
+  // panel's collapse is QuaC markup; the dictionary's is the package's.)
   await page.locator('.q-rp-toggleall').click();
   await expect(page.locator('.q-rp-table:visible')).toHaveCount(0);
   await expectNoSeriousViolations(page, 'Load → QC rules (collapsed)');
-
-  await page.locator('.q-preview .q-paneltab', { hasText: 'JSON Schema' }).click();
-  await page.locator('.q-dd-toggleall').click();
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
-  await expectNoSeriousViolations(page, 'Load → JSON Schema (collapsed)');
 
   await page.getByRole('button', { name: 'Share' }).click();
   await expect(page.getByRole('dialog', { name: 'Share this configuration' })).toBeVisible();

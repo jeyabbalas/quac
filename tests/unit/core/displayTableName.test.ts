@@ -1,10 +1,11 @@
 /**
- * UX-01: `nextDisplayTableName` is what keeps two data-table builds off one
- * duckdb-wasm parquet path (the name IS the path, `<tableName>.parquet`), so
- * the only property that matters is that a name is never handed out twice —
- * including across a table that has since been dropped. The reshape behaviour
- * it buys is proven in displayGridReshape.browser.test.ts; this pins the
- * contract in node.
+ * UX-01: `nextDisplayTableName` kept two data-table builds off one duckdb-wasm
+ * parquet path while the library derived that path from the table name
+ * (`<tableName>.parquet`, through 0.8). Since 0.9 the library generates the
+ * path itself, so the suffix is no longer load-bearing — but the property it
+ * promises is still that a name is never handed out twice, including across a
+ * table that has since been dropped, and this pins that contract in node. The
+ * reshape behaviour is proven end to end in displayGridReshape.browser.test.ts.
  */
 import { describe, expect, it } from 'vitest';
 import {

@@ -6,7 +6,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 const INGEST_TIMEOUT = 90_000;
@@ -57,164 +57,114 @@ test('the dataset type row flips from VARCHAR to the schema cast', async ({ page
   await expect(page.locator('.q-preview-table thead th.q-num').first()).toBeVisible();
 });
 
-test('the data dictionary lists 265 variables under 12 categories', async ({ page }) => {
-  await loadExample(page);
-  await tab(page, 'JSON Schema').click();
+// ---- JSON Schema → data dictionary ------------------------------------------
+// The panel is json-schema-data-dictionary's <json-data-dictionary>; its
+// markup sits in an open shadow root, which Playwright's CSS locators pierce.
+// What QuaC owns is pinned here — the head, the table it hands over, the look,
+// running without semantic search. The component's own interactions (section
+// toggles, Expand/Collapse, resizing, ranking) are the package's to test.
 
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
-  await expect(page.locator('.q-dd-count')).toHaveText('265 variables');
-  await expect(page.getByText('JSON Schema formatted as a data dictionary')).toBeVisible();
+const dictionary = (page: Page): Locator => page.locator('.q-dd json-data-dictionary');
 
-  const first = page.locator('.q-dd-cat').first();
-  await expect(first.locator('.q-dd-cattitle')).toHaveText(
-    'HESP CORE - Identification and survey administration',
-  );
-  await expect(first.locator('.q-dd-catcount')).toHaveText('16 variables');
-
-  // The scroller is its own tab stop with its own name (axe:
-  // scrollable-region-focusable), named distinctly from the tab panel.
-  const scroll = page.locator('.q-dd-scroll');
-  await expect(scroll).toHaveAttribute('aria-label', 'Data dictionary variables');
-  await expect(scroll).toHaveAttribute('tabindex', '0');
-});
-
-test('a coded variable shows its range, sentinels and unit', async ({ page }) => {
-  await loadExample(page);
-  await tab(page, 'JSON Schema').click();
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
-
-  const row = page
-    .locator('.q-dd-table tbody tr')
-    .filter({ has: page.locator('.q-dd-name', { hasText: 'household_size' }) })
+/** A dictionary row by its variable name, exactly. */
+const dictRow = (page: Page, name: string): Locator =>
+  dictionary(page)
+    .locator('[data-dd-row]')
+    .filter({ has: page.locator('th.dd-col-name code', { hasText: new RegExp(`^${name}$`) }) })
     .first();
-  await expect(row).toContainText('integer + coded values');
-  await expect(row).toContainText('1–20');
-  await expect(row).toContainText('persons');
-  // Byte-identical to tooltips.ts, so QuaC says the same thing in both places.
-  await expect(row).toContainText('Missing-value codes');
-  await expect(row).toContainText('-888');
-});
 
-test('Format is folded into Type, not a column of its own', async ({ page }) => {
+async function openDictionary(page: Page): Promise<void> {
   await loadExample(page);
   await tab(page, 'JSON Schema').click();
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
-
-  const headers = page.locator('.q-dd-table').first().locator('thead th');
-  await expect(headers).toHaveCount(6);
-  await expect(headers).toHaveText([
-    'Variable',
-    'Description',
-    'Type',
-    'Valid values',
-    'Constraints',
-    'Additional information',
-  ]);
-
-  // record_id is one of the 5 HESP variables that carry a format; it now sits
-  // under its own type rather than in an eighty-pixel column of its own.
-  const type = page
-    .locator('.q-dd-table tbody tr')
-    .filter({ has: page.locator('.q-dd-name', { hasText: 'record_id' }) })
-    .first()
-    .locator('td')
-    .nth(1);
-  await expect(type).toContainText('string');
-  await expect(type.locator('.q-dd-format')).toHaveText(
-    'Matches pattern ^HH[0-9]{8}_W(0[1-9]|1[0-9]|20)$',
-  );
-  // The other 260 print nothing where the em-dash column used to be.
-  await expect(page.locator('.q-dd-format')).toHaveCount(5);
-});
-
-test('search narrows the count, hides empty categories, and clears', async ({ page }) => {
-  await loadExample(page);
-  await tab(page, 'JSON Schema').click();
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
-
-  const search = page.getByLabel('Search variables');
-  await search.fill('household_size');
-  await expect(page.locator('.q-dd-count')).toHaveText('1 of 265 variables');
-  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(1);
-  await expect(page.locator('.q-dd-table tbody tr:visible')).toHaveCount(1);
-
-  await search.fill('zzzz');
-  await expect(page.getByText("No variables match 'zzzz'.")).toBeVisible();
-  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(0);
-
-  await search.fill('');
-  await expect(page.locator('.q-dd-count')).toHaveText('265 variables');
-  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(12);
-});
-
-async function dictionary(page: Page): Promise<void> {
-  await loadExample(page);
-  await tab(page, 'JSON Schema').click();
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12, { timeout: 30_000 });
+  await expect(dictionary(page).locator('[data-dd-category]')).toHaveCount(12, {
+    timeout: 30_000,
+  });
 }
 
-test('a category header collapses its table and keeps its count', async ({ page }) => {
-  await dictionary(page);
+test('the data dictionary lists 265 variables under 12 categories', async ({ page }) => {
+  await openDictionary(page);
 
-  const first = page.locator('.q-dd-cat').first();
-  const head = first.locator('.q-dd-cathead');
-  await expect(first.locator('.q-dd-table')).toBeVisible();
+  // QuaC's head carries the shape, where every Preview panel puts it…
+  await expect(page.locator('.q-preview-meta', { hasText: 'categories' })).toHaveText(
+    '12 categories · 265 variables',
+  );
+  await expect(page.getByText('JSON Schema formatted as a data dictionary')).toBeVisible();
 
-  await head.click();
-  await expect(first.locator('.q-dd-table')).toBeHidden();
-  // What is left is the header — and it still says how much is behind it.
-  await expect(first.locator('.q-dd-catcount')).toHaveText('16 variables');
-  await expect(page.locator('.q-dd-cat')).toHaveCount(12);
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(11);
-
-  await head.click();
-  await expect(first.locator('.q-dd-table')).toBeVisible();
+  // …and the component its live readout, under the schema's own title.
+  const dd = dictionary(page);
+  await expect(dd.locator('[data-dd-count]')).toHaveText('265 variables');
+  await expect(dd.locator('.dd-title')).toHaveText(
+    'HESP - Household Economic Security Panel CORE table',
+  );
+  const first = dd.locator('[data-dd-category]').first();
+  await expect(first.locator('[data-dd-category-toggle]')).toContainText(
+    'HESP CORE - Identification and survey administration',
+  );
+  await expect(first.locator('[data-dd-cat-count]')).toHaveText('16');
+  // HESP is under the component's lazy-paging threshold, so every row renders.
+  await expect(dd.locator('[data-dd-row]')).toHaveCount(265);
 });
 
-test('Collapse all folds every category and the label flips', async ({ page }) => {
-  await dictionary(page);
+test('a coded variable shows its range, special codes and unit', async ({ page }) => {
+  await openDictionary(page);
 
-  const toggle = page.locator('.q-dd-toggleall');
-  await expect(toggle).toHaveText('Collapse all');
-
-  await toggle.click();
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
-  await expect(page.locator('.q-dd-cathead:visible')).toHaveCount(12); // a table of contents
-  await expect(toggle).toHaveText('Expand all');
-
-  // The label is derived, so opening ONE by hand is enough to flip it back.
-  await page.locator('.q-dd-cathead').first().click();
-  await expect(toggle).toHaveText('Collapse all');
-
-  await toggle.click();
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(0);
-  await toggle.click();
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(12);
+  const row = dictRow(page, 'household_size');
+  await expect(row).toContainText('integer + coded values');
+  await expect(row).toContainText('1–20');
+  await expect(row).toContainText('-888');
+  await expect(row).toContainText('persons');
 });
 
-test('search opens a collapsed category, and clearing it collapses back', async ({ page }) => {
-  await dictionary(page);
+test('search ranks the exact name first, empties, and clears', async ({ page }) => {
+  await openDictionary(page);
+  const dd = dictionary(page);
+  const search = dd.getByRole('searchbox', { name: 'Search variables' });
 
-  const owner = page
-    .locator('.q-dd-cat')
-    .filter({ has: page.locator('.q-dd-name', { hasText: 'household_size' }) })
-    .first();
-  await owner.locator('.q-dd-cathead').click();
-  await expect(owner.locator('.q-dd-table')).toBeHidden();
-
-  // A match you cannot see is a filter that lies.
-  const search = page.getByLabel('Search variables');
+  // The variable itself, then the one whose constraint names it.
   await search.fill('household_size');
-  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(1);
-  await expect(owner.locator('.q-dd-table')).toBeVisible();
-  await expect(page.locator('.q-dd-table tbody tr:visible')).toHaveCount(1);
+  await expect(dd.locator('[data-dd-count]')).toHaveText('2 / 265 variables');
+  await expect(dd.locator('[data-dd-results] [data-dd-row]').first()).toContainText(
+    'household_size',
+  );
 
-  // Clearing hands back exactly what the user had open: this one shut, the
-  // other eleven not.
+  // QuaC runs without semantic search (it would download a model from Hugging
+  // Face), so an empty result says so plainly and never "looks for related".
+  await search.fill('zzzz');
+  await expect(dd.locator('[data-dd-count]')).toHaveText('0 / 265 variables');
+  await expect(dd.locator('[data-dd-empty]')).toContainText('No variables match “zzzz”.');
+  await expect(dd.locator('[data-dd-empty-semantic]')).toBeHidden();
+
   await search.fill('');
-  await expect(page.locator('.q-dd-cat:visible')).toHaveCount(12);
-  await expect(owner.locator('.q-dd-table')).toBeHidden();
-  await expect(page.locator('.q-dd-table:visible')).toHaveCount(11);
+  await expect(dd.locator('[data-dd-count]')).toHaveText('265 variables');
+  await expect(dd.locator('[data-dd-category]')).toHaveCount(12);
+});
+
+test('a skip pattern can be followed to the variable it sets', async ({ page }) => {
+  await openDictionary(page);
+  const dd = dictionary(page);
+
+  const toggle = dd.locator('[data-dd-panel-toggle="rules"]');
+  await expect(toggle).toHaveText(/Skip logic\s*171/);
+  await toggle.click();
+  const panel = dd.locator('[data-dd-panel="rules"]');
+  await expect(panel).toBeVisible();
+
+  // "if baseline_record = 1 → -666 → … move_reason": follow the link.
+  await panel.locator('[data-dd-goto="move_reason"]').first().click();
+  await expect(dictRow(page, 'move_reason')).toBeInViewport();
+});
+
+test('the dictionary stays on QuaC’s light paper on a dark-OS machine', async ({ page }) => {
+  // The component's default theme is 'auto' — the trap V22 records for
+  // data-table's colorScheme: a dark panel inside QuaC's white work area.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await openDictionary(page);
+
+  const root = dictionary(page).locator('.dd-root');
+  await expect(root).toHaveAttribute('data-theme', 'light');
+  await expect(root).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  // QuaC's typeface reaches the shadow root through --dd-font.
+  await expect(root).toHaveCSS('font-family', /^Inter\b/);
 });
 
 async function rules(page: Page): Promise<void> {

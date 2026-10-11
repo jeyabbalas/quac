@@ -17,11 +17,12 @@ const EXCELJS_MARKER = 'ExcelJS';
 // a live-announcer class name string in @codemirror/view's dist (survives
 // minification), absent from app sources.
 const CODEMIRROR_MARKER = 'cm-announced';
-// json-schema-data-dictionary (UIX-4) serves one Load-view tab most users never
-// open; a static import would grow eagerly-loaded JS by ~45%. The marker is a
-// thrown-error string from its extractor: it survives minification and appears
-// nowhere in app code (data-dictionary.ts guards the empty case rather than
-// letting it throw).
+// json-schema-data-dictionary (UIX-4) — the extractor and, since 0.7.0, the
+// <json-data-dictionary> component that renders the panel — serves one
+// Load-view tab most users never open: 41 KB gz, so a static import would
+// nearly double eagerly-loaded JS. The marker is a thrown-error string from its
+// extractor: it survives minification and appears nowhere in app code
+// (data-dictionary.ts guards the empty case rather than letting it throw).
 const DICTIONARY_MARKER = 'requires a non-empty array';
 // The headless Node runtime (P20, src/headless/**) must not reach the web build
 // AT ALL — not the entry, not a lazy chunk. It pulls @duckdb/node-api and

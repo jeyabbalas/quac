@@ -62,7 +62,7 @@ let sources: Map<string, string[]>;
 beforeAll(async () => {
   pkg = JSON.parse(await readFile(join(REPO, 'package.json'), 'utf8')) as PackageJson;
 
-  await init;
+  await init();
   imported = new Set();
   sources = new Map();
 
@@ -76,14 +76,18 @@ beforeAll(async () => {
     const source = await readFile(join(distCli, file), 'utf8');
     const [imports] = parse(source, file);
     for (const spec of imports) {
-      // `n` is undefined for a computed dynamic specifier — `import(x + y)` —
-      // which the SSR build does not emit, and which this test would have no
-      // way to resolve if it did.
-      if (spec.n === undefined) continue;
+      // `specifier` is undefined for a computed dynamic specifier — `import(x +
+      // y)` — and null for `import.meta`. The SSR build emits neither, and this
+      // test would have no way to resolve a computed one if it did. A
+      // template-literal import arrives as a glob (`./x/*.js`), which names no
+      // package either; es-module-lexer 2 reported neither kind.
+      const specifier = spec.specifier;
+      if (specifier == null) continue;
+      if ('glob' in spec && spec.glob) continue;
       // Relative specifiers are the build's own chunks; builtins ship with Node.
-      if (spec.n.startsWith('.') || spec.n.startsWith('/')) continue;
-      if (NODE_BUILTINS.has(spec.n)) continue;
-      const name = packageNameOf(spec.n);
+      if (specifier.startsWith('.') || specifier.startsWith('/')) continue;
+      if (NODE_BUILTINS.has(specifier)) continue;
+      const name = packageNameOf(specifier);
       imported.add(name);
       sources.set(name, [...new Set([...(sources.get(name) ?? []), file])]);
     }

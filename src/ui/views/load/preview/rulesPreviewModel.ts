@@ -59,10 +59,10 @@ export function noMatchMessage(query: string): string {
 /**
  * Trim, lowercase, split on whitespace. `''` → `[]` (matches everything).
  *
- * A deliberate four-line copy of `core/schema/data-dictionary.ts:316,326`
- * rather than an import: those two live in the SCHEMA subsystem, and the rules
- * preview has no business depending on it for a whitespace split. The
- * behaviour is pinned by both test suites independently.
+ * Began as a deliberate copy of the JSON Schema panel's search rather than an
+ * import from the schema subsystem. That panel is json-schema-data-
+ * dictionary's own component now, with the package's ranked search, so this
+ * is the only copy left; rulesPreviewModel.test.ts pins it.
  */
 export function parseQuery(raw: string): string[] {
   const trimmed = raw.trim().toLowerCase();

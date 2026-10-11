@@ -100,6 +100,12 @@ test('Findings: a URL-loaded schema id does not open the row (UX-09)', async ({ 
   await expect(page.locator('.q-runbar-button')).toBeEnabled({ timeout: INGEST_TIMEOUT });
 
   await page.locator('.q-runbar-button').click();
+  // Stat cards render only from a finished run's artifacts. Asserting the
+  // progress overlay hidden on its own passes before the run has even shown
+  // it, and the Findings list below then waits on a run still painting.
+  await expect(page.locator('.q-statcard', { hasText: 'Errors' })).toBeVisible({
+    timeout: INGEST_TIMEOUT,
+  });
   await expect(page.locator('.q-run-progress')).toBeHidden({ timeout: INGEST_TIMEOUT });
   await page.locator('.q-report-panels .q-paneltab', { hasText: 'Findings' }).click();
 

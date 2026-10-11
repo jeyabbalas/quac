@@ -12,10 +12,10 @@
  *
  * **No PRNG anywhere.** Every value is a closed-form function of the row
  * index, which is what lets the spec assert exact counts instead of ranges —
- * and, in particular, lets it assert the annotation-cap banner's exact text.
+ * and, in particular, the exact row the grid's last annotation sits on.
  *
- * The arithmetic has to clear three caps at once, and the middle one is the
- * one that shapes it:
+ * The arithmetic has to clear two caps at once, and the first is the one that
+ * shapes it:
  *
  *   `ROW_CAP_PER_RULE_DEFAULT` 10,000 — a SINGLE rule can never contribute
  *      more than 10,000 flags; past that the engine emits one truncation flag
@@ -23,10 +23,14 @@
  *      8,000 rather than concentrated in one of 25,000, which keeps every
  *      count on screen exact — and exercises three rules over 100k rows
  *      instead of one.
- *   `ANNOTATION_CAP` 20,000 — 24,000 error cells + 9,000 correction cells is
- *      33,000 candidates, so the paint cap engages and the banner appears.
- *   `FLAG_CAP_DEFAULT` 200,000 — 33,000 is far under it, so nothing anywhere
- *      is truncated.
+ *   `FLAG_CAP_DEFAULT` 200,000 — 24,000 error cells + 9,000 correction cells
+ *      is 33,000, far under it, so nothing anywhere is truncated.
+ *
+ * 33,000 is also 13,000 past the 20,000-cell paint cap QuaC kept until
+ * data-table 0.10 made annotations cheap at a million. That cap filled errors
+ * first, so it stopped painting near row 83,333 and never reached a single
+ * correction; the spec's last-annotation checks fail if anything like it
+ * returns.
  *
  * Disjoint windows modulo 100 give the three rules 8,000 rows each:
  *
@@ -56,6 +60,13 @@ export const PERF_ERRORS = PERF_VIOLATIONS_PER_RULE * 3;
 export const PERF_CITY_CORRECTIONS = 9_000;
 /** Cell-scope flags the run produces: the errors plus the corrections. */
 export const PERF_CELL_FLAGS = PERF_ERRORS + PERF_CITY_CORRECTIONS;
+/**
+ * The last flagged row of each kind (0-based `__row__`), from the windows
+ * above, both in the final hundred rows: the last `height_cm` violation
+ * (`20 <= i % 100 < 28`) and the last lowercase `city` (`i % 100 < 9`).
+ */
+export const PERF_LAST_ERROR_ROW = PERF_ROWS - 100 + 27;
+export const PERF_LAST_CORRECTION_ROW = PERF_ROWS - 100 + 8;
 
 /** The HESP-width spot-check: as wide as the real schema, a tenth as tall. */
 export const WIDE_ROWS = 10_000;

@@ -100,15 +100,12 @@
   color: var(--q-gray-600);
 }
 
-/* ---- Chrome shared by the two collapsible panels ------------------------- */
-/* The JSON Schema and QC rules panels are the same component over different
-   payloads: a search box, a Collapse all, a live count, a capped scroll region
-   and a stack of <details> sections each holding one table. Everything below
-   is identical between them BY DESIGN, so it is declared once — the two
-   namespaces (q-dd-* / q-rp-*) exist to let the payload-specific cells differ,
-   not the chrome. */
+/* ---- The QC rules panel's chrome ---------------------------------------- */
+/* A search box, a Collapse all, a live count, a capped scroll region and a
+   stack of <details> sections each holding one table. The JSON Schema panel
+   shared every rule here (as q-dd-*) until it became the dictionary package's
+   own component; see the data-dictionary section below. */
 
-.q-dd-head,
 .q-rp-head {
   display: flex;
   align-items: baseline;
@@ -118,7 +115,6 @@
   margin-bottom: var(--q-space-3);
 }
 
-.q-dd-search,
 .q-rp-search {
   display: flex;
   align-items: baseline;
@@ -127,7 +123,6 @@
   max-width: 360px;
 }
 
-.q-dd-search-label,
 .q-rp-search-label {
   font-size: var(--q-text-sm);
   font-weight: 600;
@@ -137,7 +132,6 @@
 
 /* There is no shared input class yet, so this is the established recipe
    declared locally (studioView.css:644, slotCard.css:113). */
-.q-dd-search-input,
 .q-rp-search-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -153,7 +147,6 @@
 /* Input-like control → the hover ring (tokens.css --q-hover-ring). Focus is
    base.css's, unrestated: the offset-only override this replaced made the ink
    edge lopsided against every other field in the app. */
-.q-dd-search-input:hover:not(:disabled),
 .q-rp-search-input:hover:not(:disabled) {
   border-color: var(--q-hover-ring);
 }
@@ -162,7 +155,6 @@
    (studioWorkspace.ts:115). It sits beside the search box, not adrift in the
    middle of the row, which is what plain space-between would do now that the
    head has three children. */
-.q-dd-toggleall,
 .q-rp-toggleall {
   flex: none;
   white-space: nowrap;
@@ -171,7 +163,6 @@
 /* The auto margin absorbs the free space BEFORE justify-content gets it, so
    the readout stays pinned right and does not shuffle when the button's label
    flips between its two widths. */
-.q-dd-count,
 .q-rp-count {
   margin: 0 0 0 auto;
   font-size: var(--q-text-xs);
@@ -180,7 +171,6 @@
 }
 
 /* min() form matches .q-studio-testpanel. */
-.q-dd-scroll,
 .q-rp-scroll {
   max-height: min(70vh, 720px);
   overflow: auto;
@@ -193,7 +183,6 @@
    reading and the panel becomes a table of contents, each line still carrying
    its count: measured on HESP at 1440x900, 51,354px of dictionary content in a
    628px box collapses to 492px, which does not scroll at all. */
-.q-dd-cat,
 .q-rp-file {
   margin-top: var(--q-space-4);
 }
@@ -201,7 +190,6 @@
 /* Defensive, exactly as the tr[hidden] rules below: the UA sheet's
    `details { display: block }` is as specific as [hidden]'s `display: none`
    and later in the cascade would win. */
-.q-dd-cat[hidden],
 .q-rp-file[hidden] {
   display: none;
 }
@@ -209,7 +197,6 @@
 /* The whole header row is the disclosure control. `list-style` drops the UA
    triangle (Safari needs the -webkit pseudo-element too) in favour of the
    chevron below, which sits on the side the count does not. */
-.q-dd-cathead,
 .q-rp-filehead {
   display: flex;
   align-items: baseline;
@@ -220,14 +207,12 @@
   list-style: none;
 }
 
-.q-dd-cathead::-webkit-details-marker,
 .q-rp-filehead::-webkit-details-marker {
   display: none;
 }
 
 /* The same hover token as the table rows — one surface, one "this row is
    live" signal. */
-.q-dd-cathead:hover,
 .q-rp-filehead:hover {
   background: var(--q-hover-surface);
 }
@@ -235,27 +220,23 @@
 /* CSS chevron, no asset and no transition — so there is no movement for
    prefers-reduced-motion to remove. Rotating one glyph rather than swapping
    two keeps the layout box identical in both states. */
-.q-dd-catmark,
 .q-rp-filemark {
   flex: none;
   font-size: var(--q-text-md);
   color: var(--q-gray-600);
 }
 
-.q-dd-catmark::before,
 .q-rp-filemark::before {
   content: '▸';
   display: inline-block;
 }
 
-.q-dd-cat[open] > .q-dd-cathead .q-dd-catmark::before,
 .q-rp-file[open] > .q-rp-filehead .q-rp-filemark::before {
   transform: rotate(90deg);
 }
 
 /* Takes the slack, so the count stays pinned right now that the header has
    three children rather than two. */
-.q-dd-cattitle,
 .q-rp-filetitle {
   flex: 1 1 auto;
   margin: 0;
@@ -263,7 +244,6 @@
   font-weight: 600;
 }
 
-.q-dd-catcount,
 .q-rp-filecount {
   font-size: var(--q-text-xs);
   color: var(--q-gray-600);
@@ -282,7 +262,6 @@
    table-layout: fixed takes widths from identical th:nth-child(n)
    percentages, ignoring content. The percentages themselves are per-panel and
    measured; see each panel's block below. */
-.q-dd-table,
 .q-rp-table {
   width: 100%;
   table-layout: fixed;
@@ -290,8 +269,6 @@
   font-size: var(--q-text-xs);
 }
 
-.q-dd-table th,
-.q-dd-table td,
 .q-rp-table th,
 .q-rp-table td {
   text-align: left;
@@ -301,7 +278,6 @@
   overflow-wrap: anywhere;
 }
 
-.q-dd-table thead th,
 .q-rp-table thead th {
   position: sticky;
   top: 0;
@@ -311,14 +287,12 @@
   font-weight: 600;
 }
 
-.q-dd-table tbody tr:hover,
 .q-rp-table tbody tr:hover {
   background: var(--q-hover-surface);
 }
 
 /* Defensive: the UA sheet's `tr { display: table-row }` is as specific as
    [hidden]'s `display: none` and later in the cascade would win. */
-.q-dd-table tr[hidden],
 .q-rp-table tr[hidden] {
   display: none;
 }
@@ -326,8 +300,6 @@
 /* A muted mono line under a cell's primary content: the dictionary's `when …`
    condition and folded-in Format, the rules panel's `type · scope` and update
    language. The payload is a regex or an enum pair, not prose. */
-.q-dd-when,
-.q-dd-format,
 .q-rp-typescope,
 .q-rp-lang {
   display: block;
@@ -337,7 +309,6 @@
 
 /* One recipe, one chip. The dictionary's carry value codes and the rules
    panel's carry target variable names — same shape, so the same declaration. */
-.q-dd-chip,
 .q-rp-chip {
   display: inline-block;
   font-family: var(--q-font-mono);
@@ -355,7 +326,6 @@
 /* Aimed at the `+N more` overflows this was written for, NOT the section
    headers: muting every section title to --q-gray-600 is the one thing this
    blanket rule must not do. */
-.q-dd-scroll details:not(.q-dd-cat) > summary,
 .q-rp-scroll details:not(.q-rp-file) > summary {
   cursor: pointer;
   color: var(--q-gray-600);
@@ -363,125 +333,45 @@
 
 /* Quiet disclosure — hover darkens to ink, as in the slot cards. The section
    heads are excluded here too: they take the surface tint above instead. */
-.q-dd-scroll details:not(.q-dd-cat) > summary:hover,
 .q-rp-scroll details:not(.q-rp-file) > summary:hover {
   color: var(--q-ink);
 }
 
 /* ---- JSON Schema → data dictionary -------------------------------------- */
 
-.q-dd-catdesc {
-  margin: 2px 0 var(--q-space-2);
-  font-size: var(--q-text-sm);
-  color: var(--q-gray-700);
-  max-width: 84ch;
-}
+/* The panel is json-schema-data-dictionary's <json-data-dictionary> (0.7.0),
+   not QuaC markup: its search, sections, skip-logic links and resizable
+   columns live in its shadow root. What QuaC sets is the frame and the look.
 
-/* Measured .q-dd-scroll scrollWidth / clientWidth (Chromium, HESP, default
-   zoom), MIN-WIDTH RE-MEASURED after Format folded into Type:
-     1600 → 1514 / 1514   1440 → 1354 / 1354   1366 → 1280 / 1280
-     1280 → 1194 / 1194   1024 → 1082 /  938   768 → 1082 / 698
-   So it fills the panel without scrolling from 1280 up, and scrolls
-   horizontally below — which is exactly what the min-width is for, now over
-   110px less of it. Page-level horizontal overflow is 0 at every one of those
-   widths. */
-.q-dd-table {
-  min-width: 1070px;
-}
+   Height: given one, the component fills it — title and toolbar stay put and
+   its table scrolls inside under a sticky column header. Without one it is as
+   tall as its 265 rows. The frame is the visible viewport minus the Load
+   view's sticky run bar (66px) and a 16px gap either side of it, so the
+   dictionary scrolled into view fills the screen above the bar. It needs all
+   of that: the component's own header — the schema's title and description,
+   the search box, the toolbar — is inside the frame, and an open Skip logic
+   panel adds 267px more. Measured on HESP at 1440x743, the table keeps 442px
+   of a 645px frame, 164px with that panel open; the old dictionary capped only
+   its table region, at min(70vh, 720px).
 
-/* Variable · Description · Type · Valid values · Constraints · Additional
-   information — measured, not guessed (ui-design.md §5). Natural content
-   widths over the 28-row Household composition category at 1440: Variable p90
-   159px · Description p90 338 · Type p90 130 · Additional info header alone
-   124.
-
-   Format used to be a seventh column at 7% and is now folded into Type: its
-   MEDIAN content was 12px (an em-dash — 260 of HESP's 265 variables carry no
-   `format`), so it spent ~95px of every row at 1440 rendering nothing. Every
-   remaining column got wider AND the table got narrower: at 1440 the six are
-   186/266/160/279/239/200 against the old seven's 176/257/135/95/271/230/190.
-   Type took the largest share (+25px) because it was the column against its
-   ceiling — its widest content is 130px and 10% of a 1354px table is 135, so
-   it wrapped; at 12% none of Household composition's 28 rows does. */
-.q-dd-table th:nth-child(1) {
-  width: 14%;
-}
-
-.q-dd-table th:nth-child(2) {
-  width: 20%;
-}
-
-.q-dd-table th:nth-child(3) {
-  width: 12%;
-}
-
-.q-dd-table th:nth-child(4) {
-  width: 21%;
-}
-
-.q-dd-table th:nth-child(5) {
-  width: 18%;
-}
-
-.q-dd-table th:nth-child(6) {
-  width: 15%;
-}
-
-.q-dd-name {
-  font-family: var(--q-font-mono);
-  font-weight: 600;
-}
-
-/* title\ndescription\n$comment arrive as one string. */
-.q-dd-desc {
-  white-space: pre-line;
-}
-
-.q-dd-values,
-.q-dd-constraints,
-.q-dd-extras {
-  display: grid;
-  gap: 3px;
-}
-
-/* Sentinel vs substantive is carried by chip SHAPE, never by a severity token:
-   a missing-value code is not a warning. */
-.q-dd-value--sentinel .q-dd-chip {
-  background: var(--q-paper);
-  border: var(--q-border-input);
-}
-
-.q-dd-valuesep {
-  margin-top: var(--q-space-1);
-  font-weight: 600;
-  color: var(--q-gray-700);
-}
-
-.q-dd-extra-label {
-  color: var(--q-gray-600);
-}
-
-.q-dd-json {
-  margin: 2px 0 0;
-  font-family: var(--q-font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.q-dd-notes {
-  margin-top: var(--q-space-3);
-  font-size: var(--q-text-sm);
-  color: var(--q-gray-700);
-}
-
-.q-dd-notes summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.q-dd-notes ul {
-  margin: var(--q-space-2) 0 0;
-  padding-left: var(--q-space-5);
+   Theme: the component reads public --dd-* properties, which inherit through
+   the shadow boundary. Mapped onto QuaC's tokens, so the dictionary shares the
+   page's fonts and palette; the accent is --q-info (5.9:1 on white) rather
+   than the sky blue, which is a header colour and fails text contrast. */
+.q-dd {
+  height: clamp(480px, calc(100dvh - 98px), 1400px);
+  --dd-font: var(--q-font-sans);
+  --dd-mono: var(--q-font-mono);
+  --dd-fg: var(--q-ink);
+  --dd-bg: var(--q-paper);
+  --dd-surface: var(--q-gray-50);
+  --dd-border: var(--q-gray-200);
+  --dd-muted: var(--q-gray-600);
+  --dd-accent: var(--q-info);
+  --dd-accent-weak: var(--q-info-fill);
+  --dd-sentinel: var(--q-warning);
+  --dd-sentinel-bg: var(--q-warning-fill);
+  --dd-radius: var(--q-radius-md);
 }
 
 /* ---- QC rules ----------------------------------------------------------- */

@@ -54,9 +54,6 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
 
   const gridArea = document.createElement('div');
   gridArea.className = 'q-report-gridarea';
-  const capBanner = document.createElement('p');
-  capBanner.className = 'q-cap-banner';
-  capBanner.hidden = true;
   const progressWrap = document.createElement('div');
   progressWrap.className = 'q-run-progress';
   progressWrap.hidden = true;
@@ -112,7 +109,7 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   // propagation whenever it owns the press. A hatch would therefore catch only
   // the presses the grid ignored, silently throwing focus to the panel column
   // for a key the user meant for the grid.
-  gridArea.append(capBanner, progressWrap, runStatus, skipGrid, gridHost);
+  gridArea.append(progressWrap, runStatus, skipGrid, gridHost);
 
   layout.append(gridArea, panelHost);
   container.append(empty, layout);
@@ -211,15 +208,6 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     // Only on success: a failed present must leave this stale, so the effect
     // below gets its one automatic rebuild attempt when the run ends.
     renderedGeneration = generation;
-    if (payload.annotations.capped) {
-      capBanner.textContent =
-        `Painting ${payload.annotations.cellPainted.toLocaleString('en-US')} of ` +
-        `${payload.annotations.cellTotal.toLocaleString('en-US')} cell flags — ` +
-        'full detail in the panels and the Excel report.';
-      capBanner.hidden = false;
-    } else {
-      capBanner.hidden = true;
-    }
   });
 
   // Initial (pre-run) grid: render the ingested dataset while the view is the
@@ -239,7 +227,6 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
       // Dataset cleared (UIX-7): the grid's data is gone — dispose the
       // instance (never force-loading the chunk) and drop run-paint leftovers
       // so a later session cannot inherit them.
-      capBanner.hidden = true;
       pendingTooltips = null;
       void gridModule?.disposeGrid();
       return;
@@ -310,8 +297,8 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
   });
 
   // Any run invalidation (invalidateRun nulls runArtifacts) strips the run's
-  // paint from the surviving grid — annotations, offender raw-SQL filter, cap
-  // banner. A rules/schema-only clear keeps the data grid, so this must NOT
+  // paint from the surviving grid — annotations and the offender raw-SQL
+  // filter. A rules/schema-only clear keeps the data grid, so this must NOT
   // dispose it; a dataset clear disposes via the dataset-null branch above.
   // Never force-loads the chunk: no module ⇒ no table ⇒ nothing painted.
   let hadArtifacts = false;
@@ -324,7 +311,6 @@ export function mountReportView(container: HTMLElement, ctx: ShellContext): void
     if (!hadArtifacts) return;
     hadArtifacts = false;
     void gridModule?.clearRunPresentation();
-    capBanner.hidden = true;
   });
 
   // Header tooltips recompute on schema/rules/dataset change (spec §3) so the

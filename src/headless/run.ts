@@ -27,7 +27,6 @@ import { APP_VERSION } from '../app/version';
 import { QUAC_TYPED, refreshDataView, reportRowsSQL, swapWorkTable } from '../core/bridge/tables';
 import { ingestDataset } from '../core/ingest/ingest';
 import { runPipeline } from '../core/pipeline';
-import { ANNOTATION_CAP } from '../core/report/annotations';
 import { writeReportWorkbook } from '../core/report/excelWriter';
 import { buildReportModel } from '../core/report/reportModel';
 import { FLAG_CAP_DEFAULT } from '../core/flags/flagStore';
@@ -347,10 +346,7 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
         return ms === undefined ? [] : [{ stage, ms }];
       }),
       correctionsApplied: artifacts.correctionsApplied,
-      caps: [
-        { label: 'Flags materialized', value: FLAG_CAP_DEFAULT.toLocaleString('en-US') },
-        { label: 'Cell annotations painted', value: ANNOTATION_CAP.toLocaleString('en-US') },
-      ],
+      caps: [{ label: 'Flags materialized', value: FLAG_CAP_DEFAULT.toLocaleString('en-US') }],
       stageErrors: artifacts.stageErrors.map((e) => ({ stage: e.stage, message: e.message })),
     };
 

@@ -18,9 +18,11 @@
  *
  * **The journey is chosen to touch every lazy chunk**, because a chunk that
  * never loads cannot be caught phoning home: xlsx (SheetJS) → csv (worker
- * boot + the json and icu extensions) → JSON Schema (Ajv) → a rules file with
- * a `js` correction (QuickJS) → Run (the parquet extension) → Download
- * (exceljs) → `#/studio` (CodeMirror).
+ * boot + the json and icu extensions) → JSON Schema (Ajv, and the data
+ * dictionary — json-schema-data-dictionary's component, whose semantic search
+ * would download a model if QuaC turned it on) → a rules file with a `js`
+ * correction (QuickJS) → Run (the parquet extension) → Download (exceljs) →
+ * `#/studio` (CodeMirror).
  *
  * **Both halves are asserted.** The negative half — no off-origin URL was
  * requested, and the belt-and-braces abort never fired — is worthless without
@@ -114,6 +116,15 @@ test('a full local run makes zero off-origin requests', async ({ page }) => {
   await page.getByLabel('Browse schema files').setInputFiles(join(TINY, 'people.schema.json'));
   await expect(page.locator('[data-slot="schema"] .q-slotcard-header .q-badge').first()).toHaveText(
     'Valid',
+    { timeout: INGEST_TIMEOUT },
+  );
+
+  // 3b — the data dictionary, opened and searched: the component that COULD
+  // fetch, if QuaC ever passed it an embedder, so it has to be seen working.
+  await page.locator('.q-preview .q-paneltab', { hasText: 'JSON Schema' }).click();
+  await page.locator('json-data-dictionary [data-dd-search]').fill('age');
+  await expect(page.locator('json-data-dictionary [data-dd-count]')).toHaveText(
+    /^\d+ \/ \d+ variables$/,
     { timeout: INGEST_TIMEOUT },
   );
 

@@ -68,7 +68,11 @@ does not have and QuaC names them before you run, instead of failing halfway thr
 
 The **Preview** panel below the three slots is the early-warning system: it compares all three
 inputs against each other and says so when the dataset, the schema and the rules are not describing
-the same variables.
+the same variables. Its **JSON Schema** tab shows the schema as a searchable data dictionary,
+built with [json-schema-data-dictionary](https://github.com/jeyabbalas/json-schema-to-data-dictionary):
+the codes each variable allows and when a skip pattern sets them, with every skip pattern followable
+from either end — open **Skip logic** for the whole list, or follow a variable to the ones it
+governs.
 
 ---
 
@@ -198,9 +202,12 @@ The full grammar, the exact SQL each assertion expands to, and the `js` correcti
 ![The QC report: stat cards, findings panels, and the dataset grid with flagged cells highlighted](https://raw.githubusercontent.com/jeyabbalas/quac/main/docs/images/report.png)
 
 On screen you get counts, four panels (Summary, Missing vars, Findings, Offenders) and the dataset
-itself with every flagged cell coloured by severity. Clicking a rule in **Offenders** focuses the
-grid on the rows that rule flagged; a finding that names no particular row — a schema advisory, a
-dataset-level check — says so instead. **Download QC Report (.xlsx)** writes five sheets:
+itself with every flagged cell coloured by severity — every one the run recorded, on datasets of
+millions of rows. With focus in the grid, <kbd>F8</kbd> and <kbd>Shift</kbd>+<kbd>F8</kbd> step to
+the next and previous flagged cell, and a screen reader hears what was flagged there; the severity
+checkboxes decide which flags count. Clicking a rule in **Offenders** focuses the grid on the rows
+that rule flagged; a finding that names no particular row — a schema advisory, a dataset-level
+check — says so instead. **Download QC Report (.xlsx)** writes five sheets:
 
 | Sheet                 | What is in it                                                                                            |
 | --------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -464,9 +471,8 @@ Worth knowing before you rely on it:
   still validated and every finding still counted; both that sheet and Run Info say what was cut.
 - **A run is capped, and says so.** At most 10,000 violating rows are individually flagged per rule
   (200 for a dataset-scope rule) and 200,000 flags are materialized per run. Exact counts survive
-  the caps — the Repeat Offenders sheet and the summary panel report the true totals either way. The
-  on-screen grid additionally paints at most 20,000 cell highlights, with a banner saying how many
-  there were; the Excel report is not limited by that figure. Every cap in force is written into the
+  the caps — the Repeat Offenders sheet and the summary panel report the true totals either way, and
+  the on-screen grid paints every flag that was materialized. Every cap in force is written into the
   Run Info sheet.
 - **`xlsx` installs from a CDN, not from npm.** SheetJS stopped publishing to the npm registry, so
   installing `quac` fetches one pinned, hash-verified tarball from `cdn.sheetjs.com`. Behind a

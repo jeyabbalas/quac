@@ -22,7 +22,7 @@ The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQua
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V30) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V35) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -82,6 +82,28 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-10-11 · deps · **`@jeyabbalas/data-table` 0.7.0 → 0.10.0, `json-schema-data-dictionary` 0.1.0 → 0.7.0, and the
+rest of the tree.** The data-table bump was a drop-in at every call site (worker's new `SET`s and `LOAD json` audited
+against the hardening; peer range is the dev57 pin). What it enabled shipped on top: **every flag is painted** —
+`ANNOTATION_CAP`, its banner and its Run Info row are gone (`core/report/annotations.ts`, one `addMany` in
+`reportGrid.ts`; V32) — and **both grids load a `Blob`** (`parquetSource` in `core/bridge/tables.ts`; V33). `F8` /
+`Shift+F8` annotation navigation comes free, and the perf gate now proves full painting with it (mutation-tested).
+UX-01's fresh table name is no longer load-bearing (V31) and H004's grid copy now stays VARCHAR (V34) — comments and
+specs say so. **The JSON Schema preview is the dictionary package's own `<json-data-dictionary>`** (owner's call; V35):
+`preview/dataDictionary.ts` mounts it themed through `--dd-*`, `theme: 'light'`, no semantic search, `expandNested`
+pinned off; QuaC's 524-line renderer, its search and model projection are deleted. axe finds two violations INSIDE the
+component (critical `aria-required-attr`, serious `definition-list`) — third-party, so diagnosed not gated, and in
+`ui-design.md` §9 with their upstream fixes. Also: `@duckdb/node-api` 1.5.6-r.1 (V19/V26 re-checked), vitest 5,
+es-module-lexer 3 (`specifier`, `init()`), an in-range sweep, `npm audit fix` (fast-uri 3.1.8 and brace-expansion in
+the CLI's runtime tree; 6 findings → 2, the `uuid`-under-`exceljs` pair). Holds unchanged: TS 6, `@types/node` 24,
+duckdb-wasm dev57, xlsx 0.20.3 (still the CDN's latest). One pre-existing e2e flake fixed (`loadExample` UX-09 read
+Findings off an unfinished run). **For successors:** the component's look is ours but its markup is not — re-run
+`a11y.spec`'s diagnostic on any dictionary bump; `traverse` 0.3.10 under exceljs brings ~85 polyfill packages to every
+CLI install, which no lockfile or override of ours can prevent. Pre-existing nits seen and left: the report page
+overflows by ~12px (footer 37px against a 24px allowance), the Offenders `warning` pill wraps, and the QC Report tab
+badge prints `170000` unformatted.
+1202 unit · 73 browser · 53 cli · 122 e2e green; entry 47.2 KB gz (budget 300), dictionary chunk 41.4 KB gz.
 
 2026-09-01 · deps · **`@jeyabbalas/data-table` 0.5.1 → 0.7.0, plus 14 other packages to latest.** Runtime:
 `@duckdb/node-api` 1.5.5-r.1→r.4, `papaparse` 5.5.4→5.7.0. Dev: `vite` 8.2.2, `vitest`/`@vitest/browser-playwright`

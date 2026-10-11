@@ -11,9 +11,8 @@
    bearing, not cosmetic: keep one here. */
 .q-report-grid {
   /* Vertical chrome around the grid at 100dvh: header banner + tabs (~130px)
-     + main padding, grid margin and cap-banner allowance (~56px) + footer
-     (~24px). Keeps the grid filling the viewport without pushing the page
-     into a scroll on its own. */
+     + main padding and grid margin (~56px) + footer (~24px). Keeps the grid
+     filling the viewport without pushing the page into a scroll on its own. */
   --q-report-chrome: 210px;
 
   margin-top: var(--q-space-2);
@@ -70,15 +69,6 @@
 .q-run-progress .q-duckprogress {
   flex: 1;
   min-width: 0;
-}
-
-.q-cap-banner {
-  margin: 0 0 var(--q-space-2);
-  padding: var(--q-space-2) var(--q-space-3);
-  border-radius: var(--q-radius-sm);
-  background: var(--q-warning-fill);
-  color: var(--q-warning-ink);
-  font-size: var(--q-text-md);
 }
 
 .q-partial-banner {

@@ -9,9 +9,10 @@
  * (qc-rules-engine.md §2), so re-sorting them would misrepresent the run.
  *
  * DOM only — the model is rulesPreviewModel.ts, the highlighting is
- * exprHighlight.ts. Structure deliberately mirrors dataDictionary.ts so the
- * two panels read as one component: `q-rp-*` is `q-dd-*` with files where the
- * categories are.
+ * exprHighlight.ts. The structure began as a mirror of the JSON Schema
+ * panel's table — `q-rp-*` was `q-dd-*` with files where the categories were —
+ * and stands alone since that panel became json-schema-data-dictionary's own
+ * component.
  *
  * Deliberately NOT here: lint findings. The rules slot card owns per-file lint
  * blocks and this panel points at it rather than restating them, exactly as

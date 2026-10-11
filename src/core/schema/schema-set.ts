@@ -5,14 +5,17 @@
  * orchestrator (`buildSchemaSet`) lives here too once ref-graph and root
  * detection land.
  */
+import { effectiveDraft, readDraft } from './drafts';
 import {
   dupIdMessage,
   loadError,
   mixedDraftMessage,
   nonSchemaIgnoredMessage,
   parseMessage,
+  unknownDraftMessage,
+  unsupportedDraftMessage,
 } from './messages';
-import { metaValidate } from './meta-validate';
+import { engineChecks, metaValidate } from './meta-validate';
 import { resolveRefGraph } from './ref-graph';
 import { applyRootSelection, detectRoot, resolveIndexParam } from './root-detection';
 import type {
@@ -137,14 +140,37 @@ export function quacSetUri(relativePath: string): string {
   return new URL(`quac-set:/${escaped}`).href;
 }
 
+/** `drafts.ts` reads every spelling of a known meta-schema URI; anything else is 'unknown'. */
 function draftOf(json: unknown): SchemaDraft {
-  if (json === null || typeof json !== 'object' || Array.isArray(json)) return 'unknown';
-  const declared = (json as Record<string, unknown>).$schema;
-  if (typeof declared !== 'string') return 'unknown';
-  if (declared.includes('2020-12')) return '2020-12';
-  if (declared.includes('2019-09')) return '2019-09';
-  if (declared.includes('draft-07')) return 'draft-07';
-  return 'unknown';
+  return readDraft(json).draft;
+}
+
+/**
+ * `E_UNSUPPORTED_DRAFT` for a draft-04/03 file, `W_UNKNOWN_DRAFT` for a
+ * `$schema` naming no meta-schema QuaC knows (read as the set's draft).
+ */
+function draftFindings(schemas: readonly SchemaFile[], rootDraft: SchemaDraft): SchemaLoadError[] {
+  const findings: SchemaLoadError[] = [];
+  for (const file of schemas) {
+    const declaration = readDraft(file.json);
+    if (declaration.declared === undefined) continue;
+    if (declaration.draft === 'draft-04') {
+      findings.push(
+        loadError('E_UNSUPPORTED_DRAFT', unsupportedDraftMessage(file.relativePath, declaration.declared), {
+          fileId: file.fileId,
+        }),
+      );
+    } else if (!declaration.recognized) {
+      findings.push(
+        loadError(
+          'W_UNKNOWN_DRAFT',
+          unknownDraftMessage(file.relativePath, declaration.declared, effectiveDraft(rootDraft)),
+          { fileId: file.fileId },
+        ),
+      );
+    }
+  }
+  return findings;
 }
 
 function declaredIdOf(json: unknown, retrievalUri: string): string | undefined {
@@ -407,12 +433,17 @@ export async function buildSchemaSet(
   }
 
   const rootDraft = set.files.find((f) => f.fileId === set.root.rootFileId)?.draft ?? 'unknown';
+  set.errors.push(...draftFindings(schemas, rootDraft));
   set.errors.push(...(await metaValidate(schemas, rootDraft)));
 
   const drafts = [...new Set(schemas.map((f) => f.draft).filter((d) => d !== 'unknown'))];
   if (drafts.length > 1) {
     set.errors.push(loadError('E_MIXED_DRAFT', mixedDraftMessage(drafts, rootDraft)));
   }
+
+  // Last: the record schema compiled once, now, so a schema that cannot
+  // validate says so at load rather than as a stage error mid-run.
+  set.errors.push(...(await engineChecks(set)));
 
   return set;
 }

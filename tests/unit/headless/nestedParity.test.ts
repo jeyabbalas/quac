@@ -23,6 +23,7 @@ import { createFlagStore } from '../../../src/core/flags/flagStore';
 import { ingestDataset } from '../../../src/core/ingest/ingest';
 import { columnDigest } from '../../../src/core/schema/column-meta';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
+import { rowSourceFor } from '../../../src/core/schema/row-source';
 import { runSchemaValidation } from '../../../src/core/schema/validation-run';
 import { createNodeBridge } from '../../../src/headless/nodeBridge';
 import { runQuac } from '../../../src/headless/run';
@@ -95,6 +96,8 @@ async function schemaFlags(
       digest,
       datasetColumns: ingest.columns,
       flagStore,
+      // As the pipeline runs it: a JSON file's own records, a Parquet file's values.
+      source: rowSourceFor(data.format, ingest.renames, () => Promise.resolve(data.bytes)),
       createWorker: createInProcessValidationWorker,
     });
     return {
@@ -285,7 +288,7 @@ describe('(d) JSON text in a CSV cell, under an array or object schema', () => {
           row: 1,
           column: 'tags',
           ruleId: 'schema:prop:tags:value',
-          message: 'must be a string, got number (at tags[1]).',
+          message: '7 is a number, not a string (at tags[1]).',
         },
         {
           row: 1,
@@ -303,7 +306,7 @@ describe('(d) JSON text in a CSV cell, under an array or object schema', () => {
           row: 2,
           column: 'point',
           ruleId: 'schema:prop:point:value',
-          message: "must be a number, got string (at point.x).",
+          message: "'far' is a string, not a number (at point.x).",
         },
         {
           row: 2,

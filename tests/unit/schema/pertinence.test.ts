@@ -7,6 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import { computePertinence, crossCheckInputs } from '../../../src/core/pertinence';
 import type { PertinenceColumn, PertinenceEdgeId } from '../../../src/core/pertinence';
+import { columnDigest } from '../../../src/core/schema/column-meta';
+import { buildSchemaSet } from '../../../src/core/schema/schema-set';
+import { entry } from './helpers';
 
 const required = (...names: string[]): PertinenceColumn[] =>
   names.map((name) => ({ name, required: true }));
@@ -336,5 +339,33 @@ describe('crossCheckInputs triangulation', () => {
     });
     expect(check.verdict).toBe('block');
     expect(check.suspect).toBeNull();
+  });
+});
+
+describe('computePertinence over the schema digest', () => {
+  it('reports a required name the schema never declares (a ghost) once, as missing required', async () => {
+    const set = await buildSchemaSet(
+      [
+        entry('root.json', {
+          type: 'array',
+          items: { $ref: '#/$defs/row' },
+          $defs: {
+            row: {
+              properties: { id: { type: 'string' }, note: { type: 'string' } },
+              required: ['id', 'ghost'],
+            },
+          },
+        }),
+      ],
+      { origin: 'upload' },
+    );
+    const meta = columnDigest(set)?.meta ?? [];
+    const result = computePertinence({
+      schemaColumns: meta.map((m) => ({ name: m.name, required: m.required })),
+      datasetColumns: ['id', 'extra'],
+    });
+    expect(result?.missingRequired).toEqual(['ghost']);
+    expect(result?.missingOptional).toEqual(['note']);
+    expect(result?.extra).toEqual(['extra']);
   });
 });

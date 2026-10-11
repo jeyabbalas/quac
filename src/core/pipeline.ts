@@ -33,6 +33,7 @@
 import { createBridgeRunner, runQC } from './rules/engine';
 import { runSchemaValidation } from './schema/validation-run';
 import { applyCastPlan, buildCastPlan, describeColumns } from './schema/casting';
+import { undeclaredColumnMeta } from './schema/column-meta';
 import { createFlagStore } from './flags/flagStore';
 import { hardenBridge } from './bridge/harden';
 import {
@@ -48,6 +49,7 @@ import { buildHeaderTooltips } from './report/headerTooltips';
 import type { WorkerBridge } from '@jeyabbalas/data-table';
 import type { CastPlan } from './schema/casting';
 import type { ColumnDigest } from './schema/column-meta';
+import type { RowSourceSpec } from './schema/row-source';
 import type { SchemaSet } from './schema/types';
 import type { ValidationSummary } from './schema/worker-protocol';
 import type { JSSandbox, RuleFile, RuleRunStat } from './rules/types';
@@ -137,7 +139,13 @@ export interface PipelineConfig {
 
 export interface PipelineDeps {
   bridge: WorkerBridge;
-  dataset: { name: string; columns: readonly string[]; rowCount: number };
+  dataset: {
+    name: string;
+    columns: readonly string[];
+    rowCount: number;
+    /** Which records the schema validates (row-source.ts); absent: read off the loaded table. */
+    source?: RowSourceSpec;
+  };
   schema: SchemaRunInput | null;
   /** Pre-filtered by the caller: lint-error rules removed (executableRuleFile). */
   ruleFiles: RuleFile[];
@@ -164,7 +172,9 @@ async function defaultRebuildTyped(
     return null;
   }
   const rawTypes = await describeColumns(bridge);
-  const plan = buildCastPlan(schema.digest.meta, datasetColumns, rawTypes);
+  const plan = buildCastPlan(schema.digest.meta, datasetColumns, rawTypes, (name) =>
+    undeclaredColumnMeta(schema.set, name),
+  );
   await applyCastPlan(bridge, plan);
   return plan;
 }
@@ -217,6 +227,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunArtifacts> {
     }
   }
 
+  const hasEnabledCorrections =
+    deps.applyCorrections &&
+    deps.ruleFiles.some((f) => f.rules.some((r) => r.enabled && r.ruleType === 'correct'));
+
   // ---- schema stage (invoked from runQC's betweenPhases hook; at most once) ----
   // Object properties on purpose: TS/lint pin closure-assigned `let`s to their
   // initializer type/value (same gotcha as engine.ts isAborted).
@@ -237,6 +251,9 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunArtifacts> {
         datasetColumns: deps.dataset.columns,
         flagStore,
         sourceTable: DATA_VIEW,
+        ...(deps.dataset.source === undefined ? {} : { source: deps.dataset.source }),
+        // Cells a correction changed are read from the corrected data.
+        corrected: hasEnabledCorrections,
         ...(castPlan === null ? {} : { castPlan }),
         ...(deps.signal === undefined ? {} : { signal: deps.signal }),
         onProgress: (p) => {
@@ -260,9 +277,6 @@ export async function runPipeline(deps: PipelineDeps): Promise<RunArtifacts> {
 
   // ---- corrections + rules (ONE engine call, schema in the hook) ----
   let rulesResult: RunArtifacts['rules'] = null;
-  const hasEnabledCorrections =
-    deps.applyCorrections &&
-    deps.ruleFiles.some((f) => f.rules.some((r) => r.enabled && r.ruleType === 'correct'));
 
   if (prepared && !cancelled()) {
     const engineStart = performance.now();

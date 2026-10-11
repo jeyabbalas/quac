@@ -48,16 +48,50 @@ export interface SchemaSite {
 
 export interface RefResolver {
   /**
-   * Follow the `$ref` whose keyword sits at `fromPointer` in `file`.
-   * Null when the edge is unresolved, targets an anchor (digests treat those
-   * as opaque), or the fragment does not dereference.
+   * Follow the `$ref` (or `$dynamicRef`) whose keyword sits at `fromPointer`
+   * in `file`. A plain-name fragment (`#row`) finds the subschema declaring
+   * that `$anchor` (or `$dynamicAnchor`) in the target file. Null when the
+   * edge is unresolved or the fragment does not dereference.
    */
   resolve: (file: SchemaFile, fromPointer: string) => SchemaSite | null;
   fileById: (fileId: string) => SchemaFile | undefined;
 }
 
-export function createRefResolver(set: SchemaSet): RefResolver {
-  const files = new Map(set.files.map((f) => [f.fileId, f]));
+/** Keywords whose value is data, not schema — an `$anchor` key inside one is not an anchor. */
+const DATA_KEYWORDS = new Set(['const', 'enum', 'default', 'examples', '$comment']);
+
+/**
+ * Pointer of the first subschema in `json` that declares `$anchor` (or
+ * `$dynamicAnchor`) `name`, in document order; null when none does. Anchors
+ * are scoped to their schema resource, and a file holding two resources with
+ * the same anchor name resolves to the first — the ref graph's fragment check
+ * makes the same reading.
+ */
+export function findAnchor(json: unknown, name: string): string | null {
+  const walk = (node: unknown, pointer: string): string | null => {
+    if (Array.isArray(node)) {
+      for (const [i, item] of node.entries()) {
+        const found = walk(item, `${pointer}/${String(i)}`);
+        if (found !== null) return found;
+      }
+      return null;
+    }
+    if (node === null || typeof node !== 'object') return null;
+    const record = node as Record<string, unknown>;
+    if (record.$anchor === name || record.$dynamicAnchor === name) return pointer;
+    for (const [key, value] of Object.entries(record)) {
+      if (DATA_KEYWORDS.has(key)) continue;
+      const found = walk(value, `${pointer}/${escapePointerSegment(key)}`);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return walk(json, '');
+}
+
+/** The ref resolver over a list of files — what `createRefResolver` builds from a set. */
+export function createFileResolver(fileList: readonly SchemaFile[]): RefResolver {
+  const files = new Map(fileList.map((f) => [f.fileId, f]));
   const edges = new Map<SchemaFile, Map<string, RefEdge>>();
   const edgesFor = (file: SchemaFile): Map<string, RefEdge> => {
     let map = edges.get(file);
@@ -72,14 +106,28 @@ export function createRefResolver(set: SchemaSet): RefResolver {
       const edge = edgesFor(file).get(fromPointer);
       const targetFileId = edge?.targetFileId ?? null;
       if (edge === undefined || targetFileId === null) return null;
-      if (edge.fragmentKind === 'anchor') return null;
       const target = files.get(targetFileId);
       if (target === undefined) return null;
-      const pointer = edge.fragment ?? '';
+      let pointer = edge.fragment ?? '';
+      if (edge.fragmentKind === 'anchor') {
+        let name = pointer;
+        try {
+          name = decodeURIComponent(pointer);
+        } catch {
+          // Keep the fragment as written.
+        }
+        const anchored = findAnchor(target.json, name);
+        if (anchored === null) return null;
+        pointer = anchored;
+      }
       const at = getAtPointer(target.json, pointer);
       if (!at.found) return null;
       return { file: target, pointer, node: at.value };
     },
     fileById: (fileId) => files.get(fileId),
   };
+}
+
+export function createRefResolver(set: SchemaSet): RefResolver {
+  return createFileResolver(set.files);
 }

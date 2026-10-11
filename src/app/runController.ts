@@ -11,6 +11,7 @@ import { showToast } from './toast';
 import { getBridge } from '../core/bridge/bridge';
 import { assessRunReadiness } from './runReadiness';
 import { runPipeline } from '../core/pipeline';
+import { rowSourceFor } from '../core/schema/row-source';
 import { presentRun } from '../ui/views/report/presenter';
 import { createCancelToken } from './store';
 import type { RuleFile } from '../core/rules/types';
@@ -99,6 +100,7 @@ export async function startRun(ctx: ShellContext): Promise<void> {
         name: dataset.name,
         columns: dataset.columns,
         rowCount: dataset.rowCount,
+        source: rowSourceFor(dataset.format, dataset.renames, () => dataset.source.arrayBuffer()),
       },
       schema,
       ruleFiles,

@@ -1,17 +1,72 @@
 /**
- * Validation-worker message protocol (json-schema-subsystem.md §F, verbatim
- * shapes). Rows cross as `unknown[][]` + a one-time `columns` list — arrays
- * structured-clone several times faster than 5,000 objects × 265 keys; the
- * worker zips them into row objects during §C.3 shaping. `__row__` itself is
- * NOT a batch column: batches are dense by construction (`__row__` is
+ * Validation-worker message protocol (json-schema-subsystem.md §F). Rows
+ * cross as `unknown[][]` in the order of the init message's `columns` —
+ * arrays structured-clone several times faster than 5,000 objects × 265
+ * keys; the worker builds each record during §C.3 shaping. A JSON dataset's
+ * rows cross as the records' own text instead (`records`). `__row__` itself
+ * is NOT a batch column: batches are dense by construction (`__row__` is
  * `row_number() − 1` at ingest), so `rowStart + index` reconstructs it.
  */
 import type { QCFlag } from '../flags/flag';
 import type { ColumnMeta } from './column-meta';
 import type { ConditionalRule } from './conditionals';
-import type { NestedColumn } from './nested-values';
+import type { NestedPlan } from './nested-values';
 import type { SchemaDraft } from './types';
 import type { JsonTypeName } from './value-spec';
+
+/**
+ * Where the records the validator judges come from (§C.0):
+ * - `text` — a CSV, TSV or Excel dataset: each cell's own text, read as the
+ *   JSON value it spells where the schema allows that type (text-cells.ts);
+ * - `typed` — a Parquet dataset: each value as JSON writes it, the types JSON
+ *   lacks in standard text (canonical.ts);
+ * - `records` — a JSON dataset: the file's own records, exactly.
+ * Corrected cells (a correction rule changed them) are read from the
+ * corrected data instead, in every mode.
+ */
+export type RowSourceKind = 'text' | 'typed' | 'records';
+
+/** How one column's cells cross to the worker. */
+export type CellTransport =
+  /** The engine's own JS value: VARCHAR, BOOLEAN, integers up to 32 bits, DOUBLE. */
+  | { kind: 'native' }
+  /** `CAST(c AS VARCHAR)` of a 64/128-bit integer, DECIMAL or FLOAT — every digit (`exact`: integers past 2^53 earn the precision warning). */
+  | { kind: 'number'; exact: boolean }
+  /** `to_json` text, read back with the column's plan (nested values, dates, intervals, blobs …). */
+  | { kind: 'json'; plan: NestedPlan; wideIntegers: boolean }
+  /** A text dataset's raw cell, read by the schema (text-cells.ts). */
+  | { kind: 'text' };
+
+/** One dataset column as the worker presents it to the validator. */
+export interface PresentedColumn {
+  /** The dataset column (after ingest hygiene): what flags name. */
+  column: string;
+  /** The record key the validator sees: the source's own name for it. */
+  key: string;
+  /** What the schema allows here — how text is read, whether NULL is null. Empty: anything. */
+  jsonTypes: JsonTypeName[];
+  /** SQL NULL presents as JSON null (else the key is absent). */
+  nullAllowed: boolean;
+  transport: CellTransport;
+  /** How positions inside the value are numbered in messages (`people[2]`): the column's plan as the grid holds it. */
+  numbering?: NestedPlan;
+  /** Reads a corrected value — `to_json` of the corrected column. */
+  fix?: { plan: NestedPlan; wideIntegers: boolean };
+}
+
+/**
+ * What the dataset as a whole must satisfy, beyond each record's schema
+ * (§D.6, dataset-shape.ts). Schemas are named by their `ajv.getSchema` id
+ * (`schemaRefUri`).
+ */
+export interface DatasetChecks {
+  /** Records past the prefix: their schema, `false` (no more records allowed) or null (anything). */
+  record: string | false | null;
+  /** 2020-12 `prefixItems` / draft-07 tuple `items`: one schema per leading record. */
+  prefix: string[];
+  contains?: { schema: string; min: number; max?: number };
+  uniqueItems: boolean;
+}
 
 /** Default materialized-schema-flag cap (§F; exact counts continue past it). */
 export const DEFAULT_FLAG_CAP = 100_000;
@@ -35,20 +90,28 @@ export type MainToWorker =
   | {
       type: 'init';
       files: { uri: string; json: unknown }[];
-      rootBase: string;
       draft: SchemaDraft;
       columnMeta: SerializedColumnMeta[];
       conditionals: ConditionalRule[];
-      missingColumns: string[];
-      castFailures: string[];
-      /**
-       * The selected columns whose cells arrive as `to_json` text — every
-       * nested or JSON one — with the plan that reads them (§C.4).
-       */
-      nested: NestedColumn[];
+      /** Required variables absent from the dataset: their column flag stands for every record's. */
+      missingRequired: string[];
+      mode: RowSourceKind;
+      /** Every dataset column, in order — the record is all of them (§C.3). */
+      columns: PresentedColumn[];
+      checks: DatasetChecks;
       config: { flagCap: number };
     }
-  | { type: 'batch'; seq: number; rowStart: number; columns?: string[]; rows: unknown[][] }
+  | {
+      type: 'batch';
+      seq: number;
+      rowStart: number;
+      /** `text` / `typed`: one value per column, in `columns` order. */
+      rows?: unknown[][];
+      /** `records`: each record's text. */
+      records?: string[];
+      /** Corrected cells: `to_json` of the corrected value, `''` for NULL, null where unchanged. */
+      fixes?: (string | null)[][];
+    }
   | { type: 'flush' }
   | { type: 'abort' };
 
@@ -65,11 +128,21 @@ export type WorkerToMain =
       truncated: boolean;
       elapsedMs: number;
     }
-  | { type: 'done'; summary: ValidationSummary }
+  | {
+      type: 'done';
+      summary: ValidationSummary;
+      /** Dataset-scope findings the worker reached over all records (duplicates, `contains`, `items: false`). */
+      datasetFlags: QCFlag[];
+      /** Columns the schema rejected in some record (additional / unevaluated properties). */
+      rejectedColumns: string[];
+      /** `records`: every top-level key any record has — the dataset's real columns. */
+      keysSeen?: string[];
+    }
   | { type: 'fatal'; message: string };
 
 export interface ValidationSummary {
   rowsTotal: number;
+  /** Records with at least one error-severity finding. */
   rowsWithErrors: number;
   /** Materialized (posted) flags — capped. */
   flagsEmitted: number;

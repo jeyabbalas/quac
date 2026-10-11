@@ -1,0 +1,6 @@
+[
+ {"id":0,"kind":"A","spouse":"x","note":"n"},
+ {"id":1,"kind":"B","note":null},
+ {"id":2,"kind":"B"},
+ {"id":3,"kind":"A","spouse":null}
+]

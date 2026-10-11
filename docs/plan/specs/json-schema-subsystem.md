@@ -99,13 +99,25 @@ interface RootCandidate { fileId: string; declaredId?: string; title?: string; a
 
 1. `G` = file-level digraph over `schemas` from resolved edges (self/parallel edges collapsed).
 2. `C` = in-degree-0 nodes.
-3. `arrayOfObjects(f)` = root has `type:"array"` (or no `type` but `items`) AND `items` is an object/$ref (not tuple/boolean). Matches `core.schema.json`.
+3. `arrayOfObjects(f)` = root has `type:"array"` — or a type array containing `"array"`, or no `type` but `items`/`prefixItems` — AND it describes records (an object/`$ref` `items`, a draft-07 tuple `items`, `prefixItems`). A root that is only a `$ref` (or an `allOf` of one) to such a schema, in any file, qualifies through it (`isArrayOfObjectsRoot`, `dataset-shape.ts`). Matches `core.schema.json`.
 4. Decide:
    - `|C| = 1` → `auto` (HESP today).
    - `|C| > 1`: `A = {c ∈ C : arrayOfObjects(c)}`; `|A| = 1` → `auto-preferred` + dismissible notice ("Using core.schema.json as the index; X is also unreferenced"). Else → `ambiguous` → **IndexPickerModal** over `C`, ordered: manifest hints, then array-shaped, then by path; rows show `relativePath`, `title`, shape badge, "why ambiguous" note.
    - `|C| = 0`, schemas non-empty (cycle) → `none` → modal over **all** schemas ("These files reference each other in a cycle; choose the entry point.").
    - No schemas → `E_NO_SCHEMAS` (fatal).
-5. Post-selection: chosen root must be `arrayOfObjects`; if not, warn but allow; if it lacks `items` entirely → fatal `E_ROOT_NOT_TABULAR`.
+5. Post-selection: chosen root must be `arrayOfObjects`; if not, warn but allow; if it describes no records at all (no `items`, `prefixItems` or `$ref` to a schema that has them) → fatal `E_ROOT_NOT_TABULAR`.
+
+### A.3b The dataset shape (`dataset-shape.ts`)
+
+`datasetShape(set)` reads, from the chosen root, which schema each record must satisfy and what the array as a whole must satisfy — so nothing the root says is silently dropped:
+
+| Root (by the root file's draft) | Records |
+|---|---|
+| 2020-12 | `prefixItems[i]` for record i, `items` for the rest (`false`: no more records) |
+| draft-07 / 2019-09 | a tuple `items: [..]` for the first records, `additionalItems` for the rest; an object `items` for all |
+| any | `unevaluatedItems` stands in for the rest when nothing else evaluates them |
+
+Whole-array keywords checked: `minItems`, `maxItems`, `uniqueItems` (JSON equality — key order and `1` vs `1.0` do not matter, a missing key and a `null` do), `contains` with `minContains` / `maxContains` (2019-09+; draft-07: at least one). A root that only points elsewhere (`{"$ref": "#/$defs/dataset"}`, or an `allOf` of one) is followed in any file, keywords beside it merged (largest `minItems`, smallest `maxItems`). Anything else that constrains the array — `not`, `if`, an array-level `anyOf`/`oneOf`, `const`/`enum`, a dynamic ref — is listed in `unsupported` and reported as one `schema:dataset:unchecked` warning. The worker compiles each record schema by its `schemaRefUri` (`uri#pointer`, segments URI-encoded) and checks the dataset-wide keywords over every record (§F).
 
 ### A.4 `indexFileId` (share-URL contract — consumed by `url-params.md`)
 
@@ -126,40 +138,49 @@ Run all; report all at once (never stop at first). Fatal set-level errors block 
 | `E_NO_SCHEMAS` | zero schema files | fatal | "None of the loaded files look like JSON Schemas. QuaC looked for keys like `$schema`, `type`, or `properties`." |
 | `E_META` | Ajv `validateSchema` fails | fatal (file) | "`{path}` is not a valid {draft} schema: {first Ajv message} at `{instancePath}`." |
 | `E_MIXED_DRAFT` | mixed `$schema` drafts | warning | "Files use different JSON Schema drafts ({list}); QuaC validates using the index file's draft ({draft})." |
-| `E_ROOT_NOT_TABULAR` | root lacks `items` | fatal | "The index schema `{path}` does not describe a table (expected `type: \"array\"` with `items`)." |
+| `E_ROOT_NOT_TABULAR` | root describes no records | fatal | "The index schema `{path}` does not describe a table (expected `type: \"array\"` with `items`)." |
+| `E_UNSUPPORTED_DRAFT` | draft-04 / draft-03 `$schema` | fatal (file) | names the file and the draft, lists the supported drafts and the upgrade steps (`exclusiveMaximum: true` → a number, `id` → `$id`, …) |
+| `E_COMPILE` | the record schema does not compile | fatal | a `pattern` / `patternProperties` name that is no regular expression in either ECMA-262 dialect (file + pointer), or Ajv's own compile failure (an unresolvable ref) — found at LOAD, not as a stage error mid-run |
+| `W_UNKNOWN_DRAFT` | a `$schema` QuaC does not know | warning | read as 2020-12 |
+| `W_REF_SIBLINGS` | draft-06/07: keywords beside `$ref` | warning | names what those drafts ignore (and QuaC with them) |
+| `W_EMPTY_ENUM` | `enum: []` | warning | valid JSON Schema that no value satisfies |
+| `W_UNCHECKED_FORMAT` | `format` values QuaC does not check | warning | lists them once (misspellings, vendor formats, OpenAPI's no-op `float`/`double`/`password`/`binary`) |
 | `E_FETCH` | URL fetch fails | fatal (file) | CORS-aware copy per `url-params.md §CORS` |
 
 ---
 
 ## B. Ajv integration
 
-### B.1 Construction (decided config)
+### B.1 Construction (decided config — `ajv-engine.ts`, `keywords.ts`, `formats.ts`, `drafts.ts`)
 
 ```ts
-import Ajv2020 from 'ajv/dist/2020';
-import Ajv2019 from 'ajv/dist/2019';
-import AjvDraft7 from 'ajv';
-import addFormats from 'ajv-formats';
-
-function buildAjv(draft: SchemaFile['draft']) {
-  const Ctor = draft === 'draft-07' ? AjvDraft7 : draft === '2019-09' ? Ajv2019 : Ajv2020;
+function buildAjv(draft: SchemaDraft) {
+  // draft-06 and draft-07: the draft-07 class (+ the draft-06 meta-schema); 2019-09; 2020-12 (default)
   const ajv = new Ctor({
     allErrors: true,      // QC needs every failure
-    verbose: true,        // errors carry schema/parentSchema/data → translator needs titles
-    strict: false,        // user schemas carry x-universe/x-unit/x-role/… — strict mode would throw
-                          //   "unknown keyword"; meta-schema validation still runs (validateSchema: true)
+    verbose: true,        // errors carry schema/parentSchema/data → translator needs titles, the probe needs identity
+    strict: false,        // user schemas carry x-universe/x-unit/x-role/…
     validateSchema: true,
-    coerceTypes: false,   // casting is DuckDB's job (§C); coercion would mask cast findings
+    coerceTypes: false,   // the validator judges the dataset's own values (§C)
+    ownProperties: true,  // a column named `constructor` or `toString` is a property, not Object.prototype's
     $data: false,
-    code: { optimize: 1 },
+    logger: false,        // unknown formats are reported once, at load (W_UNCHECKED_FORMAT)
+    code: { optimize: 1, regExp: tolerantRegExp },  // Unicode mode, plain ECMA-262 when `u` refuses a pattern
   });
-  addFormats(ajv);        // HESP uses no `format`; generic user schemas commonly do
+  useExactMultipleOf(ajv);   // decimal multipleOf: 19.99 % 0.01 = 0 (Ajv's float division says otherwise)
+  addStandardFormats(ajv);   // RFC 3339 date/time/date-time/duration, uuid, email/idn-email,
+                             // hostname/idn-hostname, uri/uri-reference/iri/iri-reference, uri-template, regex …
   return ajv;
 }
 ```
 
-- **Draft routing:** ONE instance per set, class chosen by the **root file's** draft; files missing `$schema` assumed 2020-12; mixed drafts → `E_MIXED_DRAFT` warning (no cross-draft `addMetaSchema` — Ajv documents meta-schemas don't work across drafts).
+- **Draft routing:** ONE instance per set, class chosen by the **root file's** draft (`readDraft` recognises every spelling of a known meta-schema URI: http/https, with or without `#`); files missing `$schema` read as 2020-12; draft-04/03 refused (`E_UNSUPPORTED_DRAFT`); a custom `$schema` reads as 2020-12 with `W_UNKNOWN_DRAFT`. A file declaring ANOTHER known draft is still registered (validation off) so cross-file refs resolve, and `E_MIXED_DRAFT` says it is read with the root's draft.
+- **Prepared documents** (`prepareSchemaForAjv`): what Ajv registers is the user's JSON, except — in a copy — a property literally named `__proto__` (moved to `patternProperties["^__proto__$"]`, which Ajv honours), draft-06/07 keywords beside `$ref` (dropped, as those drafts specify; `W_REF_SIBLINGS`), and `enum: []` (an `allOf` with `false`). The worker prepares each document once and hands the same objects to the translator's probe (§D.3).
+- **Formats** are asserted (2020-12 makes that an option; QC wants it), by their standards: RFC 3339 §5.6 (`T`/`t` only, offset `Z` or `±hh:mm`, fractional seconds as text, leap seconds only at 23:59:60 UTC) and Appendix A durations (whole numbers, weeks alone); RFC 4122 `uuid` without a `urn:` prefix; IDNA2008 approximated for `idn-hostname`/`idn-email` (UTS #46 mapping via the URL parser plus CONTEXTJ/CONTEXTO/Bidi rules). ajv-formats' OpenAPI/Ajv extensions stay registered; the no-op ones are named in `W_UNCHECKED_FORMAT`.
+- **Load-time compile:** `buildSchemaSet` runs `engineChecks(set)` (the lazy `ajv-engine` chunk — Ajv never enters the entry bundle), compiling every record schema the dataset shape names, so a schema that cannot validate says so at load (`E_COMPILE`); a root picked in the IndexPicker gets the same check.
 - **CSP note:** Ajv codegen needs `unsafe-eval`; QuaC ships no blocking CSP, and Ajv lives in the validation worker anyway.
+
+Conformance (JSON-Schema-Test-Suite, required + optional, QuaC's exact construction): draft-07 1848/1856, 2019-09 2287/2309, 2020-12 2278/2353, draft-06 1358/1361. The remainder: `$dynamicRef` edge cases, `unevaluated*` with `if` but no `then`, stack-deep nested-`$id` relative refs, draft-07 `content*` assertion, and the suite's "format is only an annotation by default" checks (QuaC asserts formats by design).
 
 ### B.2 Registration & synthetic `$id`s
 
@@ -179,7 +200,7 @@ const validateRow = ajv.getSchema(`${rootBase}#/items`);
 
 `getSchema` with a pointer fragment compiles the subschema in place — base URI stays the root file's, so `"$ref": "categories/identification.json"` resolves exactly as in whole-document validation. **`unevaluatedProperties` correctness:** the keyword and all cousin applicators (12 allOf refs + 171 if/thens) live inside the same `items` object, so annotation collection is self-contained; pointer-compiled semantics equal whole-array semantics. Asserted by the P09 smoke test: one extra property ⇒ exactly one `unevaluatedProperties` error through the pointer-compiled function.
 
-Array-level keywords (`uniqueItems`, `minItems`) are **NOT** validated through Ajv — at 1M rows Ajv's deep-equality `uniqueItems` is prohibitive; DuckDB does both as SQL (§D.6 table, `validation-run.ts`).
+Array-level keywords are **NOT** validated by handing Ajv the whole array — at 1M rows that is a multi-GB materialization and an O(n²) `uniqueItems`. The worker validates each record against its record schema (§A.3b: `prefixItems` / tuple positions, then `items` / `additionalItems`), and checks the array-level keywords over all of them: `uniqueItems` by a 64-bit fingerprint of each record's canonical JSON (sorted keys), `contains` by counting matches, `items: false` by counting records past the prefix; `minItems`/`maxItems` are counts (`validation-run.ts`).
 
 ### B.4 Execution model — chunked per-row in a dedicated Web Worker (decided)
 
@@ -192,78 +213,108 @@ main thread: validation-run.ts          QC worker: validation.worker.ts
    overlaps validation of N)  ◀─flags──   post {flags, counts, timing}
 ```
 
-Rows cross as `unknown[][]` + one-time `columns: string[]` (arrays structured-clone several × faster than 5,000 objects × 265 keys); the worker zips into row objects (needed anyway for null→absent shaping). Batch default **5,000 rows**; batch SQL uses a **range predicate on `__row__`** (`WHERE __row__ >= a AND __row__ < b`), never `OFFSET`.
+Rows cross as `unknown[][]` in the init message's column order (arrays structured-clone several × faster than 5,000 objects × 265 keys) — or, for a JSON dataset, as each record's own text; the worker builds each record (§C.3). Batch default **5,000 rows**; batch SQL uses a **range predicate on `__row__`** (`WHERE __row__ >= a AND __row__ < b`), never `OFFSET`.
 
 ---
 
-## C. Typing / casting strategy
+## C. What the validator reads — the dataset's own values
 
-**Decision: schema-driven SQL casting into `quac_typed` (primary). Ajv `coerceTypes` stays off.** Rationale: a failed cast is itself a QC finding (with the raw value) — `TRY_CAST` gives exactly that; DuckDB casts 1M values orders of magnitude faster than JS; `quac_typed` is the single typed dataset every consumer shares (rules engine, display, report).
+**Decision (v1.2, superseding v1's "schema-driven SQL casting is primary"): the validator judges the values the dataset holds, as JSON — never DuckDB's casts or DuckDB's reading of them.** JSON Schema judges JSON values; DuckDB is a table engine and a lossy JSON reader for this purpose: `read_json` turns ISO date, time and UUID strings into `DATE`/`TIMESTAMP`/`UUID` (dropping a `Z`, applying an offset, swapping the `T` for a space, lower-casing a UUID), reads a missing key and an explicit `null` as the same `NULL` (top level and inside a struct), and gives a struct every key any record has; `TRY_CAST` reads `yes` as true, `1_000` as 1000 and `' 42 '` as 42. Validating those readings produced false errors on valid data (`2024-01-15T08:30:00+05:30` reported as an invalid date-time) and passed invalid data (an explicit `null` where the schema forbids it; the string `"42"` under `type: integer`). `quac_typed` — the schema's cast — still exists, for the rules engine and the report (§C.5); validation never reads it. Ajv `coerceTypes` stays off.
 
-### C.1 Column target-type derivation
+### C.0 Row sources (`row-source.ts`, `worker-protocol.ts` `RowSourceKind`)
 
-For each schema property, compute `jsonTypes ⊆ {integer, number, string, boolean, null}` by walking the resolved property schema (cycle-guarded, depth ≤ 12): union over `anyOf`/`oneOf`; intersection over `allOf`; `type` direct; `const`/`enum` contribute `typeof`; `$ref` follows registry; `if`/`then`/`not` contribute nothing (value constraints, not storage). Then:
-
-| `jsonTypes` (minus `null`) | Storage | Notes |
+| Dataset | The record the validator judges | Module |
 |---|---|---|
-| `{integer}` | `BIGINT` | HESP amounts, codes, sentinels |
-| `{number}` or `{integer,number}` | `DOUBLE` | weights, ratios |
-| `{string}` | `VARCHAR` | ids, dates — leading zeros preserved |
-| `{boolean}` | `BOOLEAN` | |
-| `{array}`, `{object}` or both | `JSON` | text (CSV/TSV/XLSX) → `TRY_CAST(raw AS JSON)`; text that does not parse is a cast finding (`'[1, 2' is not valid JSON — this variable takes an array, written as JSON text.`). Any other scalar raw type keeps its type (Ajv names the mismatch) |
-| mixed string+numeric / empty / opaque | `VARCHAR` + `mixed:true` | see row shaping |
-| *(any target)* over a **nested or JSON raw column** | **its own type, untouched** | §C.4 — a LIST/STRUCT/MAP/UNION/JSON column is never cast, whatever its schema says |
-| data column absent from schema | `VARCHAR` passthrough | flagged column-scope `unexpected` |
+| JSON | **the file's own record, exactly** — re-split from the file's bytes at run time (`json-records.ts`), parsed in the worker (`nested-values.ts decodeRecord`): a missing key is missing, an explicit `null` is null, ISO text, UUID case and key names as written | `json-records.ts` |
+| Parquet | each value **as JSON writes it**, the types JSON lacks in standard text (§C.2) | `canonical.ts` |
+| CSV / TSV / XLSX | each cell's **text, read as the JSON value it spells** where the schema allows that type (§C.1) | `text-cells.ts` |
 
-`DECIMAL` never used (Arrow decimal objects complicate row shaping).
+- **Every dataset column is part of every record** (§C.3) — the schema, not QuaC, decides what an extra column means.
+- **Corrected cells** (a correction rule changed them) are read from the corrected `data` instead, in every mode: per batch, `CASE WHEN d.c IS DISTINCT FROM t.c THEN COALESCE(CAST(to_json(d.c) AS VARCHAR), '') END` against `quac_typed` (`''` = corrected to NULL), decoded with the corrected column's plan. The pipeline passes `corrected: true` only when an enabled correction rule runs.
+- **Names**: a JSON or Parquet record keeps the names it was written with — a column ingest hygiene renamed (`" padded "` → `padded`, `__meta` → `meta`) reaches the validator under its source name, and its flags name the dataset column. A CSV header is matched as trimmed (hygiene's reading is the CSV convention).
+- **A JSON file's own records unavailable** (the bytes are not at hand, or the element count differs from the loaded row count) → the run validates DuckDB's reading (`typed`) and says so in one `schema:dataset:source` warning.
+- **JSON column-scope findings** (missing / extra columns) use the keys the records really have — the worker reports them (`keysSeen`) — not DuckDB's column names (DuckDB names a `""` key `C1` and renames a case-colliding `name` to `name_1`).
 
-```ts
-interface ColumnCast { column: string; storageType: 'BIGINT'|'DOUBLE'|'VARCHAR'|'BOOLEAN'; mixed: boolean; castExpr: string; }
-interface CastPlan   { columns: ColumnCast[]; sql: string; }   // CREATE TABLE quac_typed AS ...
-```
+### C.1 Text cells (`text-cells.ts`)
 
-Cast expressions over `quac_raw` (all VARCHAR for delimited inputs; empty CSV fields already NULL under DuckDB's default `nullstr`):
+A cell is the JSON value it spells when the schema allows that value's type (`ColumnMeta.jsonTypes`; empty = anything), and otherwise the text itself:
 
-- Integer: `COALESCE(TRY_CAST(raw AS BIGINT), CASE WHEN TRY_CAST(raw AS DOUBLE) IS NOT NULL AND TRY_CAST(raw AS DOUBLE) = trunc(TRY_CAST(raw AS DOUBLE)) THEN CAST(TRY_CAST(raw AS DOUBLE) AS BIGINT) END)` — accepts `'42'`, `' 42 '`, `'42.0'`, `'4.2e1'`; distinguishes `'42.5'` (non-integral) from `'abc'` (non-numeric).
-- Number: `TRY_CAST(raw AS DOUBLE)`. Boolean: `TRY_CAST(raw AS BOOLEAN)`. Varchar: passthrough.
-
-`quac_typed` = `CREATE TABLE quac_typed AS SELECT __row__, <cast exprs> FROM quac_raw`. Parquet/JSON inputs load typed: when the loaded DuckDB type already equals the target, passthrough; else the same TRY_CAST ladder via `CAST(col AS VARCHAR)`.
-
-### C.2 Cast failures become flags
-
-One pass per non-passthrough column (raw+typed join or UNPIVOT — implementer's choice), returning `(row, rawValue)` where `raw IS NOT NULL AND trim(raw) <> '' AND typed IS NULL`:
-
-- Non-numeric text → `ruleId: schema:prop:<col>:cast`, error, message `'twelve hundred' is not a valid integer.`
-- Numeric-but-non-integral in integer column → same ruleId, message `42.5 is not a whole number — this variable takes integer values.`
-
-Hits land in `castFailures: Set<string>` (`` `${row} ${col}` ``) consulted by the translator: Ajv errors on those cells are **suppressed** so each bad cell yields exactly one flag.
-
-### C.3 Null / empty / missing mapping (row shaping, in the worker)
-
-| Working-table state | Presented to Ajv | Consequence |
+| Text | Read as | Notes |
 |---|---|---|
-| SQL `NULL` (empty field, JSON null, cast failure) | property **absent** (unless column's `jsonTypes` includes `null` → JSON null) | `required` fires → "value is missing" |
-| Column entirely absent from dataset | absent + in `missingColumns` | one column-scope flag; per-row `required` errors suppressed |
-| Extra column (not in schema property universe) | **excluded from row objects** | one column-scope `unexpected` flag (avoids 1M `unevaluatedProperties` errors). Fallback when the property universe isn't statically enumerable (schema uses `patternProperties`/`additionalProperties` — absent in HESP): include extras, translator dedupes per column |
-| `BIGINT` → JS `BigInt` | `Number(v)`; if `|v| > 2^53−1`: flag `schema:prop:<col>:precision` warning once per column, present nearest double | Ajv requires `number` |
-| `DOUBLE` NaN/±Infinity (Parquet) | absent + cell flag "not a finite number" | NaN would silently PASS min/max — must intercept |
-| `mixed:true` VARCHAR | `/^-?(\d+)(\.\d+)?([eE][+-]?\d+)?$/` → number, else string | documented heuristic |
+| JSON's number grammar (RFC 8259 §6): `-12`, `0.5`, `1e5`, `-0` | number | no `+`, no leading zero, a digit on both sides of `.`: `+5`, `007`, `.5`, `5.`, `1,000`, `1_000`, `NaN`, `Infinity` are text. An integral value is an integer (`2.0`). Past ±(2^53 − 1): the nearest double + the precision warning (§C.3), never "not a whole number". Past ±1.8e308: a cast finding |
+| `true` / `false` in any letter case | boolean | Excel and Python write `TRUE`, `True`. `yes`, `t`, `1`, `on` are text |
+| `[…]` / `{…}` that `JSON.parse` accepts | array / object | strict JSON: `[1,]` is text |
+| anything else | string, **exactly as written** | spaces kept |
 
----
+Spaces around a number, a boolean or JSON text are ignored (JSON ignores them); a string keeps every character. So `42` under `type: integer` is 42, under `type: string` the text `"42"`, and under `["string","integer"]` 42 — while `0042` there is the text `"0042"`. The boolean-or-code pattern (`anyOf: [{type: boolean}, {const: -99}]`) reads `false` as false and `-99` as −99.
+
+When the text spells no value of any allowed type and text itself is not allowed, the cell is a **cast finding** (`schema:prop:<col>:cast`, error), left out of the record, and Ajv's errors at it are dropped (`castKeys` → `TranslateCtx.castFailures`): `'twelve hundred' is not a valid integer.`, `1.5 is not a whole number — this variable takes integer values.`, `'[1, 2' is not valid JSON — this variable takes an array, written as JSON text.`, `'yes' is not a valid true/false value.` A cell of only spaces is text, not a missing value (`'   ' is not a valid integer.`); an empty cell is missing (§C.3).
+
+Excel cells are read as the values they hold, not as the sheet displays them (`ingest/excel.ts`): numbers as their digits (`1234.5`, not `1,234.50`; `0.125`, not `12.5%`), dates as ISO 8601 (`2024-01-15`, `2024-01-15T08:30:00` when the value has a time of day or the format shows one, `08:30:00` for a time), booleans `TRUE`/`FALSE`.
+
+### C.2 Typed values (`canonical.ts`; transports)
+
+A value reaches the validator as JSON writes it; no value is converted to another JSON type first (a number under `type: string` is a `type` finding, as in any JSON Schema validator):
+
+| DuckDB | JSON value |
+|---|---|
+| BOOLEAN; VARCHAR, ENUM, BIT; integers; DOUBLE; DECIMAL | true/false; a string; a number (DECIMAL and 64/128-bit integers read from their digits) |
+| FLOAT | the shortest decimal that is that float (`0.1`, not `0.10000000149011612`) |
+| DATE | `2024-01-15` (RFC 3339 full-date); BC dates and `infinity` keep DuckDB's text and fail `format: date` |
+| TIME, TIME_NS | `08:30:00.5` — no offset, so RFC 3339 `format: time` rejects it, rightly |
+| TIME WITH TIME ZONE | `08:30:00+05:30`, `08:30:00Z` |
+| TIMESTAMP, _S, _MS, _NS | `2024-01-15T08:30:00.5` — no offset, so RFC 3339 `date-time` rejects it, rightly |
+| TIMESTAMP WITH TIME ZONE | `2024-01-15T03:00:00Z` (the UTC instant; both runtimes run DuckDB in UTC) |
+| INTERVAL | ISO 8601 duration: `P1Y2M3DT4H5M6.5S`, `PT0S`; mixed signs have no ISO form and come out signed per component (`P1M-2D`), which no duration format accepts |
+| UUID | RFC 4122 lowercase |
+| BLOB | base64 (RFC 4648) |
+| UNION | the member value (`to_json` writes `{"tag": value}`) |
+| VARIANT | its JSON (`CAST(v AS JSON)`) |
+| LIST/ARRAY, STRUCT, MAP, JSON | array, object, object (keys in standard text), the JSON value — §C.4 |
+
+Transports (`worker-protocol.ts CellTransport`): `native` (the engine's JS value — VARCHAR, BOOLEAN, integers up to 32 bits, DOUBLE: exact on both runtimes), `number` (`CAST(c AS VARCHAR)` of BIGINT/UBIGINT/HUGEINT/UHUGEINT/DECIMAL/FLOAT — both runtimes hand a 64-bit integer over as a rounded number, which silenced the precision warning), `json` (`CAST(to_json(c) AS VARCHAR)` read with the column's plan, standard text for each leaf). A browser-only caveat: data-table's Parquet loader converts a text column whose values all look like ISO dates or times into `DATE`/`TIMESTAMP`/`TIME` (its `detectTemporalColumns`), so in the browser such a column reaches the validator in the standard text of its converted type (`T` separator, a UTC `Z` dropped where it matched the session zone, trailing fractional zeros dropped); the CLI reads the file's text. JSON files are not affected (§C.0).
+
+### C.3 Null / missing / extra (row shaping, in the worker — `row-shaping.ts`)
+
+| State | Presented to Ajv | Consequence |
+|---|---|---|
+| JSON record: key missing / explicit `null` | absent / `null` | exactly as JSON Schema reads them: `required` sees a missing key; `type` sees a null |
+| CSV/Parquet SQL `NULL` (empty cell) | **absent** (unless the column's `jsonTypes` includes `null` → JSON null) | the text/Parquet convention: an empty cell is a missing value; `required` fires → "value is missing" |
+| Column entirely absent from the dataset | absent; its unconditional `required` errors folded into one column-scope flag (`missingRequired`) | one `schema:column:<c>:missing` flag (error when required, info when optional) |
+| **Extra column** (no property declares it) | **in the record**, read by the patternProperties / additionalProperties schema that covers it (`undeclaredColumnMeta`), else as text | the schema decides: rejected (`additionalProperties`/`unevaluatedProperties: false`) → ONE column-scope `schema:column:<c>:unexpected` error per run (the engine dedupes, counts once); covered by a schema → checked like any column; allowed by an open schema → one `schema:column:<c>:undescribed` **info** after the run |
+| An integer past ±(2^53 − 1) | the nearest double | `schema:prop:<col>:precision` warning, once per column, with the digits — top level and nested |
+| NaN / ±Infinity (any spelling DuckDB writes) | absent (or null inside a value) | `schema:prop:<col>:cast` "not a finite number", Ajv errors at those paths dropped |
 
 ### C.4 Nested values (LIST, STRUCT, MAP, JSON) — `nested-values.ts`, `core/duckdb-type.ts`, `core/nested-json.ts`
 
-A JSON or Parquet dataset keeps DuckDB's nested types (`BIGINT[]`, `STRUCT(x DOUBLE, tier VARCHAR)`, `MAP(VARCHAR, BIGINT)`, `JSON`). They are validated as the values the source JSON held:
+A JSON dataset's nested values are part of its exact records (§C.0) — none of the struct caveats below apply to them. A Parquet dataset's (and a corrected cell's) are read as their `to_json` text with the column's plan:
 
-1. **Types are read whole.** `describeColumns` returns DuckDB's full type text; `core/duckdb-type.ts` reads it into a tree. Stripping the parameters off the text (as before) read `DECIMAL(10,2)[]` as `DECIMAL` and a list of structs as `STRUCT`.
-2. **Never cast** (§C.1). Before this, a nested column under an `array`/`object` schema landed in the mixed bucket and was cast to VARCHAR: every cell became DuckDB's text for it, which the schema then rejected (`must be an array or null, got string.`) — 15,308 false errors on the upstream nested stress fixture, nested rendering gone from the grids, and no list functions for the rules.
-3. **Read as JSON text.** The row loop selects a nested or JSON column as `CAST(to_json(c) AS VARCHAR)` and the worker parses it. Arrow is no route: data-table's `bridge.query` hands a DATE inside a list over as epoch milliseconds and a HUGEINT/DECIMAL inside one as a meaningless number; `@duckdb/node-api` has value classes of its own. `to_json` is exact on both runtimes (dates and UUIDs as text, every digit of a 128-bit integer, JSON as itself) — so browser and CLI validate the same value (`tests/fixtures/nested/*_expected_flags.json`, asserted on both).
-4. **STRUCT nulls follow the schema.** DuckDB reads `{}` and `{"x": null}` into the same struct. A NULL field reads as **missing** when the schema does not allow null there (found as JSON Schema finds it: `properties`, then a matching `patternProperties`, then `additionalProperties`), as **null** when it does — §C.3's rule, one level down. A field the object does not admit at all (`additionalProperties: false`) also reads as missing when NULL: DuckDB gives a struct every key ANY record has, so one record's stray key would otherwise be a finding in every record. Only an explicit null the schema forbids, in a field it does not require, goes unseen. MAP and JSON values keep their keys and nulls as written.
-5. **Non-finite numbers.** `to_json` writes NaN/±Infinity bare; the worker reads them as null, emits one `schema:prop:<col>:cast` flag per cell naming every path (`NaN and Infinity are not finite numbers (at readings[2], readings[3]).`), and drops Ajv errors at or below those paths.
-6. **Integers past ±(2^53 − 1)** parse to the nearest double (the BIGINT rule); the first one in a column gets the `precision` warning with its exact digits and location (`value at counts[3] exceeds …`). The digits come from `JSON.parse`'s source-text access, which also keeps a huge DOUBLE (`1.79e308`) from counting.
-7. **Paths in messages** are written as the report grid's value inspector shows them: list items from 1 (`people[2].age`, DuckDB SQL's numbering), an array inside a JSON value from 0 (`shifty[0]`, JSONPath's), a non-identifier field quoted (`odd_keys["my field"]`), a map entry by key (`labs["ldl"]`). The plan (main thread, from the DuckDB type + the property's schema) travels to the worker in `init.nested`.
+1. **Types are read whole.** `describeColumns` returns DuckDB's full type text; `core/duckdb-type.ts` reads it into a tree.
+2. **Never cast** for the validator; `quac_typed` keeps nested columns untouched (§C.5).
+3. **Read as JSON text**, decoded in the worker with the plan (main thread, from the DuckDB type + the property's schema): standard text for every leaf that needs one (§C.2), a UNION's tag dropped, a MAP's timestamp keys in standard text.
+4. **STRUCT nulls follow the schema** (Parquet only). DuckDB reads `{}` and `{"x": null}` into the same struct. A NULL field reads as **missing** when the schema does not allow null there, as **null** when it does — §C.3's rule, one level down; a field the object does not admit at all reads as missing when NULL. Parquet has no "missing field" of its own, so nothing is lost.
+5. **Non-finite numbers.** `to_json` writes NaN/±Infinity bare (and a JSON cast keeps `nan`, `inf`); the worker reads them as null, emits one cast flag per cell naming every path (`NaN and Infinity are not finite numbers (at readings[2], readings[3]).`), and drops Ajv errors at or below those paths. Text that does not parse at all is a cast finding (`'[1,' could not be read as a JSON value.`), never a stage failure.
+6. **Integers past ±(2^53 − 1)** — the precision warning with digits and location (`value at counts[3] exceeds …`); a huge DOUBLE (`1.79e308`) does not count.
+7. **Paths in messages** are written as the report grid's value inspector shows them: list items from 1 (`people[2].age`), an array inside a JSON value from 0 (`shifty[0]`), a non-identifier field quoted (`odd_keys["my field"]`), a map entry by key (`labs["ldl"]`). A JSON dataset's paths are numbered by the column's grid type too.
 
-Every other read that shows row values to people — the Excel Data sheet, the Load preview, a rule's finding and its correction before/after, a JS correction's input — reads nested columns the same way (`core/nested-json.ts`). A JS correction's result for a nested target is staged as JSON and cast back through DuckDB's JSON type (`CAST(CAST(val AS JSON) AS <type>)`: VARCHAR text casts to a STRUCT or LIST but not to a MAP).
+Every other read that shows row values to people — the Excel Data sheet, the Load preview, a rule's finding and its correction before/after, a JS correction's input — reads nested columns the same way (`core/nested-json.ts`).
+
+### C.5 `quac_typed` — the rules' typed columns (`casting.ts`)
+
+For the rules engine (and the report's Data sheet), each schema column — and each column a patternProperties / additionalProperties schema covers — is cast to a storage type derived from its `jsonTypes`:
+
+| `jsonTypes` (minus `null`) | Storage |
+|---|---|
+| `{integer}` | `BIGINT` (integer ladder: DOUBLE-integrality first, then BIGINT — V19) |
+| `{number}` or `{integer,number}` | `DOUBLE` |
+| `{string}` | `VARCHAR` |
+| `{boolean}` | `BOOLEAN` |
+| `{array}`, `{object}` or both | `JSON` (text → `TRY_CAST(raw AS JSON)`) |
+| mixed / empty / opaque | `VARCHAR` + `mixed` |
+| *(any)* over a nested or JSON raw column | its own type, untouched |
+| a column nothing in the schema covers | passthrough |
+
+These casts are DuckDB's (lenient) and serve SQL convenience only: a cell that does not cast is NULL in `quac_typed`, and the validator — which reads the cell itself — reports it.
 
 ## D. Error → flag mapping (the translator)
 
@@ -293,27 +344,29 @@ interface ConditionalTarget {
 }
 ```
 
-Extraction: `then.properties` — `const` → kind `const`; `not.const`/`not.enum` → not-kinds; anything else → `schema` with "must satisfy the conditional constraint (see schema)". `else` absent in HESP; when present generically, digest symmetrically with negated `conditionText`.
+Extraction: `then.properties` — `const` → kind `const`; `not.const`/`not.enum` → not-kinds; anything else → `schema` with "must satisfy the conditional constraint (see schema)". `else` is digested symmetrically, under the negated condition ("unless kind = 1, b must be 'y'"). The digest feeds tooltips and the root-`allOf` rule ids; the translator words every `if` it meets, wherever it sits, from the `if` subschema itself (§D.3).
 
-### D.3 Translation pipeline (pure, per row)
+### D.3 Translation pipeline (pure, per row — `translator.ts`, `error-tree.ts`, `schema-probe.ts`)
 
 ```ts
-function translateRowErrors(errors: AjvErrorLike[], row: number, ctx: TranslateCtx): QCFlag[]
-// ctx: columnMeta, conditionals, missingColumns, castFailures
+function translateRowErrors(errors: AjvErrorLike[], row: number, ctx: TranslateCtx,
+                            opts?: { locate?: Locate; probe?: SchemaProbe }): QCFlag[]
+// ctx: columnMeta, conditionals, missingRequired, castFailures
 ```
 
-1. **Drop wrappers:** `keyword === 'if'` and aggregate `allOf` errors.
-2. **Bucket by column:** first segment of `instancePath` (`/wage_income_annual` → that column) or `params.missingProperty` for root `required`. Deeper paths attribute to the top segment + append "(at {path})", the path rendered by the worker's `locate` (§C.4.7).
-3. **Per-bucket priority:**
-   a. `(row, column) ∈ castFailures` → emit nothing (cast flag exists).
-   b. column ∈ `missingColumns` and error is `required` → emit nothing (column flag exists).
-   c. `required` (cell) → `schema:prop:<col>:required`, "value is missing — this variable is required for every record."
-   d. **Conditionals:** errors whose `schemaPath` matches `^#\/allOf\/(\d+)\/(then|else)\//` (reliable ONLY for root-inline conditionals — category-file errors arrive under the category's own base via `$ref`, so no false matches). Group by `(allOfIndex, column)` → one flag `schema:cond:<i>:<col>`: `when {conditionText}, {target.text}. Found {render(value)}.` + `[Schema note: {comment}]`.
-   e. **anyOf/oneOf collapse:** bucket contains an `anyOf`/`oneOf` error at exactly the column path → emit ONE flag `schema:prop:<col>:value` from the ValueSpec template (§D.4) and **suppress every other non-conditional error in the bucket** (they are branch sub-error noise).
-   f. Remaining single-keyword errors → one flag each via the keyword table (§D.6), ruleId `schema:prop:<col>:value` (keyword kept in `meta.keyword`).
-4. Row-level leftovers: `unevaluatedProperties` (fallback path only) → dedupe into column-scope `schema:column:<col>:unexpected` (first occurrence wins). Unattributable errors → row-scope flag, generic template.
+**Errors are a tree.** With `allErrors`, a failing applicator's sub-errors are a CONTIGUOUS block immediately before its own error — `anyOf`, `oneOf`, `if` (`params.failingKeyword` then/else), `contains`, `propertyNames` — and errors inside a `$ref`'d subschema carry the TARGET's schemaPath, so a schemaPath prefix cannot say which applicator they belong to. The **probe** (worker-only; built over the very documents Ajv holds, §B.1) sizes each block exactly by re-validating the value against each branch (or `then`/`else`, the `contains` schema per item, the `propertyNames` schema per name), segmenting a union's block by branch; a block that does not check out (size, instance paths) falls back to the schemaPath reading, which is also the no-probe path. `dependentSchemas` / draft-07 schema-form `dependencies` emit no wrapper: their errors are recognised by location — under the keyword inline, or reachable only through it (`probe.dependentKeys`). Reading is independent of error order.
 
-Dataset-scope flags (duplicates, minItems, empty, pertinence, missing/extra columns) come from `validation-run.ts` SQL, not this function.
+Rendering, per tree node:
+1. **Unions** (`anyOf`/`oneOf`) narrow to one branch only when every branch states an explicit `type` and exactly one admits the value — that branch's errors are reported, nothing of the others'; otherwise ONE flag (the column's ValueSpec at the column itself, the branches' shapes inside a value) silences ONLY that union's own block. A `oneOf` matching more than one branch says so truthfully ("5 matches more than one of the exclusive alternatives (options 1 and 2) — it must match exactly one"). At the record level a union becomes one row flag naming the alternatives ("the record needs at least one of: 'email', 'phone'").
+2. **Conditions** anywhere — the record, a property, a `$ref`'d category file, inside a value — word their errors with the condition read off the `if` subschema ("when status = 'closed', …", "unless kind = 1, …", "when 'a' is present, …"); a condition that held because its property is missing says so. A conditional `required` reads "value is missing — this variable is required when …". Root `items.allOf` conditionals keep `schema:cond:<i>:<col>`.
+3. **`contains`**: one flag from its params (min and max), no item errors.
+4. **`propertyNames`**: one flag per bad name, with the reason from its block; `value` is the name.
+5. **Columns**: the first instancePath segment, UNESCAPED (`~1` → `/`, `~0` → `~`); `'/'` is the column named `""`, `''` the record itself. A root `required` / `additionalProperties` / `unevaluatedProperties` / `propertyNames` / `dependentRequired` names its column from params.
+6. **Suppression**: a cast finding covers every error AT its cell (and below); a required variable absent from the dataset (`missingRequired`, error-level column flag) covers its UNCONDITIONAL root `required` errors — never a conditional one.
+7. **Rejected columns**: a root `additionalProperties` / `unevaluatedProperties` error for key k → column-scope `schema:column:<k>:unexpected` ("Column 'x' is not allowed by the schema (additionalProperties is false)."); the engine keeps one per run and counts it once. A schema-valued additionalProperties / patternProperties check is an ordinary cell error.
+8. Everything else → one flag per single-keyword error via the keyword table (§D.6); nothing is ever dropped silently.
+
+Dataset-scope flags (duplicates, `contains`, record counts, empty, pertinence, missing/extra columns) come from the worker's dataset checks and `validation-run.ts`, not this function.
 
 ### D.4 ValueSpec rendering (`renderExpectation`)
 
@@ -326,16 +379,21 @@ Dataset-scope flags (duplicates, minItems, empty, pertinence, missing/extra colu
 ### D.5 Schema ruleId format (grouping key for Sheet 4 tallies)
 
 ```
-schema:prop:<column>:value        in-cell constraint (collapsed unions, type, range, enum, const, not, pattern, format)
-schema:prop:<column>:required     null/absent cell in a required column
-schema:prop:<column>:cast         TRY_CAST failure (message differentiates subkinds)
-schema:prop:<column>:precision    BigInt beyond 2^53 (warning)
-schema:cond:<allOfIndex>:<column> if/then violation attributed to the THEN-side target
-schema:column:<column>:missing    required variable absent from dataset
-schema:column:<column>:unexpected dataset column not in schema
+schema:prop:<column>:value        in-cell constraint (collapsed unions, type, range, enum, const, not, pattern, format,
+                                  and conditionals outside root items.allOf)
+schema:prop:<column>:required     absent cell in a required column (unconditional, or conditional — the message says when)
+schema:prop:<column>:cast         a text cell that spells no allowed value; NaN/±Infinity (message differentiates)
+schema:prop:<column>:precision    an integer beyond ±(2^53−1) (warning, once per column)
+schema:cond:<allOfIndex>:<column> root items.allOf if/then/else violation attributed to the target
+schema:row:<keyword>              a record-level finding with no single column (a record-level anyOf/oneOf, minProperties …)
+schema:column:<column>:missing    variable absent from the dataset (error when required, info when optional)
+schema:column:<column>:unexpected dataset column the schema rejects (additionalProperties / unevaluatedProperties false)
+schema:column:<column>:undescribed dataset column the schema allows but does not describe (info)
 schema:column:<column>:case-mismatch   near-miss header (warning)
-schema:dataset:duplicate-records | schema:dataset:min-items | schema:dataset:empty | schema:dataset:pertinence
+schema:dataset:duplicate-records | min-items | max-items | items | contains | empty | pertinence
 schema:dataset:no-overlap         schema and dataset share no column at all (§H edge 20)
+schema:dataset:unchecked          root keywords about the whole dataset QuaC does not check (warning)
+schema:dataset:source             a JSON file validated from DuckDB's reading, its records unavailable (warning)
 schema:advisory:<fileId>          category/root-level $comment soft checks (info, dataset scope)
 ```
 
@@ -353,17 +411,19 @@ Stable for an unchanged schema set (allOf index is positional — acceptable: id
 | `required` (203) | cell vs column split (§C.3) | cell/column | cell: "value is missing…"; column: "Variable '{col}' ({title}) is required by the schema but not present in the dataset." |
 | `$comment` (175) | property-level → trailer + tooltip; category/root-level → `schema:advisory:*` info flags | —/dataset | `[Note: …]` / "Schema note ({file}): {text}" |
 | `not` (174) | then-blocks → not-kinds; numeric-branch exclusions → ValueSpec | cell | "must not be -666 (Not applicable) — a substantive or item-missing value is required" |
-| `if`/`then` (171) | §D.3d | cell (then-target) | "when {cond}, {target text}. Found {v}." |
-| `type` (169) | collapsed or standalone | cell | `must be {article} {type}, got {typeof v}` (rare post-casting) |
+| `if`/`then`/`else` (171) | §D.3.2 — anywhere | cell (target) | "when {cond}, {target text}. Found {v}." / "unless {cond}, …" |
+| `type` (169) | collapsed or standalone | cell | `'abc' is a string, not an integer`; `1.5 is a number, not an integer`; `null is not allowed here — expected a string` |
 | `minimum`/`maximum` (~150) | collapsed or standalone | cell | `{v} is below the minimum {min}` / `exceeds the maximum {max}` |
-| `anyOf` (125) / `oneOf` (57) | collapse drivers | cell | ValueSpec template; oneOf multi-match (`params.passingSchemas`) → same template + "matches more than one exclusive option" |
-| `enum` (37) | collapsed or standalone | cell | `{v} is not an allowed value — expected one of {list}` |
+| `anyOf` (125) / `oneOf` (57) | collapse drivers (§D.3.1) | cell / row | ValueSpec template; oneOf multi-match → "{v} matches more than one of the exclusive alternatives (options 1 and 2) — it must match exactly one" |
+| `enum` (37) | collapsed or standalone | cell | `{v} is not an allowed value — expected one of {list}` (≤8, then "… (n more)") |
 | `pattern` (5) | cell | cell | `'{v}' does not match the expected format (pattern {regex} — {def title/description})` |
 | `allOf` (5) | wrapper dropped | — | — |
-| `uniqueItems` (1) | **DuckDB** (GROUP BY ALL over typed columns) | dataset | "Rows {a} and {b} are identical records — the schema requires all records to be unique." |
-| `minItems` (1) | SQL count | dataset | "The dataset has {n} records; the schema requires at least {min}." |
+| `uniqueItems` (1) | the worker, by JSON equality of whole records (§B.3) | dataset | "Rows {a} and {b} are identical records — the schema requires all records to be unique." |
+| `minItems` (1) / `maxItems` | counts | dataset | "The dataset has {n} records; the schema requires at least {min}." / "… allows at most {max} records." |
+| root `contains` / `minContains` / `maxContains` | the worker counts matching records | dataset | "{n} records match the schema's 'contains' condition; it requires at least 1 record to." |
+| root `prefixItems` / tuple `items` + `items: false` | per-position record schemas; records past the prefix counted | dataset | "The dataset has {n} records; the schema allows at most {k} records." |
 | `items`/`$defs` (1 each) | structural | — | — |
-| `unevaluatedProperties` (1) | dataset-side column diff (§C.3); Ajv fallback deduped | column | "Column '{col}' is not defined in the schema, which does not allow unexpected variables." |
+| `unevaluatedProperties` (1) / `additionalProperties` (record level) | Ajv, over records holding every column; one per column per run | column | "Column '{col}' is not allowed by the schema (unevaluatedProperties is false)." |
 | `description` (33) | tooltips, missing-vars sheet | — | — |
 | `x-unit` (108) / `x-universe` (149) | trailers + tooltips | — | `[Unit: …] [Universe: …]` |
 | `x-role` (26) / `x-variable-group` (12) / `x-derivation` (7) | tooltips only | — | — |
@@ -372,7 +432,7 @@ Stable for an unchanged schema set (allOf index is positional — acceptable: id
 | `propertyNames` | cell | cell | `field name '{name}' is not allowed (names must match {pattern}).` — the name's own sub-error is folded in |
 | `maxItems` / `minItems`, `maxProperties` / `minProperties` | cell | cell | `has {n} items; at most {limit} allowed.` |
 | `uniqueItems` (inside a value) | cell | cell | `{path of later} repeats {path of earlier} — items must be unique.` (Ajv's two code paths name the pair in opposite orders; ordered here) |
-| `maxLength` / `minLength`, `format`, `exclusiveMinimum` / `exclusiveMaximum`, `multipleOf`, `contains`, `dependentRequired`, `false schema`, `not` | cell | cell | plain sentences (`'2024-02-30' is not a valid date (YYYY-MM-DD)`) |
+| `maxLength` / `minLength`, `format`, `exclusiveMinimum` / `exclusiveMaximum`, `multipleOf`, `contains`, `dependentRequired`, `dependencies`, `false schema`, `not` | cell | cell | plain sentences (`'2024-02-30' is not a valid date (YYYY-MM-DD)`; `'2024-01-15T08:30:00' is not a valid RFC 3339 date-time — it needs a time-zone offset such as Z or +05:30`; `'PT1.5S' is not a valid RFC 3339 duration (P1Y2M3DT4H5M6S — whole numbers only)`); bounds keep every digit |
 | `anyOf` / `oneOf` *inside* a value | collapse at that path | cell | `{v} is not valid — expected {branch shapes} (at {path}).` When exactly one branch's declared type admits the value, its own errors are reported instead (`12 exceeds the maximum 9 (at mixed[3].k)`); a `$ref`'d branch never narrows, so HESP's sentinel unions collapse as before |
 | **any other keyword** | generic fallback | cell/row | `value fails the '{keyword}' constraint {params-summary} (schema: {schemaPath})` — no error is ever dropped silently |
 
@@ -428,7 +488,9 @@ type ValueSpec =
 interface Sentinel { value: string | number; label?: string; }
 ```
 
-Built by `buildColumnMeta(set, rootFileId)`: walk `items.allOf` → per category ref: take `properties` (provenance = that file), union `required`; per property: resolve refs, fold `anyOf`/`oneOf` branches — `{type:integer|number, min/max}` → numeric core; `{const, title}` (direct or via sentinel-def `$ref`) → sentinel; oneOf-of-consts → codes; `{type:string, pattern}` → string-pattern; unresolvable/deep → opaque. Deterministic merge (schema order). Sentinel titles come from the referenced def, overridable by sibling `title`.
+Built by `buildColumnMeta(set, rootFileId)` — a walk from each record schema the dataset shape names (§A.3b) through every in-place applicator: `$ref` (any file, `$anchor`s included), `allOf`, `anyOf`, `oneOf`, `if`→`then`/`else`, `dependentSchemas`, draft-07 schema-form `dependencies` — never into `not` or an `if` itself. Every `properties` declaration it meets counts, boolean property schemas included (`items: {"$ref": "#/$defs/row"}`, the commonest layout, once yielded NO columns and validated nothing). Per name, in document order (the HESP layout — `items.properties` + `items.allOf` category refs — is unchanged, 265 columns, 171 conditionals): strings (title, unit, …) from the first declaration; `jsonTypes` = what a value can be and still pass every UNCONDITIONAL declaration, alternatives (union branches, then/else) widening only within that; `declarations` lists every site (`{fileId, pointer, conditional}`). `required` = UNCONDITIONALLY required (a `required` reached through `$ref`/`allOf` only — one inside `anyOf`, `then`, `dependentSchemas` … is the translator's, worded with its condition). A name that is unconditionally required but declared nowhere becomes a ghost meta (`declared: false`, unconstrained) so it is reported missing once. Per property: resolve refs, fold `anyOf`/`oneOf` branches — `{type:integer|number, min/max}` → numeric core; `{const, title}` (direct or via sentinel-def `$ref`) → sentinel; oneOf-of-consts → codes; `{type:string, pattern}` → string-pattern; unresolvable/deep → opaque. Sentinel titles come from the referenced def, overridable by sibling `title`.
+
+`undeclaredColumnMeta(set, name)` gives a column no `properties` declares the meta of the record-level `patternProperties` entries matching its name (Ajv's regex reading: Unicode, then plain), else of a schema-valued `additionalProperties` / `unevaluatedProperties` — how such a column's text is read (§C.1) and cast for the rules (§C.5); null when nothing covers it.
 
 ### E.2 Column-header tooltips (`tooltips.ts` → `setColumnHeaderTooltip`)
 
@@ -501,26 +563,36 @@ and when it is, the line names the suspect rather than reciting arithmetic.
 
 **Cost model** (HESP worst case 265 cols × 171 conditionals): ~20–60 µs/row compiled → 1M rows ≈ 20–60 s; 100k ≈ 2–6 s; 10k sub-second. One-time: Ajv compile ≈ 150–500 ms (worker shows "compiling schema"); CastPlan CTAS over 1M×265 ≈ 1–4 s; duplicate GROUP BY ALL ≈ 1–2 s.
 
-**Placement:** DuckDB worker (WorkerBridge) does ingest/CTAS/cast-scans/duplicates/counts. **QC worker** owns Ajv compile + row loop + translation. Main thread orchestrates (`bridge.query` is main-thread API), aggregates flags, drives progress; fetch of batch N+1 overlaps validation of batch N (single-slot pipeline, bounded memory). The QC worker is constructed only when there is a row loop to run: the empty-dataset guard (edge 17) and the zero-overlap guard (edge 20) both return a hand-built summary without one, which is why the dataset-level SQL checks live OUTSIDE the worker's `try/finally` — they apply on every path.
+**Placement:** DuckDB worker (WorkerBridge) does ingest/CTAS/counts and serves each batch's values (raw text, standard-text transports, corrected cells). **QC worker** owns Ajv compile + the record loop + translation + the dataset-wide checks that need every record (duplicates by JSON-equality fingerprint, `contains` counts, records past `items: false`). Main thread orchestrates (`bridge.query` is main-thread API), re-splits a JSON file's records from its bytes, aggregates flags, drives progress; fetch of batch N+1 overlaps validation of batch N (single-slot pipeline, bounded memory). The QC worker is constructed whenever there is at least one record — even with zero overlap (edge 20), since every record carries every dataset column; only the empty dataset (edge 17) returns a hand-built summary.
 
 ```ts
 // worker-protocol.ts
 type MainToWorker =
-  | { type:'init'; files: {uri: string; json: unknown}[]; rootBase: string; draft: string;
+  | { type:'init'; files: {uri: string; json: unknown}[]; draft: string;
       columnMeta: SerializedColumnMeta[]; conditionals: ConditionalRule[];
-      missingColumns: string[]; castFailures: string[]; config: { flagCap: number } }
-  | { type:'batch'; seq: number; rowStart: number; columns?: string[]; rows: unknown[][] }
+      missingRequired: string[];            // absent required columns: their column flag stands for each record's
+      mode: 'text' | 'typed' | 'records';   // §C.0
+      columns: PresentedColumn[];           // every dataset column: key, jsonTypes, nullAllowed, transport, plans
+      checks: DatasetChecks;                // record / prefix schema ids, contains, uniqueItems (dataset-shape.ts)
+      config: { flagCap: number } }
+  | { type:'batch'; seq: number; rowStart: number;
+      rows?: unknown[][];                   // text / typed: one value per column
+      records?: string[];                   // records: each record's text
+      fixes?: (string | null)[][] }         // corrected cells (§C.0)
   | { type:'flush' } | { type:'abort' };
 
 type WorkerToMain =
   | { type:'ready'; compileMs: number }
   | { type:'batchDone'; seq: number; flags: QCFlag[]; rowsDone: number; rowsWithErrors: number;
       truncated: boolean; elapsedMs: number }
-  | { type:'done'; summary: ValidationSummary }
+  | { type:'done'; summary: ValidationSummary; datasetFlags: QCFlag[];
+      rejectedColumns: string[];            // extra columns the schema rejected (one error each)
+      keysSeen?: string[] }                 // records mode: the keys the records really have
   | { type:'fatal'; message: string };
 
 interface ValidationSummary {
-  rowsTotal: number; rowsWithErrors: number; flagsEmitted: number; flagsTruncated: boolean;
+  rowsTotal: number; rowsWithErrors: number;   // records with at least one error-severity finding
+  flagsEmitted: number; flagsTruncated: boolean;
   countsByRuleId: Record<string, number>;   // ALWAYS exact, even past the cap → Sheet 4 unaffected
   elapsedMs: number; aborted: boolean;
 }
@@ -552,4 +624,4 @@ Master phases: **P06** = §A (loader, ref graph, root detection, pre-checks, Ind
 
 Edge-case ledger (implementers: keep these as tests or explicit no-ops):
 
-1. UTF-8 BOM in JSON; `.JSON` extensions. 2. Folder uploads with README/manifest/.DS_Store → ignored; manifest = ordering hint only (may name absent files). 3. Same basename in different dirs (relativePath disambiguates; basename `index=` match warns when non-unique). 4. Duplicate `$id` → fatal, both files named. 5. `$id`-base resolution misses but retrieval-base hits → fallback + warning. 6. URL crawl: retrieval-URL relative only; never `$id`-derived hosts; caps 64/depth 8; CORS copy. 7. All-files cycle → modal (iterative graph pass; digest walkers depth-capped). 8. Boolean-schema files; `{"$ref": …}`-only roots; root without items → `E_ROOT_NOT_TABULAR`. 9. `$anchor` pre-check scan; `$dynamicRef` as `$ref` for the graph. 10. Whole-column NULL (per-cell required flags) vs column absent (one column flag). 11. Dedup'd headers (`age_1`) → unexpected; `AGE` → case-mismatch. 12. NaN/±Inf intercepted (would pass min/max silently). 13. BigInt > 2^53 → precision warning. 14. `'1e5'`, `' 42 '`, `'42.0'` accepted for integers; `'42.5'`, `'1,5'` are cast findings; leading-zero ids safe (pattern columns are VARCHAR). 15. Error storms bounded (per-row allErrors ≤ a few hundred; global cap + exact counters). 16. Conditional targeting a missing column → no false conditional errors (HESP then-blocks contain no `required`; `if.required` guard skips rows whose condition value is missing — correct: condition not evaluable). 17. Empty dataset → `schema:dataset:empty` + min-items. 18. Mixed drafts; missing `$schema` → 2020-12. 19. Identical re-upload detected via `setId` (skip re-compile); annotations always re-applied from flags keyed by `__row__`, never persisted via data-table. 20. **Zero overlap** — the schema names none of the dataset's columns and its property universe is closed, so the worker's column list is empty: skip the row loop entirely (no worker, no SQL — an empty select list is a DuckDB parser error, and every row would shape to `{}` with its `required` errors already suppressed by `missingColumns`) and emit `schema:dataset:no-overlap` as the one sentence explaining why nothing was validated. The dataset-level SQL checks still run — they read row counts and the dataset's own columns. §E.5 reports this as `Mismatch` on the Load view and still does not gate.
+1. UTF-8 BOM in JSON; `.JSON` extensions. 2. Folder uploads with README/manifest/.DS_Store → ignored; manifest = ordering hint only (may name absent files). 3. Same basename in different dirs (relativePath disambiguates; basename `index=` match warns when non-unique). 4. Duplicate `$id` → fatal, both files named. 5. `$id`-base resolution misses but retrieval-base hits → fallback + warning. 6. URL crawl: retrieval-URL relative only; never `$id`-derived hosts; caps 64/depth 8; CORS copy. 7. All-files cycle → modal (iterative graph pass; digest walkers depth-capped). 8. Boolean-schema files; `{"$ref": …}`-only roots; root without items → `E_ROOT_NOT_TABULAR`. 9. `$anchor` pre-check scan; `$dynamicRef` as `$ref` for the graph. 10. Whole-column NULL (per-cell required flags) vs column absent (one column flag). 11. Dedup'd headers (`age_1`) → unexpected; `AGE` → case-mismatch. 12. NaN/±Inf intercepted (would pass min/max silently). 13. BigInt > 2^53 → precision warning. 14. Text cells follow JSON's number grammar (§C.1): `'1e5'`, `' 42 '`, `'42.0'` are integers; `'42.5'`, `'1,5'`, `'+5'`, `'.5'`, `'007'` are not (a cast finding where text is not allowed); leading-zero ids stay text under `type: string`. 15. Error storms bounded (per-row allErrors ≤ a few hundred; global cap + exact counters). 16. Conditional targeting a missing column → no false conditional errors (HESP then-blocks contain no `required`; `if.required` guard skips rows whose condition value is missing — correct: condition not evaluable). 17. Empty dataset → `schema:dataset:empty` + min-items. 18. Mixed drafts; missing `$schema` → 2020-12. 19. Identical re-upload detected via `setId` (skip re-compile); annotations always re-applied from flags keyed by `__row__`, never persisted via data-table. 20. **Zero overlap** — the schema names none of the dataset's columns. Every record still carries every dataset column (§C.3), so the record loop runs: each absent variable is named once at column scope (its per-record `required` errors folded in), the schema's verdict on the unknown columns stands (rejected → one `unexpected` error each; allowed → `undescribed` info), and `schema:dataset:no-overlap` is the one sentence explaining why so little matched. (Before records carried every column, the worker's column list was empty here and `SELECT FROM …` died on DuckDB's parser.) §E.5 reports this as `Mismatch` on the Load view and still does not gate.

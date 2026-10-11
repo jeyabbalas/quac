@@ -13,6 +13,9 @@ import { entriesFromDir, entry, fixtureDir } from './helpers';
 
 const hespEntries = () => entriesFromDir(fixtureDir('hesp', 'json_schema'));
 
+/** The findings `applyRootSelection` owns. */
+const POST_SELECTION = new Set(['W_ROOT_NOT_ARRAY', 'E_ROOT_NOT_TABULAR']);
+
 /** HESP + a copy of core with `$id` set to the manifest's standalone entrypoint (§G.7). */
 function hespDualRootEntries(): IntakeEntry[] {
   const coreRaw = readFileSync(
@@ -30,6 +33,7 @@ function hespDualRootEntries(): IntakeEntry[] {
 describe('arrayOfObjects', () => {
   it('matches array-with-object-items shapes and rejects the rest (§A.3.3)', () => {
     expect(arrayOfObjects({ type: 'array', items: { type: 'object' } })).toBe(true);
+    expect(arrayOfObjects({ type: ['array', 'null'], items: { type: 'object' } })).toBe(true);
     expect(arrayOfObjects({ items: { $ref: 'row.json' } })).toBe(true);
     expect(arrayOfObjects({ type: 'array', items: [{ type: 'object' }] })).toBe(false);
     expect(arrayOfObjects({ type: 'array', items: true })).toBe(false);
@@ -156,6 +160,44 @@ describe('root detection — post-selection checks', () => {
     expect(fatal?.message).toBe(
       'The index schema `flat.json` does not describe a table (expected `type: "array"` with `items`).',
     );
+  });
+
+  it('accepts a root that only points at the dataset schema, in any file', async () => {
+    const set = await buildSchemaSet(
+      [
+        entry('root.json', {
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+          $ref: 'defs.json#/$defs/dataset',
+        }),
+        entry('defs.json', {
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+          $defs: { dataset: { type: 'array', items: { properties: { a: {} } } } },
+        }),
+      ],
+      { origin: 'upload' },
+    );
+    expect(set.root.rootFileId).toBe('root.json');
+    expect(set.root.candidates[0]?.arrayOfObjects).toBe(true);
+    expect(set.errors.filter((e) => POST_SELECTION.has(e.code))).toEqual([]);
+  });
+
+  it('raises no warning for a type list naming array, a tuple, or prefixItems', async () => {
+    for (const root of [
+      { type: ['array', 'null'], items: { type: 'object' } },
+      { $schema: 'http://json-schema.org/draft-07/schema#', type: 'array', items: [{}], additionalItems: {} },
+      { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'array', prefixItems: [{}], items: false },
+    ]) {
+      const set = await buildSchemaSet([entry('root.json', root)], { origin: 'upload' });
+      expect(set.errors.filter((e) => POST_SELECTION.has(e.code)), JSON.stringify(root)).toEqual([]);
+    }
+  });
+
+  it('still refuses a root that describes no records, through a $ref too', async () => {
+    const set = await buildSchemaSet(
+      [entry('root.json', { $ref: '#/$defs/notATable', $defs: { notATable: { type: 'object' } } })],
+      { origin: 'upload' },
+    );
+    expect(set.errors.map((e) => e.code)).toContain('E_ROOT_NOT_TABULAR');
   });
 
   it('applyRootSelection replaces prior post-selection findings instead of stacking them', async () => {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {"type": "integer"},
+      "kind": {"enum": ["A", "B"]},
+      "spouse": {"type": ["string", "null"]},
+      "note": {"type": ["string", "null"]}
+    },
+    "required": ["id", "kind"],
+    "dependentRequired": {"spouse": ["note"]},
+    "allOf": [
+      {"if": {"required": ["note"]}, "then": {"properties": {"kind": {"const": "A"}}}}
+    ],
+    "oneOf": [{"required": ["spouse"]}, {"required": ["note"]}]
+  }
+}

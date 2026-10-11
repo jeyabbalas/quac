@@ -38,7 +38,8 @@ import { parseRuleFile } from '../core/rules/parse';
 import { loadJSSandbox } from '../core/rules/sandbox-loader';
 import { crossCheckInputs } from '../core/pertinence';
 import { applyCastPlan, buildCastPlan, describeColumns } from '../core/schema/casting';
-import { columnDigest } from '../core/schema/column-meta';
+import { columnDigest, undeclaredColumnMeta } from '../core/schema/column-meta';
+import { rowSourceFor } from '../core/schema/row-source';
 import { buildSchemaSet } from '../core/schema/schema-set';
 import { runSchemaValidation } from '../core/schema/validation-run';
 import { QuacCliError } from './errors';
@@ -172,11 +173,13 @@ async function resolveSchema(
  */
 async function syncTypedTables(
   bridge: WorkerBridge,
-  digest: ColumnDigest,
+  schema: { set: SchemaSet; digest: ColumnDigest },
   datasetColumns: readonly string[],
 ): Promise<void> {
   const rawTypes = await describeColumns(bridge);
-  const plan = buildCastPlan(digest.meta, datasetColumns, rawTypes);
+  const plan = buildCastPlan(schema.digest.meta, datasetColumns, rawTypes, (name) =>
+    undeclaredColumnMeta(schema.set, name),
+  );
   await applyCastPlan(bridge, plan);
   await swapWorkTable(bridge, `SELECT * FROM ${QUAC_TYPED}`);
   await refreshDataView(bridge);
@@ -270,7 +273,7 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
     const schema = await resolveSchema(schemaPaths, options.index);
 
     // ---- 3. Typed-sync mirror (before the lint — see the module doc) ----
-    if (schema !== null) await syncTypedTables(bridge, schema.digest, ingest.columns);
+    if (schema !== null) await syncTypedTables(bridge, schema, ingest.columns);
 
     // ---- 4. Rules: lint, then split into what runs and what is merely reported ----
     const parsed: ParsedRuleFile[] = ruleInputs.map((f) => parseRuleFile(f.text, f.name));
@@ -306,7 +309,12 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
     // ---- 7. Pipeline ----
     const artifacts = await runPipeline({
       bridge,
-      dataset: { name: dataset.name, columns: ingest.columns, rowCount: ingest.rowCount },
+      dataset: {
+        name: dataset.name,
+        columns: ingest.columns,
+        rowCount: ingest.rowCount,
+        source: rowSourceFor(dataset.format, ingest.renames, () => Promise.resolve(dataset.bytes)),
+      },
       schema,
       ruleFiles,
       applyCorrections,

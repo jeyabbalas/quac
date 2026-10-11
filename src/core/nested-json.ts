@@ -53,8 +53,9 @@ export const NON_FINITE_MARK = 'quac-non-finite:';
 
 /**
  * `to_json` text with each bare `NaN` / `Infinity` / `-Infinity` (outside
- * strings) — what DuckDB writes for a non-finite DOUBLE, and what
- * `JSON.parse` rejects — turned into a marker string `JSON.parse` accepts.
+ * strings, in any letter case, `inf` too) — what DuckDB writes for a
+ * non-finite DOUBLE, and what `JSON.parse` rejects — turned into a marker
+ * string `JSON.parse` accepts.
  */
 export function markNonFinite(text: string): string {
   let out = '';
@@ -79,7 +80,9 @@ export function markNonFinite(text: string): string {
       i += 1;
       continue;
     }
-    const token = /^(-?Infinity|NaN)/.exec(text.slice(i, i + 9))?.[1];
+    // DuckDB's to_json writes `NaN` / `Infinity`; its JSON cast keeps the
+    // text a CSV cell gave it, so `nan`, `inf` and `-INF` arrive here too.
+    const token = /^(-?(?:infinity|inf|nan))/i.exec(text.slice(i, i + 9))?.[1];
     if (token !== undefined) {
       out += JSON.stringify(NON_FINITE_MARK + token);
       i += token.length;

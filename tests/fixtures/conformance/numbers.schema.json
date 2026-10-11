@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {"type": "integer"},
+      "num_or_str": {"type": "string"},
+      "bool_or_str": {"type": "boolean"},
+      "int_float": {"type": "integer"},
+      "neg_zero": {"const": 0, "exclusiveMaximum": 1},
+      "beyond53": {"type": "integer", "maximum": 9007199254740992},
+      "ubig": {"type": "integer", "minimum": 0},
+      "past64": {"type": "integer"},
+      "huge_neg": {"type": "integer"},
+      "ovf": {"type": "number"},
+      "sci": {"type": "number"},
+      "bool_col": {"type": "boolean"},
+      "numstr_int": {"type": "integer"},
+      "numstr_lead0": {"type": "number"},
+      "str_bool": {"type": "boolean"}
+    },
+    "additionalProperties": false
+  }
+}

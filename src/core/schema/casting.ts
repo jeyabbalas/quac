@@ -1,24 +1,22 @@
 /**
- * Schema-driven casting into `quac_typed` (json-schema-subsystem.md §C.1/§C.2).
- *
- * A failed cast is itself a QC finding: TRY_CAST leaves NULL where the raw
- * text is not representable, and the cast-failure scan turns exactly those
- * cells into `schema:prop:<col>:cast` flags + the `castFailures` set the
- * translator consults (one flag per bad cell, Ajv errors suppressed).
+ * Schema-driven casting into `quac_typed` (json-schema-subsystem.md §C.1) —
+ * the typed columns the QC RULES see: `age > 18` works on a CSV column once
+ * it is a BIGINT. Validation never reads these casts (§C.0): DuckDB's casts
+ * are lenient (`yes` is true, `1_000` is 1000, ` 42 ` is 42), and the
+ * validator judges the dataset's own values — a text cell's text, read by
+ * text-cells.ts, which turns a cell that spells no value of the schema's type
+ * into a cast finding.
  *
  * Integer ladder deviation from the §C.1 prose (Verified fact V19): DuckDB
  * 1.5.x TRY_CAST rounds decimal strings to integers ('42.5' → 43, '0.1' → 0),
  * so the spec's leading `TRY_CAST(raw AS BIGINT)` silently corrupts
- * non-integral values instead of flagging them. The shipped ladder gates on
- * DOUBLE-integrality first and only then converts, keeping exact int64
+ * non-integral values instead of leaving them NULL. The shipped ladder gates
+ * on DOUBLE-integrality first and only then converts, keeping exact int64
  * precision via the BIGINT branch for values beyond 2^53.
  */
 import { QUAC_RAW, QUAC_TYPED } from '../bridge/tables';
 import { duckTypeBase, readsAsJson } from '../duckdb-type';
 import { quoteIdentifier } from '../sql-identifier';
-import { schemaPropRuleId } from './rule-ids';
-import { castNonIntegralMessage, castNonNumericMessage, castNotJsonMessage } from './translator';
-import type { QCFlag } from '../flags/flag';
 import type { ColumnMeta } from './column-meta';
 import type { StorageType } from './value-spec';
 
@@ -54,12 +52,6 @@ export interface CastPlan {
   columns: ColumnCast[];
   /** CREATE OR REPLACE TABLE quac_typed AS SELECT __row__, <casts> FROM quac_raw */
   sql: string;
-}
-
-export interface CastScanResult {
-  flags: QCFlag[];
-  /** Keys `${row} ${column}` — consulted by the translator (§C.2). */
-  castFailures: Set<string>;
 }
 
 /**
@@ -170,21 +162,22 @@ function jsonShapeOf(meta: ColumnMeta): string {
 
 /**
  * Derive the per-column cast plan (§C.1): dataset columns in file order;
- * schema columns get their ColumnMeta storage target, extras pass through
- * with their native type kept (the rules engine targets them via `data`;
- * the spec's "VARCHAR passthrough" row described all-VARCHAR delimited raw,
- * where passthrough and VARCHAR coincide).
+ * schema columns get their ColumnMeta storage target — a column no property
+ * declares, the target of the patternProperties / additionalProperties
+ * schema that covers it (`undeclared`) — and the rest pass through with their
+ * native type kept (the rules engine targets them via `data`).
  */
 export function buildCastPlan(
   meta: readonly ColumnMeta[],
   datasetColumns: readonly string[],
   rawTypes: ReadonlyMap<string, string>,
+  undeclared: (name: string) => ColumnMeta | null = () => null,
 ): CastPlan {
   const byName = new Map(meta.map((m) => [m.name, m]));
   const columns: ColumnCast[] = datasetColumns.map((name) => {
     const quoted = quoteIdentifier(name);
     const rawType = rawTypes.get(name) ?? 'VARCHAR';
-    const m = byName.get(name);
+    const m = byName.get(name) ?? undeclared(name) ?? undefined;
     if (m === undefined) {
       return {
         column: name,
@@ -223,83 +216,4 @@ export function buildCastPlan(
 export async function applyCastPlan(runner: SqlRunner, plan: CastPlan): Promise<void> {
   await runner.query(plan.sql);
   runner.clearQueryCache?.();
-}
-
-/** How many columns to scan per UNION ALL statement (keeps statements bounded). */
-const SCAN_CHUNK = 40;
-
-const CAST_NOUN: Record<StorageType, string> = {
-  BIGINT: 'integer',
-  DOUBLE: 'number',
-  BOOLEAN: 'true/false value',
-  VARCHAR: 'value', // unreachable: VARCHAR targets are passthrough
-  JSON: 'JSON value', // unused: JSON targets get castNotJsonMessage
-};
-
-interface ScanHit {
-  row: number | bigint;
-  col: string;
-  raw: string;
-  numeric_like: boolean;
-}
-
-/**
- * §C.2 cast-failure scan: one pass over the non-passthrough columns
- * returning `(row, rawValue)` where the raw text is non-empty but the typed
- * cell is NULL. Raw values are read through CAST(… AS VARCHAR) when the raw
- * column is not VARCHAR — trim() on DOUBLE/DATE is a binder error.
- */
-export async function scanCastFailures(
-  runner: SqlRunner,
-  plan: CastPlan,
-  ordinalByName: ReadonlyMap<string, number>,
-): Promise<CastScanResult> {
-  const scanned = plan.columns.filter((c) => !c.passthrough);
-  const hits: ScanHit[] = [];
-  for (let i = 0; i < scanned.length; i += SCAN_CHUNK) {
-    const chunk = scanned.slice(i, i + SCAN_CHUNK);
-    const parts = chunk.map((c) => {
-      const quoted = quoteIdentifier(c.column);
-      const rawv = `CAST(r.${quoted} AS VARCHAR)`;
-      const dbl = `TRY_CAST(${rawv} AS DOUBLE)`;
-      const literal = c.column.replace(/'/g, "''");
-      return (
-        `SELECT r.__row__ AS row, '${literal}' AS col, ${rawv} AS raw, ` +
-        `(${dbl} IS NOT NULL AND isfinite(${dbl})) AS numeric_like ` +
-        `FROM ${quoteIdentifier(QUAC_RAW)} r JOIN ${quoteIdentifier(QUAC_TYPED)} t USING (__row__) ` +
-        `WHERE r.${quoted} IS NOT NULL AND trim(${rawv}) <> '' AND t.${quoted} IS NULL`
-      );
-    });
-    hits.push(...(await runner.query<ScanHit>(parts.join(' UNION ALL '))));
-  }
-
-  const castByName = new Map(plan.columns.map((c) => [c.column, c]));
-  const ordinal = (col: string): number => ordinalByName.get(col) ?? Number.MAX_SAFE_INTEGER;
-  hits.sort((a, b) => Number(a.row) - Number(b.row) || ordinal(a.col) - ordinal(b.col));
-
-  const flags: QCFlag[] = [];
-  const castFailures = new Set<string>();
-  for (const hit of hits) {
-    const row = Number(hit.row);
-    const cast = castByName.get(hit.col);
-    const storage = cast?.storageType ?? 'VARCHAR';
-    const message =
-      storage === 'JSON'
-        ? castNotJsonMessage(hit.raw, cast?.jsonShape ?? 'an array or an object')
-        : storage === 'BIGINT' && hit.numeric_like
-          ? castNonIntegralMessage(hit.raw)
-          : castNonNumericMessage(hit.raw, CAST_NOUN[storage]);
-    flags.push({
-      source: 'schema',
-      ruleId: schemaPropRuleId(hit.col, 'cast'),
-      scope: 'cell',
-      row,
-      column: hit.col,
-      severity: 'error',
-      message,
-      value: hit.raw,
-    });
-    castFailures.add(`${String(row)} ${hit.col}`);
-  }
-  return { flags, castFailures };
 }

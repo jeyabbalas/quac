@@ -4,7 +4,13 @@
  * consumed by P06 (loading), P07 (digests), P08/P09 (validation).
  */
 
-export type SchemaDraft = '2020-12' | '2019-09' | 'draft-07' | 'unknown';
+/**
+ * The JSON Schema draft a file declares (`drafts.ts`). `'unknown'` — no
+ * `$schema`, or one QuaC does not recognise — reads as 2020-12. draft-06
+ * validates on the draft-07 engine with its own meta-schema; draft-04 (and
+ * draft-03, filed here too) is refused at load (`E_UNSUPPORTED_DRAFT`).
+ */
+export type SchemaDraft = '2020-12' | '2019-09' | 'draft-07' | 'draft-06' | 'draft-04' | 'unknown';
 
 /** One file handed to the loader, before parsing/classification. */
 export interface IntakeEntry {
@@ -96,10 +102,16 @@ export type SchemaLoadCode =
   | 'E_MIXED_DRAFT'
   | 'E_ROOT_NOT_TABULAR'
   | 'E_FETCH'
+  | 'E_UNSUPPORTED_DRAFT'
+  | 'E_COMPILE'
   | 'W_RETRIEVAL_FALLBACK'
   | 'W_ROOT_NOT_ARRAY'
   | 'W_INDEX_BASENAME'
   | 'W_INDEX_NO_MATCH'
+  | 'W_UNKNOWN_DRAFT'
+  | 'W_UNCHECKED_FORMAT'
+  | 'W_EMPTY_ENUM'
+  | 'W_REF_SIBLINGS'
   | 'I_AUTO_PREFERRED'
   | 'I_NON_SCHEMA_IGNORED';
 
@@ -114,10 +126,16 @@ export const SCHEMA_LOAD_SEVERITY: Readonly<Record<SchemaLoadCode, 'fatal' | 'wa
     E_MIXED_DRAFT: 'warning',
     E_ROOT_NOT_TABULAR: 'fatal',
     E_FETCH: 'fatal',
+    E_UNSUPPORTED_DRAFT: 'fatal',
+    E_COMPILE: 'fatal',
     W_RETRIEVAL_FALLBACK: 'warning',
     W_ROOT_NOT_ARRAY: 'warning',
     W_INDEX_BASENAME: 'warning',
     W_INDEX_NO_MATCH: 'warning',
+    W_UNKNOWN_DRAFT: 'warning',
+    W_UNCHECKED_FORMAT: 'warning',
+    W_EMPTY_ENUM: 'warning',
+    W_REF_SIBLINGS: 'warning',
     I_AUTO_PREFERRED: 'info',
     I_NON_SCHEMA_IGNORED: 'info',
   };

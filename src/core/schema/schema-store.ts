@@ -10,6 +10,7 @@ import type { Signal } from '../../app/signals';
 import type { SlotState } from '../../app/store';
 import { browserFetchJson } from './fetch-json';
 import { fetchCorsMessage, fetchHttpMessage, loadError } from './messages';
+import { engineChecks } from './meta-validate';
 import { applyRootSelection } from './root-detection';
 import { buildSchemaSet } from './schema-set';
 import type { FetchJson, IntakeEntry, SchemaLoadError, SchemaSet } from './types';
@@ -150,15 +151,28 @@ export async function loadSchemaUrls(
   }
 }
 
-/** IndexPickerModal selection → new snapshot with the §A.3.5 post-checks run. */
+/**
+ * IndexPickerModal selection → new snapshot with the §A.3.5 post-checks run,
+ * then the engine's compile of the chosen root's record schema (the load-time
+ * check `buildSchemaSet` could not run while the root was undecided) — so a
+ * schema that cannot validate says so now, not as a stage error mid-run.
+ */
 export function chooseRoot(fileId: string): void {
   const current = schemaState.get();
   if (current.phase !== 'ready' || current.set === null) return;
-  schemaState.set({
-    phase: 'ready',
-    set: applyRootSelection(current.set, fileId),
-    sourceUrls: current.sourceUrls,
-  });
+  const set = applyRootSelection(current.set, fileId);
+  schemaState.set({ phase: 'ready', set, sourceUrls: current.sourceUrls });
+  const token = loadToken;
+  void engineChecks(set)
+    .then((found) => {
+      const now = schemaState.get();
+      if (token !== loadToken || now.set !== set) return; // superseded meanwhile
+      const known = new Set(set.errors.map((e) => `${e.code}|${e.message}`));
+      const fresh = found.filter((e) => !known.has(`${e.code}|${e.message}`));
+      if (fresh.length === 0) return;
+      schemaState.set({ phase: 'ready', set: { ...set, errors: [...set.errors, ...fresh] }, sourceUrls: now.sourceUrls });
+    })
+    .catch(() => undefined);
 }
 
 export function resetSchemaSlot(): void {

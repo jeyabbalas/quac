@@ -20,6 +20,7 @@ import { nestedColumnsOf } from '../../src/core/nested-json';
 import { describeColumns } from '../../src/core/schema/casting';
 import { columnDigest } from '../../src/core/schema/column-meta';
 import { buildSchemaSet } from '../../src/core/schema/schema-set';
+import { rowSourceFor } from '../../src/core/schema/row-source';
 import { runSchemaValidation } from '../../src/core/schema/validation-run';
 import stressDataUrl from '../fixtures/nested/nested-stress-tests.json?url';
 import stressSchemaUrl from '../fixtures/nested/nested-stress-tests.schema.json?url';
@@ -84,11 +85,8 @@ async function validate(
   data: { name: string; url: string },
   schema: { name: string; url: string },
 ): Promise<{ flags: QCFlag[]; columns: string[] }> {
-  const ingest = await ingestDataset(b(), {
-    name: data.name,
-    bytes: await fetchFixtureBytes(data.url),
-    format: 'json',
-  });
+  const bytes = await fetchFixtureBytes(data.url);
+  const ingest = await ingestDataset(b(), { name: data.name, bytes, format: 'json' });
   const set = await buildSchemaSet([{ relativePath: schema.name, raw: await text(schema.url) }], {
     origin: 'upload',
   });
@@ -101,6 +99,8 @@ async function validate(
     digest,
     datasetColumns: ingest.columns,
     flagStore,
+    // As the pipeline runs it: a JSON file's own records.
+    source: rowSourceFor('json', ingest.renames, () => Promise.resolve(bytes)),
   });
   return {
     flags: canonicalSort(

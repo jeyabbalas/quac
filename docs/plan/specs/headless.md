@@ -106,7 +106,7 @@ Closed set — scripts may depend on it:
 | 1 | Usage error: bad/unknown flags, no dataset, no check source, mixed local/URL `--schema` (§8), bad `--fail-on` value |
 | 2 | Input/ingest error: unreadable/unsupported/oversize dataset (guardrail hard-stop), multi-sheet workbook without `--sheet` or unknown `--sheet` (stderr lists the workbook's sheet names), unreadable rules file, failed URL fetch |
 | 3 | Schema-set error: fatal load errors / null digest with no other check source, ambiguous root without a matching `--index` (stderr lists `set.root.candidates` — fileId, declaredId, title — plus the `--index` hint) |
-| 4 | Run failure: prepare-stage error, bridge/DuckDB init failure, any uncaught exception (top-level catch maps unknowns here) |
+| 4 | Run failure: prepare-stage error, bridge/DuckDB init failure, any uncaught exception (top-level catch maps unknowns here); a schema stage that did not finish (`stageErrors` with stage `schema` — its findings are missing, so a clean exit would misreport; the report and summary are still written first) |
 | 5 | Report/summary write failure |
 | 6 | `--fail-on` threshold met — the report AND summary were still written first |
 | 130 | SIGINT (cooperative cancel through the pipeline's AbortSignal; no report) |

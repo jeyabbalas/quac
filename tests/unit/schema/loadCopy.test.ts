@@ -1,7 +1,7 @@
 /**
  * P22 task 1, unit leg — every `SchemaLoadCode` has a designed message.
  *
- * The schema subsystem is luckier than the rules linter: all 15 codes are
+ * The schema subsystem is luckier than the rules linter: all 21 codes are
  * built by one module (`core/schema/messages.ts`) and stamped with a severity
  * by one function (`loadError`), so the surface can be exercised exactly
  * rather than approximately. This spec calls every builder with inputs chosen
@@ -9,7 +9,7 @@
  * query string, a path with a space — and asserts what comes back is a
  * designed message.
  *
- * `CASES` is `satisfies Record<SchemaLoadCode, …>`, so a sixteenth code fails
+ * `CASES` is `satisfies Record<SchemaLoadCode, …>`, so a twenty-second code fails
  * `npm run typecheck` before any test runs. `SCHEMA_LOAD_SEVERITY` is already
  * an exhaustive runtime map; the severity assertion below is what keeps a new
  * code from being registered here with the wrong one.
@@ -23,21 +23,28 @@ import { describe, expect, it } from 'vitest';
 import {
   autoPreferredMessage,
   badFragmentMessage,
+  compileMessage,
   dupIdMessage,
+  emptyEnumMessage,
   fetchCorsMessage,
   fetchHttpMessage,
   indexBasenameMessage,
   indexNoMatchMessage,
+  invalidPatternMessage,
   loadError,
   metaMessage,
   mixedDraftMessage,
   nonSchemaIgnoredMessage,
   noSchemasMessage,
   parseMessage,
+  refSiblingsMessage,
   retrievalFallbackMessage,
   rootNotArrayMessage,
   rootNotTabularMessage,
+  uncheckedFormatMessage,
+  unknownDraftMessage,
   unresolvedRefMessage,
+  unsupportedDraftMessage,
 } from '../../../src/core/schema/messages';
 import { SCHEMA_LOAD_SEVERITY } from '../../../src/core/schema/types';
 import type { SchemaLoadCode } from '../../../src/core/schema/types';
@@ -142,6 +149,40 @@ const CASES = {
   I_NON_SCHEMA_IGNORED: {
     policy: 'pure',
     messages: [nonSchemaIgnoredMessage('mixed/notes.txt')],
+  },
+  E_UNSUPPORTED_DRAFT: {
+    policy: 'pure',
+    messages: [
+      unsupportedDraftMessage('legacy.json', 'http://json-schema.org/draft-04/schema#'),
+      unsupportedDraftMessage('legacy.json', 'http://json-schema.org/draft-03/schema'),
+    ],
+  },
+  // Framed: the regular-expression engine's own reason (V8's words) is the
+  // only thing that says WHICH part of the pattern is wrong.
+  E_COMPILE: {
+    policy: 'framed',
+    messages: [
+      invalidPatternMessage('core.json', '/items/properties/id/pattern', 'pattern', '(?i)^p', 'Invalid group'),
+      invalidPatternMessage('core.json', '/items/patternProperties/(x', 'patternProperties', '(x', 'Unterminated group'),
+      compileMessage('core/core.schema.json', 'the reference `defs.json#/$defs/nope` cannot be resolved'),
+      compileMessage('core/core.schema.json', 'schema is invalid: data/enum must NOT have fewer than 1 items.'),
+    ],
+  },
+  W_UNKNOWN_DRAFT: {
+    policy: 'pure',
+    messages: [unknownDraftMessage('core.json', 'https://example.org/my-meta-schema', '2020-12')],
+  },
+  W_UNCHECKED_FORMAT: {
+    policy: 'pure',
+    messages: [uncheckedFormatMessage(['datetime']), uncheckedFormatMessage(['password', 'x-phone'])],
+  },
+  W_EMPTY_ENUM: {
+    policy: 'pure',
+    messages: [emptyEnumMessage('core.json', '/items/properties/kind/enum')],
+  },
+  W_REF_SIBLINGS: {
+    policy: 'pure',
+    messages: [refSiblingsMessage('core.json', '/items/properties/age', ['maximum', 'type'])],
   },
 } satisfies Record<SchemaLoadCode, Case>;
 

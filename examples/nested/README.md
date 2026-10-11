@@ -41,7 +41,8 @@ type DuckDB chose for each column:
 | `labs` | an object whose keys vary (test name → result) | `STRUCT(…)` here; a `MAP` when the keys vary a lot |
 | `notes` | text in some records, an object in others | `JSON` — DuckDB keeps a field whose type changes as JSON |
 
-Three things DuckDB does that matter for checking:
+Three things DuckDB does to the table — which matter when you write **rules**
+(SQL runs on that table):
 
 - **A struct has every key any record has.** One record's address has a `unit`,
   so every address gets a `unit` field — NULL where the record had none.
@@ -51,14 +52,12 @@ Three things DuckDB does that matter for checking:
   when one is not (`visits` keeps its dates as text: one record has
   `2024-02-30`).
 
-QuaC validates each value as the JSON it came from (it reads nested values
-back with DuckDB's `to_json`), so none of this turns into a false finding: a
-NULL struct field counts as **missing** when the schema does not allow null
-there, and as **null** when it does. An optional field a record left out
-passes; a required one is reported missing; a key only one record has is
-reported once, in that record. The one thing that can slip through is an
-explicit `null` in a field the schema neither requires nor allows null in —
-DuckDB keeps no trace of it.
+None of it reaches the **schema checks**: QuaC validates each record exactly as
+`participants.json` wrote it. A field a record left out is missing, a field set
+to `null` is null, a date is the string the file holds — so an optional field
+left out passes, a required one is reported missing, a key only one record has
+is reported once, in that record, and an explicit `null` where the schema does
+not allow one is reported too.
 
 ## Describing nested values in the schema
 

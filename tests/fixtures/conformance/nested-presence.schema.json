@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {"type": "integer"},
+      "m": {"type": "object", "additionalProperties": {"type": "string"}, "maxProperties": 1},
+      "open": {"type": "object", "properties": {"p": {"type": "integer"}, "q": {"type": "integer"}}, "minProperties": 1, "maxProperties": 1},
+      "cnt": {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "maxProperties": 1},
+      "lst": {"type": "array", "items": {"type": "object", "maxProperties": 1, "additionalProperties": {"type": "integer"}}},
+      "cond": {
+        "type": "object",
+        "properties": {"kind": {"enum": ["A", "B"]}, "note": {"type": ["string", "null"]}},
+        "if": {"required": ["note"]},
+        "then": {"properties": {"kind": {"const": "A"}}}
+      }
+    }
+  }
+}

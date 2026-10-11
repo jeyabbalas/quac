@@ -10,7 +10,6 @@ import {
   applyCastPlan,
   buildCastPlan,
   describeColumns,
-  scanCastFailures,
 } from '../../../src/core/schema/casting';
 import { openMemoryDb, seedRawTable } from './duckdb';
 import type { SqlRunner } from '../../../src/core/schema/casting';
@@ -40,9 +39,6 @@ function metaStub(name: string, storageType: StorageType, mixed = false): Column
 
 const allVarchar = (names: readonly string[]): Map<string, string> =>
   new Map(names.map((n) => [n, 'VARCHAR']));
-
-const ordinals = (names: readonly string[]): Map<string, number> =>
-  new Map(names.map((n, i) => [n, i]));
 
 describe('buildCastPlan derivation (§C.1)', () => {
   test('VARCHAR raw: targets map to ladder / TRY_CAST / passthrough', () => {
@@ -133,7 +129,7 @@ describe('execution on DuckDB (§C.2 goldens + edge ledger 14)', () => {
     expect(row).toEqual({ a: 43, b: 0 });
   });
 
-  test('delimited (all-VARCHAR) goldens: values, flags, castFailures', async () => {
+  test('delimited (all-VARCHAR) goldens: the typed values the rules see', async () => {
     const names = ['n', 'd', 'b', 'p'];
     const meta = [
       metaStub('n', 'BIGINT'),
@@ -174,25 +170,13 @@ describe('execution on DuckDB (§C.2 goldens + edge ledger 14)', () => {
     );
     expect(exact?.ok).toBe(true);
 
-    const { flags, castFailures } = await scanCastFailures(runner(), plan, ordinals(names));
-    expect(
-      flags.map((f) => ({ row: f.row, column: f.column, message: f.message, value: f.value })),
-    ).toEqual([
-      { row: 1, column: 'n', message: '42.5 is not a whole number — this variable takes integer values.', value: '42.5' },
-      { row: 1, column: 'd', message: "'abc' is not a valid number.", value: 'abc' },
-      { row: 1, column: 'b', message: "'maybe' is not a valid true/false value.", value: 'maybe' },
-      { row: 2, column: 'n', message: "'abc' is not a valid integer.", value: 'abc' },
-      { row: 7, column: 'n', message: '0.1 is not a whole number — this variable takes integer values.', value: '0.1' },
-    ]);
-    for (const f of flags) {
-      expect(f).toMatchObject({ source: 'schema', scope: 'cell', severity: 'error' });
-      expect(f.ruleId).toBe(`schema:prop:${String(f.column)}:cast`);
-      expect(f.meta).toBeUndefined();
-    }
-    expect([...castFailures].sort()).toEqual(['1 b', '1 d', '1 n', '2 n', '7 n']);
+    // The cast is for the rules; validation reads the raw text itself
+    // (text-cells.ts, row-shaping.test.ts), so a lenient cast never decides
+    // what a cell holds: 'yes', '1' and ' 42 ' above are typed for the rules
+    // only.
   });
 
-  test("empty string casts to NULL without a flag ('' is missing, not bad)", async () => {
+  test("empty and blank strings cast to NULL for the rules", async () => {
     const meta = [metaStub('n', 'BIGINT')];
     await seedRawTable(runner(), [{ name: 'n', type: 'VARCHAR' }], [[''], ['  '], ['7']]);
     const plan = buildCastPlan(meta, ['n'], allVarchar(['n']));
@@ -201,8 +185,6 @@ describe('execution on DuckDB (§C.2 goldens + edge ledger 14)', () => {
       'SELECT n FROM quac_typed ORDER BY __row__',
     );
     expect(typed.map((r) => r.n)).toEqual([null, null, 7]);
-    const { flags } = await scanCastFailures(runner(), plan, ordinals(['n']));
-    expect(flags).toEqual([]);
   });
 
   test('typed input: passthrough keeps types, DATE→VARCHAR, DOUBLE→BIGINT ladder', async () => {
@@ -239,15 +221,6 @@ describe('execution on DuckDB (§C.2 goldens + edge ledger 14)', () => {
       { a: 7, f: null, s: '2021-12-31' },
     ]);
 
-    // No binder error on non-VARCHAR raw (trim over CAST AS VARCHAR), and the
-    // 42.5 DOUBLE cell is flagged as non-integral with its text rendering.
-    const { flags } = await scanCastFailures(runner(), plan, ordinals(['a', 'f', 's', 'e']));
-    expect(flags).toHaveLength(1);
-    expect(flags[0]).toMatchObject({
-      row: 1,
-      column: 'f',
-      message: '42.5 is not a whole number — this variable takes integer values.',
-    });
   });
 });
 
@@ -299,7 +272,7 @@ describe('nested and JSON columns (§C.1, nested data)', () => {
       db.close();
     });
 
-    test('JSON text that does not parse is a cast finding, named for what the variable takes', async () => {
+    test('JSON text parses into DuckDB JSON for the rules; text that does not is NULL there', async () => {
       await seedRawTable(db.runner, [{ name: 'tags', type: 'VARCHAR' }], [['["a", "b"]'], ['[1, 2'], ['42'], [null]]);
       const meta: ColumnMeta = {
         ...metaStub('tags', 'JSON'),
@@ -312,14 +285,17 @@ describe('nested and JSON columns (§C.1, nested data)', () => {
       );
       expect(typed.map((r) => r.v)).toEqual(['["a", "b"]', null, '42', null]);
       expect(typed[0]?.t).toBe('JSON');
-      const { flags, castFailures } = await scanCastFailures(db.runner, plan, ordinals(['tags']));
-      expect(flags.map((f) => ({ row: f.row, message: f.message }))).toEqual([
-        {
-          row: 1,
-          message: "'[1, 2' is not valid JSON — this variable takes an array or an object, written as JSON text.",
-        },
-      ]);
-      expect([...castFailures]).toEqual(['1 tags']);
     });
+  });
+});
+
+describe('columns no property declares (patternProperties / additionalProperties)', () => {
+  test('take the target of the schema that covers them; the rest pass through', () => {
+    const plan = buildCastPlan([metaStub('id', 'BIGINT')], ['id', 'x_score', 'notes'], allVarchar(['id', 'x_score', 'notes']), (name) =>
+      name.startsWith('x_') ? metaStub(name, 'DOUBLE') : null,
+    );
+    const byName = new Map(plan.columns.map((c) => [c.column, c]));
+    expect(byName.get('x_score')).toMatchObject({ storageType: 'DOUBLE', inSchema: true, passthrough: false });
+    expect(byName.get('notes')).toMatchObject({ storageType: 'VARCHAR', inSchema: false, passthrough: true });
   });
 });

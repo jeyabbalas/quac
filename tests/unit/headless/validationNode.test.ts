@@ -14,37 +14,35 @@ import { resolve } from 'node:path';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { columnDigest } from '../../../src/core/schema/column-meta';
 import { buildSchemaSet } from '../../../src/core/schema/schema-set';
+import { datasetShape, schemaRefUri } from '../../../src/core/schema/dataset-shape';
 import { serializeColumnMeta } from '../../../src/core/schema/worker-protocol';
 import { createInProcessValidationWorker } from '../../../src/headless/validationWorker';
 import type { ColumnDigest } from '../../../src/core/schema/column-meta';
 import type { SchemaSet } from '../../../src/core/schema/types';
-import type { MainToWorker, WorkerToMain } from '../../../src/core/schema/worker-protocol';
+import type { MainToWorker, PresentedColumn, WorkerToMain } from '../../../src/core/schema/worker-protocol';
 
 const MINI = resolve(__dirname, '..', '..', 'fixtures', 'synthetic', 'mini');
-/** The mini dataset's schema-covered columns, in file order (`notes` is extra). */
-const COLUMNS = ['id', 'age', 'score', 'consent'];
+/** The mini dataset's schema-covered columns, in file order. */
+const NAMES = ['id', 'age', 'score', 'consent'];
 
 /**
- * `mini_invalid.csv` as the row loop fetches it — TYPED, because the batch is
- * read from `quac_typed` after the cast plan has run (§C). Row 3's `age` is
- * NULL for the same reason the real scan reports it: `'abc'` did not cast, and
- * that cell is named in `CAST_FAILURES` so the translator suppresses the
- * follow-on `required` error in favour of the main thread's cast flag.
+ * `mini_invalid.csv` as the row loop fetches it — the raw TEXT of each cell
+ * (§C.0): the worker reads each one as the value it spells, so row 3's `abc`
+ * age is a cast finding made here, in the worker, and the follow-on
+ * `required` error is suppressed in its favour.
  */
 const ROWS: unknown[][] = [
-  ['R101', 25, 0.5, 1],
-  ['X99', 30, 0.75, 1], // bad id pattern
-  ['R102', 150, 0.5, 1], // age above the 100 branch maximum
-  ['R103', null, 0.25, 1], // age cast failure ('abc')
-  ['R104', 40, 1.5, 1], // score above 1
-  ['R105', 50, 0.5, 5], // consent matches no oneOf branch
-  ['R106', 60, 0.5, 0], // conditional: consent 0 requires score -777
-  ['R107', null, 0.75, 1], // age empty → required
-  ['R108', 70, 0.25, 1],
-  ['R108', 70, 0.25, 1], // duplicate pair (a dataset-scope SQL finding)
+  ['R101', '25', '0.5', '1'],
+  ['X99', '30', '0.75', '1'], // bad id pattern
+  ['R102', '150', '0.5', '1'], // age above the 100 branch maximum
+  ['R103', 'abc', '0.25', '1'], // age: text no integer spells
+  ['R104', '40', '1.5', '1'], // score above 1
+  ['R105', '50', '0.5', '5'], // consent matches no oneOf branch
+  ['R106', '60', '0.5', '0'], // conditional: consent 0 requires score -777
+  ['R107', null, '0.75', '1'], // age empty → required
+  ['R108', '70', '0.25', '1'],
+  ['R108', '70', '0.25', '1'], // duplicate pair (a dataset-scope finding)
 ];
-/** `${row} ${column}` — the key format `scanCastFailures` produces. */
-const CAST_FAILURES = ['3 age'];
 
 let set: SchemaSet;
 let digest: ColumnDigest;
@@ -59,17 +57,26 @@ beforeAll(async () => {
 
 function initMessage(flagCap: number): Extract<MainToWorker, { type: 'init' }> {
   const root = set.files.find((f) => f.fileId === set.root.rootFileId);
-  if (root === undefined) throw new Error('mini set has no root');
+  const shape = datasetShape(set);
+  const record = shape?.record;
+  if (root === undefined || record === undefined || record === null || record === false) {
+    throw new Error('mini set has no record schema');
+  }
+  const columns: PresentedColumn[] = NAMES.map((name) => {
+    const m = digest.meta.find((c) => c.name === name);
+    const jsonTypes = m === undefined ? [] : [...m.jsonTypes].sort();
+    return { column: name, key: name, jsonTypes, nullAllowed: jsonTypes.includes('null'), transport: { kind: 'text' } };
+  });
   return {
     type: 'init',
     files: set.schemas.map((f) => ({ uri: f.retrievalUri, json: f.json })),
-    rootBase: root.declaredId ?? root.retrievalUri,
     draft: root.draft,
     columnMeta: serializeColumnMeta(digest.meta),
     conditionals: digest.conditionals,
-    missingColumns: [],
-    castFailures: CAST_FAILURES,
-    nested: [],
+    missingRequired: [],
+    mode: 'text',
+    columns,
+    checks: { record: schemaRefUri(record), prefix: [], uniqueItems: shape.uniqueItems === true },
     config: { flagCap },
   };
 }
@@ -112,7 +119,7 @@ describe('protocol order', () => {
     await settle();
     expect(w.received.map((m) => m.type)).toEqual(['ready']);
 
-    w.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS.slice(0, 5) });
+    w.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS.slice(0, 5) });
     await settle();
     w.post({ type: 'batch', seq: 1, rowStart: 5, rows: ROWS.slice(5) });
     await settle();
@@ -127,10 +134,11 @@ describe('protocol order', () => {
     const summary = doneOf(w.received).summary;
     expect(summary.rowsTotal).toBe(10);
     expect(summary.aborted).toBe(false);
-    // 6 worker-side translator flags on this fixture — the other 3 of the
-    // manifest's 9 are main-thread SQL findings (cast/column/dataset scope).
-    expect(summary.flagsEmitted).toBe(6);
-    expect(summary.rowsWithErrors).toBe(6);
+    // 7 worker-side flags on this fixture: six translator findings and the
+    // `abc` cast finding (made here, reading the cell's text) — the rest of
+    // the manifest are main-thread findings (column and dataset scope).
+    expect(summary.flagsEmitted).toBe(7);
+    expect(summary.rowsWithErrors).toBe(7);
     expect(summary.flagsTruncated).toBe(false);
     w.end();
   });
@@ -149,7 +157,7 @@ describe('protocol order', () => {
     w.post(initMessage(1000));
     await settle();
     w.end();
-    w.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    w.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     expect(w.received.map((m) => m.type)).toEqual(['ready']);
   });
@@ -160,7 +168,7 @@ describe('abort at a batch boundary', () => {
     const w = openWorker();
     w.post(initMessage(1000));
     await settle();
-    w.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS.slice(0, 5) });
+    w.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS.slice(0, 5) });
     await settle();
     w.post({ type: 'abort' });
     await settle();
@@ -177,7 +185,7 @@ describe('abort at a batch boundary', () => {
     await settle();
     w.post({ type: 'abort' });
     await settle();
-    w.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    w.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     expect(w.received.map((m) => m.type)).toEqual(['ready', 'done']);
     w.end();
@@ -189,7 +197,7 @@ describe('the sticky flag cap', () => {
     const capped = openWorker();
     capped.post(initMessage(2));
     await settle();
-    capped.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    capped.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     capped.post({ type: 'flush' });
     await settle();
@@ -197,7 +205,7 @@ describe('the sticky flag cap', () => {
     const uncapped = openWorker();
     uncapped.post(initMessage(1000));
     await settle();
-    uncapped.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    uncapped.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     uncapped.post({ type: 'flush' });
     await settle();
@@ -226,8 +234,8 @@ describe('engine isolation', () => {
     await settle();
 
     // Interleave: different row sets, different caps, overlapping in time.
-    a.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS.slice(0, 5) });
-    b.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    a.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS.slice(0, 5) });
+    b.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     a.post({ type: 'batch', seq: 1, rowStart: 5, rows: ROWS.slice(5) });
     await settle();
@@ -241,7 +249,7 @@ describe('engine isolation', () => {
     expect(sb.rowsTotal).toBe(10);
     expect(sa.flagsTruncated).toBe(false);
     expect(sb.flagsTruncated).toBe(true);
-    expect(sa.flagsEmitted).toBe(6);
+    expect(sa.flagsEmitted).toBe(7);
     expect(sb.flagsEmitted).toBe(2);
     expect(sa.countsByRuleId).toEqual(sb.countsByRuleId);
     a.end();
@@ -253,9 +261,9 @@ describe('engine isolation', () => {
     const bad = openWorker();
     good.post(initMessage(1000));
     // A batch before init: the engine catches and posts `fatal`.
-    bad.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    bad.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
-    good.post({ type: 'batch', seq: 0, rowStart: 0, columns: COLUMNS, rows: ROWS });
+    good.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
     await settle();
     good.post({ type: 'flush' });
     await settle();

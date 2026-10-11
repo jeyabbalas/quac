@@ -19,7 +19,10 @@ Entries below say which half they apply to.
 Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`
 0.7.0 → 0.10.0 holds a million annotations, so the report grid now paints every flag a run records.
 `json-schema-data-dictionary` 0.1.0 → 0.7.0 brings its own dictionary component, which now renders the JSON
-Schema preview. The CLI's flags, exit codes, summary record and `runQuac()` surface are unchanged.
+Schema preview. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
+end to end: a JSON or Parquet dataset whose values are lists and records is validated, ruled on, shown and
+reported as the values it holds. The CLI's flags, exit codes, summary record and `runQuac()` surface are
+unchanged.
 
 ### Added — web app
 
@@ -38,8 +41,50 @@ Schema preview. The CLI's flags, exit codes, summary record and `runQuac()` surf
   that stays in view, resizable columns, and **Copy** / **CSV**. It wears QuaC's fonts and colours, stays light
   on a dark-mode machine, and runs without semantic search, which would download a model.
 
+### Added — both
+
+- **Nested data is checked, not rejected.** A JSON or Parquet dataset keeps DuckDB's nested types (`LIST`,
+  `STRUCT`, `MAP`, `JSON`) through every stage. The JSON Schema describes the inside of a value with ordinary
+  keywords (`items`, `properties`, `required`, `uniqueItems`, `propertyNames`, `anyOf` …) and a finding says
+  where inside it is: `130 exceeds the maximum 120 (at household[2].age).` — list positions counted from 1, as
+  DuckDB SQL and the report's value inspector count them. Rules use DuckDB's list, struct and JSON functions, a
+  JavaScript correction receives a nested value as the JSON it holds (dates as `"2024-05-29"`), and the Excel
+  report writes a nested cell as its exact JSON text. The browser and the CLI report the same findings, to the
+  digit. See [Nested data](README.md#nested-data).
+- **A nested-data example**, [`examples/nested/`](examples/nested/): 40 study participants with an address, a
+  household roster, clinic visits, phone and diagnosis lists, lab results by test name and a free-form notes
+  column, a one-file JSON Schema, and ten QC rules written with nested functions — with a walkthrough of every
+  finding. In the app, **Load nested example** sits under **Load example files**.
+- **A JSON cell in a CSV, TSV or Excel file** is parsed when its schema says the variable is an array or an
+  object (`["a", "b"]`); text that does not parse is reported, like any other value that does not cast.
+- **Clearer messages for schema keywords beyond HESP's**: `maxItems`, `minItems`, `uniqueItems`,
+  `additionalProperties`, `propertyNames`, `format`, `maxLength`, `minLength`, `multipleOf`, the exclusive
+  bounds and more now read as sentences (`'2024-02-30' is not a valid date (YYYY-MM-DD).`) instead of
+  `value fails the 'format' constraint …`. A union no typed branch could have meant collapses to one finding;
+  one only a single branch could have meant reports that branch's own error.
+- **A rule that compares a whole list, struct or map is explained**: `in_range(0, 5)` on a list column now
+  says `counts holds lists (BIGINT[]) … check its items instead — e.g. list_max(counts) > 5` instead of
+  DuckDB's binder text.
+
+### Fixed — both
+
+- **Nested columns no longer fail every check.** With a JSON Schema loaded, an array or object variable was cast
+  to text, so every list, struct and map cell was reported as `must be an array or null, got string.` — 15,308
+  false errors across 999 of 1,000 rows on data-table's nested stress fixture, which is valid against its
+  schema; it now reports no error. The cast also took nested rendering from the grids and list functions from
+  the rules.
+- **Values inside a nested cell read exactly**: a date inside a list used to reach the preview, the report and a
+  JavaScript correction as epoch milliseconds in the browser (where a correction writing it back then failed),
+  and a `DECIMAL` or `HUGEINT` inside one as a meaningless number.
+- **Excel no longer calls the report corrupt** when a cell's text passes its 32,767-character limit — a long
+  list's JSON or a long text field. The cell is cut, and says so.
+- The CLI reads `TIMESTAMP WITH TIME ZONE` in UTC, as the browser does; it used the machine's own zone.
+
 ### Changed — web app
 
+- **The JSON Schema preview lists each nested variable's fields** under it, indented (`address.city`,
+  `visits[].date`); the panel head counts them apart: `5 categories · 11 variables · 15 nested fields`.
+- **The dataset preview shows a nested column's JSON**, clipped, with its full DuckDB type under its name.
 - **Larger datasets fit.** The grid receives its data as a file it reads from disk rather than a buffer copied
   into the database's memory, which keeps the copy out of the memory QuaC's working tables already fill (at
   equal speed: 1.8 s for a million rows either way). Only the columns near the view are rendered, so a
@@ -96,17 +141,16 @@ Schema preview. The CLI's flags, exit codes, summary record and `runQuac()` surf
 
 | Measure                           | 1.1.0   | 1.2.0                    |
 | --------------------------------- | ------- | ------------------------ |
-| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 47.2 KB                  |
+| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 49.5 KB                  |
 | Cells the report grid can colour  | 20,000  | every recorded flag      |
-| Unit tests                        | 1,211   | 1,202                    |
-| Browser tests                     | 73      | 73                       |
+| Unit tests                        | 1,211   | 1,263                    |
+| Browser tests                     | 73      | 77                       |
 | CLI tests                         | 45      | 53                       |
-| End-to-end tests                  | 124     | 122                      |
+| End-to-end tests                  | 124     | 124                      |
 | `npm audit` findings              | 2       | 2                        |
 | Third-party a11y items open       | 0       | 2 (dictionary component) |
 
-The unit count falls because QuaC's own dictionary search and its tests went with it; the 1.2.0 numbers are
-from a local run (Node 26, macOS), the 1.1.0 ones from CI.
+The 1.2.0 numbers are from a local run (Node 26, macOS), the 1.1.0 ones from CI.
 
 ### Known limitations
 

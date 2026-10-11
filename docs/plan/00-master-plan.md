@@ -22,7 +22,7 @@ The same pipeline also runs **headlessly** via a Node CLI (`quac`) and a `runQua
 
 | Doc | Contents |
 |---|---|
-| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V35) |
+| `specs/architecture.md` | Stack, module tree, canonical names (`__row__`, `quac_raw/typed/work`, view `data`), QCFlag, pipeline stages, security hardening, **Verified facts** (V1–V42) |
 | `specs/data-table-api.md` | data-table v0.5.1 cheat sheet + author-confirmed behaviors + integration rules |
 | `specs/ingestion.md` | Input slots UX, format conversions, guardrails, persistence policy |
 | `specs/json-schema-subsystem.md` | Schema-set loading, root detection + `index=` contract, Ajv config, casting, translator + keyword table + golden messages, digests/tooltips, worker protocol, edge ledger |
@@ -82,6 +82,19 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > it lives (module paths), spec deviations and V-fact changes, notes and warnings for successors, then a closing
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
+
+2026-10-11 · nested · **Nested data — LIST, STRUCT, MAP, JSON — checked end to end.** A JSON Schema used to cast every
+nested column to text, so the upstream nested stress fixture (valid) drew 15,308 false errors (V37); now 0. Types are read
+whole (`core/duckdb-type.ts`); nested/JSON raw columns are never cast, text under an array/object schema parses to JSON
+(`casting.ts`); the row loop reads nested columns as `to_json` text, reads STRUCT NULLs as missing where the schema rules null
+out, and locates every finding (`schema/nested-values.ts`, §C.4); the translator gains nested `required`, nested union
+collapse with type discrimination, container/string keyword sentences (§D.6); every human-facing read goes through `to_json`
+(`core/nested-json.ts`: Excel, preview, rule findings, corrections, JS corrections staged back via JSON — V36, V39). Excel
+cells capped at 32,767; CLI session TZ = UTC; lint explains scalar checks on nested columns; the dictionary expands nested
+variables (V41, supersedes V35's pin). `examples/nested/` (40 participants, schema, 10 rules, walkthrough) behind a second
+hero button. Cross-runtime manifests: `tests/fixtures/nested/` (vendored upstream fixtures + expected flags) and
+`tests/shared/nestedRules.ts`. Known: HUGEINT displays as DOUBLE in the grid (V42). Unit 1,263 · browser 77 · CLI 53 · e2e
+124 · entry 49.5 KB gz.
 
 2026-10-11 · deps · **`@jeyabbalas/data-table` 0.7.0 → 0.10.0, `json-schema-data-dictionary` 0.1.0 → 0.7.0, and the
 rest of the tree.** The data-table bump was a drop-in at every call site (worker's new `SET`s and `LOAD json` audited

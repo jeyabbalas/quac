@@ -11,6 +11,10 @@
 QuaC checks a dataset against a JSON Schema, a file of QC rules, or both, and hands you a styled
 five-sheet Excel report: the data with every problem cell colour-coded, the schema variables that
 never arrived, the dataset-level findings, the rules that fired most, and a record of the run.
+When what failed has to reach someone who must not see the data, QuaC writes the
+[findings without data](#findings-without-data): every failed check, where the schema or the rules
+define it, and how many records failed it — as Markdown, JSON or Excel, with no value from the
+dataset in any of them.
 
 The web app is **entirely client-side**. Your data is read by JavaScript in your own tab, queried by
 a DuckDB engine compiled to WebAssembly, and written back out as a download. There is no server to
@@ -30,7 +34,8 @@ before committing any of your own data to anything. **Load nested example** does
 whose values are lists, records and maps — see [Nested data](#nested-data).
 
 With your own data: drop a file into **Dataset**, drop a JSON Schema or a `.quac.csv` rules file
-into one of the other two slots, press **Run QC**, then **Download QC Report (.xlsx)**.
+into one of the other two slots, press **Run QC**, then **Download QC Report (.xlsx)** — or, to
+share what failed without the data, one of the **Findings without data** buttons beneath it.
 
 **On the command line.**
 
@@ -41,6 +46,12 @@ quac data.csv \
   --schema schemas/ \
   --rules corrections.quac.csv --rules consistency.quac.csv \
   --out reports/ --summary - --fail-on error
+```
+
+To share what failed without the data, write the findings instead of — or as well as — the report:
+
+```sh
+quac data.csv --schema schemas/ --rules qc.quac.csv --no-report --findings qc-findings.md
 ```
 
 The package is scoped; **the command is not**. Installing `@jeyabbalas/quac` gives you `quac`.
@@ -329,6 +340,49 @@ check — says so instead. **Download QC Report (.xlsx)** writes five sheets:
 
 The report is generated fresh each time and never stored anywhere.
 
+### Findings without data
+
+The QC report holds your data — that is its point. When the problems have to go to someone who
+must not see the data — the team that sent it, a coordinating centre, the author of the schema or
+the rules, a collaborator under a data-use agreement — download the **findings without data**
+instead: under **Findings without data** in the Summary panel, pick **Excel**, **Markdown** or
+**JSON**, or pass `--findings` to the CLI.
+
+They list every check the dataset failed and how often:
+
+- **JSON Schema checks**, one per keyword at one place in the schema: what it requires, worded from
+  the schema itself (`must be at most 120`, `when baseline_record = 1, must be -666 (Not
+  applicable)`), the schema file and the JSON Pointer to the keyword
+  (`common/defs.json#/$defs/record_id/pattern` — through a `$ref` into the file that defines it),
+  where inside a nested value it applies (`household[].age`), and the records that failed it, with
+  their share of the dataset. Variables the schema expects and the dataset lacks, and columns it
+  does not allow, are listed by name.
+- **QC rules**, every one in every file, with its outcome — found problems, passed, corrected
+  values, failed to execute, not evaluated, disabled, skipped, excluded — its file and row, its
+  description and condition, and what it found in its scope's own units: records for a row rule,
+  records per variable for a column assertion, result rows for a dataset query, values changed for a
+  correction.
+- **The run**: the dataset's name and size, the schema and rules files (the schema set's
+  fingerprint included, so a recipient can tell they have the same files), how many records failed
+  at error and at warning level, and notes on anything that did not run or was capped.
+
+**What they never contain is a value from your dataset.** This is how they are built, not a filter
+applied afterwards: the run's findings quote values (`'twelve hundred' is not a valid integer`), so
+the findings without data never read them. They are assembled from the schema, the rules files,
+the dataset's column names and counts — and a test plants marked values in every place a run could
+put data, and fails if any reaches any of the three formats. Two things to know before you share
+them: they include your rules files' conditions as written, so a rule that names a particular
+record (`record_id = 'HH00000042'`) carries that name with it; and a URL they name — a schema or
+rules file loaded from one — is printed without its query string, where a signed link keeps its
+token. A broken rule's error is reduced to its kind (`DuckDB reported a Conversion Error`), since the
+engine's message can quote a cell.
+
+**Markdown** is for reading and sharing as text — a terminal, an issue, an email, a repository,
+where it also diffs run against run. **JSON** is for machines: the same document, versioned by
+`findingsSchemaVersion` (fields may be added within a version, never removed or renamed) and typed
+in the package as `QcFindings`. **Excel** has a Summary, a sheet of schema checks and a sheet of
+rules to sort and filter, and the notes.
+
 ---
 
 ## Rule Studio
@@ -410,14 +464,15 @@ its own.
   does not have to compute them again. Turning semantic search off, clearing the JSON Schema, Clear
   all inputs and Reset all delete them. Whether the switch is on is remembered in `localStorage`;
   the model itself sits in the browser's ordinary cache, like the rest of the site.
-- The **QC report is never stored.** It is built in memory and handed to your downloads folder.
+- The **QC report is never stored**, nor are the findings without data. Each is built in memory and
+  handed to your downloads folder.
 - A restored session **never re-runs QC by itself**. Computing is always something you asked for.
 
 **On the command line**, the promise is the same one, kept the same way: data stays on the machine
 that ran it. An ordinary local process reads the files you name and writes the report next to your
 data. The only network requests it can make are for the `--schema` and `--rules` URLs you passed it
-yourself. Nothing persists between runs: the only things written are the report and, if you ask for
-it, the summary.
+yourself. Nothing persists between runs: the only things written are the report (unless you pass
+`--no-report`) and whatever findings and summary you ask for.
 
 **The residual risk QuaC cannot remove** is denial of service, not disclosure. A rules file is
 executable content: a hostile or careless `condition` — an accidental cross-join is the classic —
@@ -434,7 +489,8 @@ stranger.
 ## Headless / CLI
 
 The same pipeline under plain Node, for data pipelines that want the QC report without a browser:
-ingest → schema validation → QC rules and corrections → the styled five-sheet `.xlsx`.
+ingest → schema validation → QC rules and corrections → the styled five-sheet `.xlsx`, and — with
+`--findings` — the [findings without data](#findings-without-data).
 
 ```sh
 npm i -g @jeyabbalas/quac              # installs the `quac` command
@@ -443,11 +499,18 @@ npx @jeyabbalas/quac data.csv --rules qc.quac.csv   # or run it once, without in
 
 ```
 quac <dataset> [--schema <file|dir|url>]... [--rules <file|url>]...
-     [--index <id>] [--sheet <name>] [--out <path>] [--no-corrections]
-     [--summary <path|->] [--fail-on <error|warning|none>] [--quiet]
+     [--index <id>] [--sheet <name>] [--out <path>] [--no-report]
+     [--findings <path|->]... [--no-corrections] [--summary <path|->]
+     [--fail-on <error|warning|none>] [--quiet]
 quac --version
 quac --help
 ```
+
+`--findings` writes the findings without data, in the format its name asks for — `.md`, `.json` or
+`.xlsx`; a directory gets a Markdown file named like the report (`quac-findings_<dataset>_<time>.md`);
+`-` prints the Markdown to stdout. Repeat it for several formats at once. `--no-report` skips the QC
+report, the file built to hold the data. (The run summary is no findings document: it names the
+dataset's local path, and a stage that crashed is quoted in it as the engine said it.)
 
 `--schema` and `--rules` are both repeatable. **Argument order is correction order** — rules files
 are applied in the order you name them, so a correction in the second file sees the first file's
@@ -458,16 +521,16 @@ URL, but all of them must be the same kind, never a mix.
 
 | Exit | Meaning                                                                                                                 |
 | ---- | ----------------------------------------------------------------------------------------------------------------------- |
-| 0    | Report written                                                                                                          |
+| 0    | Run finished — every output asked for was written                                                                       |
 | 1    | Usage error — bad flags, no dataset, no source of checks                                                                |
 | 2    | Input error — unreadable, unsupported or oversize dataset; a multi-sheet workbook with no `--sheet`; a failed URL fetch |
 | 3    | Schema-set error — fatal load errors, or a root left ambiguous without a matching `--index`                             |
 | 4    | Run failure — including a schema stage that could not finish (its findings are missing); the report and summary are still written |
-| 5    | The report or the summary could not be written                                                                          |
-| 6    | `--fail-on` threshold met — **the report and summary were still written first**                                         |
+| 5    | The report, a findings file or the summary could not be written                                                         |
+| 6    | `--fail-on` threshold met — **every output was still written first**                                                    |
 | 130  | Interrupted                                                                                                             |
 
-### Two recipes
+### Three recipes
 
 **Gate a pipeline on findings.** `--fail-on error` exits 6 when the run produced any error-severity
 finding — after writing the report, so the artifact exists to look at:
@@ -493,13 +556,23 @@ quac data.csv --rules qc.quac.csv --summary - --quiet \
 
 The summary carries per-rule counts and statuses (in rule order, with exact violation counts even
 where a cap truncated the flags), per-stage durations, the schema results, the missing variables,
-and the exit code the process is about to use. Its shape is versioned (`summarySchemaVersion`):
-fields may be added within a version, never removed or renamed.
+the files written, and the exit code the process is about to use. Its shape is versioned
+(`summarySchemaVersion`): fields may be added within a version, never removed or renamed.
+
+**Share what failed, not the data.** On a machine the data may not leave, write the findings and no
+report — Markdown to read and send, JSON for whoever collects them:
+
+```sh
+quac data.parquet --schema schema/ --rules qc.quac.csv \
+  --no-report --findings out/findings.md --findings out/findings.json
+```
+
+`--findings -` prints the Markdown instead, so a CI log shows what failed.
 
 ### As a library
 
 ```js
-import { runQuac, buildSummary } from '@jeyabbalas/quac';
+import { runQuac, buildSummary, renderFindingsMarkdown, writeFindingsWorkbook } from '@jeyabbalas/quac';
 
 const result = await runQuac({
   dataset: 'data.csv',
@@ -516,6 +589,11 @@ const summary = buildSummary(result, {
   generatedAt: new Date().toISOString(),
 });
 ```
+
+`result.findings` is the findings without data — the very document `--findings x.json` writes.
+`renderFindingsMarkdown(result.findings)` returns the Markdown and `writeFindingsWorkbook` resolves
+with the Excel workbook as a `Blob`; pass `report: false` to run the checks without writing the QC
+report, and `outPath` is then `null`.
 
 Types ship with the package ([`types/quac.d.ts`](types/quac.d.ts)). `quac --help` documents every
 flag; the full contract is in **[docs/plan/specs/headless.md](docs/plan/specs/headless.md)**.

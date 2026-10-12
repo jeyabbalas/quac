@@ -140,6 +140,30 @@ export type WorkerToMain =
     }
   | { type: 'fatal'; message: string };
 
+/**
+ * One schema check that failed, counted exactly — past the flag cap, like
+ * `countsByRuleId` — and finer than it: a ruleId such as
+ * `schema:prop:age:value` covers every keyword on the variable, while a check
+ * is one keyword at one place in the schema. Built from a flag's identifying
+ * fields alone, never its message or value: the findings report
+ * (core/report/findings.ts) shares these without sharing the data.
+ */
+export interface SchemaCheckTally {
+  ruleId: string;
+  scope: QCFlag['scope'];
+  column?: string;
+  severity: QCFlag['severity'];
+  keyword?: string;
+  schemaPath?: string;
+  /** `<retrievalUri>#<pointer>` of the keyword (QCFlag meta.location). */
+  location?: string;
+  conditionalIndex?: number;
+  /** Flags the check raised: exact. A record fails a check once per place in it. */
+  count: number;
+  /** Distinct records among them; 0 for column- and dataset-scope checks. */
+  records: number;
+}
+
 export interface ValidationSummary {
   rowsTotal: number;
   /** Records with at least one error-severity finding. */
@@ -149,6 +173,12 @@ export interface ValidationSummary {
   flagsTruncated: boolean;
   /** ALWAYS exact, even past the cap → Sheet 4 unaffected (§F). */
   countsByRuleId: Record<string, number>;
+  /**
+   * Every schema check that failed, exact past the cap: the worker's
+   * per-record ones and the run's column- and dataset-level ones
+   * (validation-run.ts), in the order each first failed.
+   */
+  checks: SchemaCheckTally[];
   elapsedMs: number;
   aborted: boolean;
 }

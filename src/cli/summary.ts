@@ -15,6 +15,7 @@
  */
 import type { FlagStoreSummary } from '../core/flags/flagStore';
 import type { RunStage } from '../core/pipeline';
+import type { FindingsFormat } from '../core/report/findings';
 import type { RuleRunStatus } from '../core/rules/types';
 import type { RunQuacResult } from '../headless/run';
 import type { FailOn } from './args';
@@ -36,7 +37,7 @@ export const EXIT_FAIL_ON = 6;
  * stage errors stay non-fatal, as §6 says. Otherwise `--fail-on`: `error`
  * fails on any error, `warning` on any error or warning, `none` never.
  */
-export function exitCodeFor(failOn: FailOn, result: RunQuacResult): number {
+export function exitCodeFor(failOn: FailOn, result: RunQuacResult<string | null>): number {
   if (result.artifacts.stageErrors.some((e) => e.stage === 'schema')) return EXIT_RUN_FAILURE;
   if (failOn === 'none') return EXIT_OK;
   const { error, warning } = result.artifacts.flagStore.summary().severityTotals;
@@ -91,7 +92,16 @@ export interface SummaryJson {
   missingVariables: { name: string; description: string }[];
   stageErrors: { stage: RunStage; message: string }[];
   durations: Partial<Record<RunStage, number>>;
-  report: { path: string; dataRowsTruncated: boolean };
+  /** Null when the run wrote no QC report (`--no-report`). */
+  report: { path: string; dataRowsTruncated: boolean } | null;
+  /** The findings without data the run wrote (`--findings`), in argument order. */
+  findings: WrittenFindings[];
+}
+
+/** One findings output: an absolute path, or `-` for stdout. */
+export interface WrittenFindings {
+  path: string;
+  format: FindingsFormat;
 }
 
 export interface SummaryContext {
@@ -99,9 +109,14 @@ export interface SummaryContext {
   exitCode: number;
   /** ISO-8601. Injected so the summary is testable without a clock. */
   generatedAt: string;
+  /** What `--findings` wrote; absent, none. */
+  findings?: WrittenFindings[];
 }
 
-export function buildSummary(result: RunQuacResult, ctx: SummaryContext): SummaryJson {
+export function buildSummary(
+  result: RunQuacResult<string | null>,
+  ctx: SummaryContext,
+): SummaryJson {
   const { artifacts, inputs, model } = result;
   const flags: FlagStoreSummary = artifacts.flagStore.summary(artifacts.rowsTotal);
 
@@ -173,7 +188,11 @@ export function buildSummary(result: RunQuacResult, ctx: SummaryContext): Summar
     // StageError.cause is an arbitrary thrown value — never serialize it.
     stageErrors: artifacts.stageErrors.map((e) => ({ stage: e.stage, message: e.message })),
     durations: { ...artifacts.durations },
-    report: { path: result.outPath, dataRowsTruncated: model.data.truncated },
+    report:
+      result.outPath === null
+        ? null
+        : { path: result.outPath, dataRowsTruncated: model.data.truncated },
+    findings: (ctx.findings ?? []).map((f) => ({ path: f.path, format: f.format })),
   };
 }
 

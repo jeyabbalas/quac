@@ -29,6 +29,7 @@ import { nestedColumnsOf } from '../core/nested-json';
 import { ingestDataset } from '../core/ingest/ingest';
 import { runPipeline } from '../core/pipeline';
 import { writeReportWorkbook } from '../core/report/excelWriter';
+import { buildFindings } from '../core/report/findings';
 import { buildReportModel } from '../core/report/reportModel';
 import { FLAG_CAP_DEFAULT } from '../core/flags/flagStore';
 import { createBridgeRunner } from '../core/rules/engine';
@@ -52,6 +53,7 @@ import type { IngestFormat } from '../core/ingest/sniff';
 import type { CrossCheck } from '../core/pertinence';
 import type { RunArtifacts, RunProgress, RunStage } from '../core/pipeline';
 import type { ReportDataRow, ReportRowSource } from '../core/report/excelWriter';
+import type { QcFindings } from '../core/report/findings';
 import type { ReportModel, RunInfoInput } from '../core/report/reportModel';
 import type { ParsedRuleFile } from '../core/rules/parse';
 import type { RuleFile, RuleFileLintResult } from '../core/rules/types';
@@ -75,6 +77,12 @@ export interface RunQuacOptions {
   sheet?: string;
   /** Output .xlsx path, or a directory to write the default name into. */
   out?: string;
+  /**
+   * Write the .xlsx QC report — the one holding the data. Default true. With
+   * false the run checks everything and writes nothing: `outPath` is null, and
+   * `findings` is the account to share.
+   */
+  report?: boolean;
   /** Default true, mirroring the app's toggle. */
   applyCorrections?: boolean;
   signal?: AbortSignal;
@@ -93,11 +101,18 @@ export interface RunQuacDatasetInfo {
   sizeVerdict: 'ok' | 'warn';
 }
 
-export interface RunQuacResult {
-  /** Absolute path of the written workbook. */
-  outPath: string;
+export interface RunQuacResult<OutPath extends string | null = string> {
+  /** Absolute path of the written workbook; null when `report: false`. */
+  outPath: OutPath;
   artifacts: RunArtifacts;
   model: ReportModel;
+  /**
+   * The findings without data (qc-report-spec.md §7): every check that
+   * failed, where it is defined, and how often — no value from the dataset.
+   * Render it with `renderFindingsMarkdown`, `writeFindingsWorkbook` or
+   * `JSON.stringify`.
+   */
+  findings: QcFindings;
   /**
    * The inputs as resolved. P21's §7 summary is assembled from this plus
    * `artifacts` — nothing is re-derived, and nothing here is computed for the
@@ -240,9 +255,14 @@ async function resolveOutPath(out: string | undefined, filename: string): Promis
 /**
  * Ingest → schema validation → rules + corrections → Excel report, on Node.
  * Resolves with the written path and everything a caller needs to report on
- * the run; rejects with `QuacCliError` for anything a user can fix.
+ * the run; rejects with `QuacCliError` for anything a user can fix. With
+ * `report: false` nothing is written and `outPath` is null — the overloads
+ * keep it a plain `string` for every caller that leaves the report on.
  */
-export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
+export function runQuac(options: RunQuacOptions & { report: false }): Promise<RunQuacResult<null>>;
+export function runQuac(options: RunQuacOptions & { report?: true }): Promise<RunQuacResult>;
+export function runQuac(options: RunQuacOptions): Promise<RunQuacResult<string | null>>;
+export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult<string | null>> {
   const applyCorrections = options.applyCorrections ?? true;
   const schemaPaths = options.schema ?? [];
   const rulePaths = options.rules ?? [];
@@ -374,22 +394,55 @@ export async function runQuac(options: RunQuacOptions): Promise<RunQuacResult> {
       runInfo,
     });
 
-    const outPath = await resolveOutPath(options.out, model.filename);
-    try {
-      const blob = await writeReportWorkbook(model, pageRows(bridge, model.data.rowLimit), {
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      });
-      await writeFile(outPath, Buffer.from(await blob.arrayBuffer()));
-    } catch (err) {
-      throw new QuacCliError('report', `Could not write the QC report to '${outPath}'.`, {
-        cause: err,
-      });
+    // ---- 9. The findings without data — from definitions and counts only ----
+    const findings = buildFindings({
+      generatedAt: runInfo.runAt,
+      quacVersion: APP_VERSION,
+      dataset: {
+        name: dataset.name,
+        format: dataset.format,
+        sheet: dataset.sheet,
+        columns: ingest.columns,
+        records: ingest.rowCount,
+      },
+      schema,
+      ruleFiles: parsed.map((p, i) => {
+        const path = ruleInputs[i]?.path ?? '';
+        // A URL is the file's public name; a local path is nobody else's business.
+        const source = /^https?:\/\//i.test(path) ? path : null;
+        return { file: p.file, lint: lintResults[i] ?? null, source };
+      }),
+      correctionsApplied: artifacts.correctionsApplied,
+      run: {
+        cancelled: artifacts.cancelled,
+        rules: artifacts.rules,
+        schema: artifacts.schema,
+        stageErrors: artifacts.stageErrors,
+        rows: artifacts.flagStore,
+      },
+    });
+
+    let outPath: string | null = null;
+    if (options.report !== false) {
+      const target = await resolveOutPath(options.out, model.filename);
+      try {
+        const blob = await writeReportWorkbook(model, pageRows(bridge, model.data.rowLimit), {
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        await writeFile(target, Buffer.from(await blob.arrayBuffer()));
+      } catch (err) {
+        throw new QuacCliError('report', `Could not write the QC report to '${target}'.`, {
+          cause: err,
+        });
+      }
+      outPath = target;
     }
 
     return {
       outPath,
       artifacts,
       model,
+      findings,
       inputs: {
         dataset: {
           path: dataset.path,

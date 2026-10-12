@@ -52,7 +52,7 @@ import type { ColumnDigest } from './schema/column-meta';
 import type { RowSourceSpec } from './schema/row-source';
 import type { SchemaSet } from './schema/types';
 import type { ValidationSummary } from './schema/worker-protocol';
-import type { JSSandbox, RuleFile, RuleRunStat } from './rules/types';
+import type { JSSandbox, RuleFile, RuleFileLintResult, RuleRunStat } from './rules/types';
 import type { FlagStore } from './flags/flagStore';
 import type { AnnotationPlan } from './report/annotations';
 import type { HeaderTooltipPlan } from './report/headerTooltips';
@@ -110,6 +110,21 @@ export interface RunArtifacts {
    * rules stage yields null with files loaded.
    */
   inputs: { schemaProvided: boolean; ruleFileCount: number };
+  /**
+   * The definitions this run checked against, as they stood when it started:
+   * the schema it validated with and EVERY loaded rules file — lint-excluded
+   * rules included — with its lint and source. Set by the app's run
+   * controller; the pipeline itself sees only the executable rules. The live
+   * stores can move on while the report stays up (replacing a check input or
+   * editing rules in Studio keeps it), and the findings without data must
+   * describe the checks their counts came from.
+   */
+  definitions?: RunDefinitions;
+}
+
+export interface RunDefinitions {
+  schema: SchemaRunInput | null;
+  ruleFiles: readonly { file: RuleFile; lint: RuleFileLintResult | null; source: string | null }[];
 }
 
 /** Injectable executor seam — production defaults; unit tests override. */

@@ -32,7 +32,7 @@ export interface WriteOptions {
 }
 
 /** Spec ARGB pairs (fill background / font foreground) per severity + corrected. */
-const FILL_ARGB: Record<FillKind, { bg: string; fg: string }> = {
+export const FILL_ARGB: Record<FillKind, { bg: string; fg: string }> = {
   error: { bg: 'FFFFC7CE', fg: 'FF9C0006' },
   warning: { bg: 'FFFFEB9C', fg: 'FF9C6500' },
   info: { bg: 'FFDDEBF7', fg: 'FF1F4E79' },
@@ -42,13 +42,17 @@ const HEADER_BG = 'FF111111';
 const HEADER_FG = 'FFFFFFFF';
 const REVIEW_HEADER_FG = 'FFB7BEC9';
 
-const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_SAFE = 9007199254740991n;
 const MIN_SAFE = -9007199254740991n;
 
-type CellValue = string | number | boolean | Date | null;
+export type CellValue = string | number | boolean | Date | null;
 
-const solidFill = (argb: string): Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+export const solidFill = (argb: string): Fill => ({
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb },
+});
 
 const clampWidth = (len: number, max: number): number => Math.min(max, Math.max(10, len + 2));
 
@@ -65,7 +69,7 @@ function throwIfAborted(signal?: AbortSignal): void {
  */
 export const EXCEL_CELL_CHARS = 32_767;
 
-function fitCell(text: string): string {
+export function fitCell(text: string): string {
   if (text.length <= EXCEL_CELL_CHARS) return text;
   const note = ` … [cut: ${text.length.toLocaleString('en-US')} characters in all]`;
   let cut = EXCEL_CELL_CHARS - note.length;
@@ -223,16 +227,18 @@ export async function writeReportWorkbook(
   return new Blob([buffer], { type: XLSX_MIME });
 }
 
-/** A bold-header table sheet (frozen row 1, clamped widths) — sheets 2–5.
+/** A bold-header table sheet (frozen row 1, clamped widths) — sheets 2–5,
+ *  and the findings workbook's (findingsWorkbook.ts), which add an autofilter.
  *  `note` appends one unstyled row after the data (Sheet 1's truncationNote
  *  mechanism): Sheet 2 uses it when no schema participated in the run. */
-function addTableSheet(
+export function addTableSheet(
   workbook: import('exceljs').Workbook,
   name: string,
   headerLabels: readonly string[],
   dataRows: readonly (readonly CellValue[])[],
   note?: string,
-): void {
+  options: { autoFilter?: boolean; maxWidth?: number } = {},
+): import('exceljs').Worksheet {
   const ws = workbook.addWorksheet(name);
   ws.views = [{ state: 'frozen', ySplit: 1 }];
   const headerRow = ws.addRow([...headerLabels]);
@@ -250,9 +256,16 @@ function addTableSheet(
     });
   }
   if (note !== undefined) ws.addRow([note]);
+  if (options.autoFilter === true && dataRows.length > 0) {
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1 + dataRows.length, column: headerLabels.length },
+    };
+  }
   widths.forEach((w, i) => {
-    ws.getColumn(i + 1).width = clampWidth(w, 60);
+    ws.getColumn(i + 1).width = clampWidth(w, options.maxWidth ?? 60);
   });
+  return ws;
 }
 
 /** Re-export the row ceiling so callers building the SQL LIMIT share one constant. */

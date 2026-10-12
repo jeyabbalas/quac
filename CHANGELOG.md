@@ -28,8 +28,14 @@ A correctness review of the JSON Schema validation followed, and rebuilt it arou
 validator judges the values your dataset holds, as JSON** — never DuckDB's reading of them or a cast of
 them. On data-table's JSON fixtures and a set of crafted edge cases, QuaC disagreed with a plain JSON Schema
 validator 3,196 times; it now agrees, and a conformance test keeps it so. Expect different findings on the same
-inputs — the list is under **Fixed** and **Changed** below. The CLI's flags, summary record and `runQuac()`
-surface are unchanged; one exit code widens (below).
+inputs — the list is under **Fixed** and **Changed** below.
+
+And the report gains a counterpart that can travel: the **findings without data** — every check a dataset
+failed, where the JSON Schema or the QC rules define it, and how many records failed it, as Markdown, JSON or
+Excel, from the app or from `quac --findings`, with no value from the dataset in any of them. The CLI gains
+`--findings` and `--no-report`, and the summary record and `runQuac()` gain fields; every change to them is
+an addition, and a run that asks for neither new flag behaves exactly as before — but for one exit code that
+widens (a schema stage that cannot finish now exits 4, below).
 
 ### Added — web app
 
@@ -61,6 +67,31 @@ surface are unchanged; one exit code widens (below).
   off, clearing the JSON Schema, Clear all inputs and Reset delete them.
 
 ### Added — both
+
+- **Findings without data**, for sharing what failed with someone who must not see the data — the team that
+  sent it, a coordinating centre, the author of the schema or the rules. The QC report quotes the data in
+  every sheet; the findings list each failed check instead: a JSON Schema check as one keyword at one place —
+  what it requires, worded from the schema (`must be at most 2,100`, `when baseline_record = 1, must be -666
+  (Not applicable / structural skip)`), the file and JSON Pointer that define it
+  (`common/defs.json#/$defs/record_id/pattern`, through the `$ref`), where inside a nested value it applies
+  (`household[].age`), and the records that failed it; every QC rule with its outcome, its file and row, its
+  description and condition, and what it found in its scope's units (records, records per variable, result
+  rows, values changed); and the run — inputs, the schema set's fingerprint, records failing at error and at
+  warning level, and notes on whatever did not run. **No value from the dataset is in them, by construction:**
+  they are built from the schema, the rules files, the column names and counts, never from a finding's message
+  — and a test plants marked values everywhere a run can put data and fails if one reaches any format. A broken
+  rule's engine error is reduced to its kind, since it can quote a cell, and a URL is printed without its query
+  string, where a signed link carries its token. Three formats from one document: **Markdown** to read, send
+  and diff; **JSON** (`findingsSchemaVersion` 1, typed `QcFindings` in the package) for machines; **Excel** to
+  sort and filter. In the app they are three buttons under **Findings without data** in the report's Summary
+  panel. On the command line, `--findings <path|->` (repeatable; the extension picks the format, `-` is
+  Markdown on stdout, a directory gets the default name) and `--no-report` to skip the QC report:
+  `quac data.csv --schema s/ --rules r.quac.csv --no-report --findings findings.md`. See
+  [Findings without data](README.md#findings-without-data).
+- **Exact counts per schema check.** The validation run now tallies every failed check — keyword × place in the
+  schema — exactly, past the flag cap as its per-rule counts already were, with the records each one failed;
+  and each schema finding records where its keyword sits in its file. Column-scope QC rules record their count
+  per variable. The findings above are built on these; the QC report is unchanged.
 
 - **Nested data is checked, not rejected.** A JSON or Parquet dataset keeps DuckDB's nested types (`LIST`,
   `STRUCT`, `MAP`, `JSON`) through every stage. The JSON Schema describes the inside of a value with ordinary
@@ -187,6 +218,12 @@ surface are unchanged; one exit code widens (below).
 
 ### Changed — CLI
 
+- **Additions for the findings without data**: `--findings` and `--no-report`; in the summary JSON, `findings`
+  (the files written) and a `report` that is `null` only when `--no-report` declined one; in `runQuac()`, the
+  `findings` result, the `report: false` option (which makes `outPath` `null` — the overloads keep it a plain
+  `string` for every other caller) and the exports `renderFindingsMarkdown`, `writeFindingsWorkbook` and
+  `FINDINGS_SCHEMA_VERSION`. Exit 5 now also covers a findings file that cannot be written, and 0 reads "run
+  finished" rather than "report written", since a run may write no report.
 - **DuckDB 1.5.6** (`@duckdb/node-api` 1.5.6-r.1, was 1.5.5-r.4). The browser keeps DuckDB 1.5.4 inside
   duckdb-wasm; the shared ground-truth manifests pass on both.
 - An install brings about 85 more small packages, transitively: `exceljs` → … → `traverse` 0.3.10 now depends
@@ -229,13 +266,13 @@ surface are unchanged; one exit code widens (below).
 
 | Measure                           | 1.1.0   | 1.2.0                    |
 | --------------------------------- | ------- | ------------------------ |
-| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 56.4 KB                  |
+| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 56.9 KB                  |
 | Cells the report grid can colour  | 20,000  | every recorded flag      |
 | JSON Schema Test Suite (2020-12)  | 2,125 / 2,353 | 2,278 / 2,353      |
-| Unit tests                        | 1,211   | 1,480                    |
+| Unit tests                        | 1,211   | 1,542                    |
 | Browser tests                     | 73      | 77                       |
-| CLI tests                         | 45      | 53                       |
-| End-to-end tests                  | 124     | 128                      |
+| CLI tests                         | 45      | 62                       |
+| End-to-end tests                  | 124     | 130                      |
 | `npm audit` findings              | 2       | 2                        |
 | Third-party a11y items open       | 0       | 2 (dictionary component) |
 

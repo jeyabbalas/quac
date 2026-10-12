@@ -195,6 +195,13 @@ describe('runValidations on qc_fixture', () => {
     const { flags, perRule } = await runValidations(db.runner, pick('H002'));
     // Only interview_date has a NULL (__row__ 14); the other 3 targets are clean.
     expect(perRule[0]).toMatchObject({ status: 'ok', violationCount: 1, flagsEmitted: 1 });
+    // The sum, per target — the findings without data report each variable.
+    expect(perRule[0]?.byTarget).toEqual([
+      { column: 'record_id', violations: 0 },
+      { column: 'household_id', violations: 0 },
+      { column: 'wave', violations: 0 },
+      { column: 'interview_date', violations: 1 },
+    ]);
     expect(flags[0]).toMatchObject({
       scope: 'cell',
       row: 14,
@@ -207,6 +214,8 @@ describe('runValidations on qc_fixture', () => {
     const inRange = await runValidations(db.runner, pick('H003'));
     expect(inRange.flags).toEqual([]);
     expect(inRange.perRule[0]).toMatchObject({ status: 'ok', violationCount: 0, flagsEmitted: 0 });
+    // The distinct count is recorded in range too: the findings report it either way.
+    expect(inRange.perRule[0]?.byTarget).toEqual([{ column: 'wave', violations: 0, distinct: 3 }]);
 
     const out = await runValidations(
       db.runner,
@@ -222,6 +231,7 @@ describe('runValidations on qc_fixture', () => {
       ),
     );
     expect(out.perRule[0]).toMatchObject({ status: 'ok', violationCount: 1, flagsEmitted: 1 });
+    expect(out.perRule[0]?.byTarget).toEqual([{ column: 'wave', violations: 1, distinct: 3 }]);
     expect(out.flags[0]).toEqual({
       source: 'rules',
       ruleId: 'X_CDR',

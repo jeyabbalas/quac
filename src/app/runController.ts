@@ -14,6 +14,8 @@ import { runPipeline } from '../core/pipeline';
 import { rowSourceFor } from '../core/schema/row-source';
 import { presentRun } from '../ui/views/report/presenter';
 import { createCancelToken } from './store';
+import { rulesState } from '../core/rules/rules-store';
+import type { RunDefinitions } from '../core/pipeline';
 import type { RuleFile } from '../core/rules/types';
 import type { JSSandbox } from '../core/rules/types';
 import type { ShellContext } from './shell';
@@ -59,6 +61,17 @@ export async function startRun(ctx: ShellContext): Promise<void> {
   const { schema, ruleFiles } = readiness;
   const dataset = store.dataset.get();
   if (dataset === null) return; // readiness guarantees otherwise (TS narrowing)
+  // Every loaded rules file as it stands now — the findings describe the
+  // checks this run made, whatever Studio does to the files afterwards.
+  const rulesAtStart = rulesState.get();
+  const definitions: RunDefinitions = {
+    schema,
+    ruleFiles: rulesAtStart.files.map((parsed, i) => ({
+      file: parsed.file,
+      lint: rulesAtStart.results.find((r) => r.file === parsed.file.name) ?? null,
+      source: rulesAtStart.sources[i] ?? null,
+    })),
+  };
 
   const applyCorrections = store.applyCorrections.get();
   const controller = new AbortController();
@@ -132,7 +145,7 @@ export async function startRun(ctx: ShellContext): Promise<void> {
       return;
     }
 
-    store.runArtifacts.set(artifacts);
+    store.runArtifacts.set({ ...artifacts, definitions });
     const summary = artifacts.flagStore.summary(artifacts.rowsTotal);
     store.run.set({
       flagsSummary: {

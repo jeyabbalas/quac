@@ -86,6 +86,7 @@ const summary = (over: Partial<ValidationSummary> = {}): ValidationSummary => ({
   flagsEmitted: 1,
   flagsTruncated: false,
   countsByRuleId: { 'schema:prop:a:value': 1 },
+  checks: [],
   elapsedMs: 5,
   aborted: false,
   ...over,

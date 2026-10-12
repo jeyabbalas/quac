@@ -22,6 +22,7 @@
  * phase deferred notes.
  */
 import { buildAjv, collectMetaErrors, prepareSchemaForAjv, registerSchemaFiles } from './ajv-engine';
+import { createCheckTallies } from './check-tally';
 import { pointerSegments, renderNestedPath } from './nested-values';
 import { createRowShaper } from './row-shaping';
 import { SCHEMA_DATASET_RULE_IDS } from './rule-ids';
@@ -31,6 +32,7 @@ import { deserializeColumnMeta } from './worker-protocol';
 import type { ValidateFunction } from 'ajv';
 import type AjvCore from 'ajv/dist/core';
 import type { QCFlag } from '../flags/flag';
+import type { CheckTallies } from './check-tally';
 import type { RowShaper } from './row-shaping';
 import type { SchemaProbe } from './schema-probe';
 import type { AjvErrorLike, TranslateCtx } from './translator';
@@ -61,6 +63,8 @@ interface EngineState {
   checks: DatasetChecks;
   flagCap: number;
   counts: Map<string, number>;
+  /** The same counts per check (keyword × place in the schema), for the findings report. */
+  tallies: CheckTallies;
   /** Columns already reported as not allowed (one column flag each, §D.6). */
   rejected: Set<string>;
   /** Rows past `items: false` (or past the prefix with no record schema allowed). */
@@ -91,6 +95,7 @@ function summarize(s: EngineState): ValidationSummary {
     flagsEmitted: s.emitted,
     flagsTruncated: s.truncated,
     countsByRuleId,
+    checks: s.tallies.list(),
     elapsedMs: Math.round(performance.now() - s.startedAt),
     aborted: s.aborted,
   };
@@ -200,6 +205,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
       checks,
       flagCap: msg.config.flagCap,
       counts: new Map(),
+      tallies: createCheckTallies(),
       rejected: new Set(),
       extraRecords: 0,
       keysSeen: msg.mode === 'records' ? new Set() : null,
@@ -295,6 +301,7 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
       if (rowFlags.some((f) => f.severity === 'error' && f.scope !== 'column')) rowsWithErrors += 1;
       for (const flag of rowFlags) {
         s.counts.set(flag.ruleId, (s.counts.get(flag.ruleId) ?? 0) + 1);
+        s.tallies.add(flag);
         if (s.emitted < s.flagCap) {
           out.push(flag);
           s.emitted += 1;
@@ -354,7 +361,10 @@ export function createValidationEngine(post: (msg: WorkerToMain) => void): Valid
         }
       }
     }
-    for (const flag of datasetFlags) s.counts.set(flag.ruleId, (s.counts.get(flag.ruleId) ?? 0) + 1);
+    for (const flag of datasetFlags) {
+      s.counts.set(flag.ruleId, (s.counts.get(flag.ruleId) ?? 0) + 1);
+      s.tallies.add(flag);
+    }
     post({
       type: 'done',
       summary: summarize(s),

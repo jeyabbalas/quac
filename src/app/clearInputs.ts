@@ -31,6 +31,7 @@ import { signal } from './signals';
 import { showToast } from './toast';
 import { clearRuleFiles, removeRuleFile, rulesState } from '../core/rules/rules-store';
 import { resetSchemaSlot } from '../core/schema/schema-store';
+import { stopSemanticSearch } from '../ui/views/load/preview/semanticSearch';
 import type { ShellContext } from './shell';
 
 // ---- dataset-card UI hooks --------------------------------------------------
@@ -101,6 +102,9 @@ export function registerSlotClearUi(slot: ClearableSlot, clearLocalUi: () => voi
 function clearSchemaSlot(): void {
   resetSchemaSlot();
   slotClearUi.schema?.();
+  // The dictionary's semantic vectors are computed from the schema's text:
+  // they go with it (README → Privacy). The switch itself stays where it was.
+  void stopSemanticSearch();
 }
 
 function clearRulesSlot(): void {

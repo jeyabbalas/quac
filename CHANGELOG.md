@@ -18,8 +18,9 @@ Entries below say which half they apply to.
 
 Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`
 0.7.0 → 0.10.0 holds a million annotations, so the report grid now paints every flag a run records.
-`json-schema-data-dictionary` 0.1.0 → 0.7.0 brings its own dictionary component, which now renders the JSON
-Schema preview. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
+`json-schema-data-dictionary` 0.1.0 → 0.8.0 brings its own dictionary component, which now renders the JSON
+Schema preview, downloads it as a formatted Excel workbook, and can search it by meaning with the LEAF model,
+served from QuaC's own site. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
 end to end: a JSON or Parquet dataset whose values are lists and records is validated, ruled on, shown and
 reported as the values it holds.
 
@@ -43,9 +44,21 @@ surface are unchanged; one exit code widens (below).
 - **The JSON Schema preview is a full data dictionary.** The Load view's JSON Schema tab is now
   json-schema-data-dictionary's own component: skip patterns you can follow from either end (a **Skip logic**
   panel listing every rule, a "Skips N" chip on each variable that drives one, conditions that link to the
-  variable they set), a **Metadata** panel, search that ranks the exact variable name first, a column header
-  that stays in view, resizable columns, and **Copy** / **CSV**. It wears QuaC's fonts and colours, stays light
-  on a dark-mode machine, and runs without semantic search, which would download a model.
+  variable they set), stated as exactly what the schema enforces, with each rule's `$comment` beside it; a
+  **Metadata** panel; search that ranks the exact variable name first; a column header that stays in view;
+  resizable columns; **Copy**; and an **Excel** download — a formatted workbook with the dictionary, every skip
+  pattern and an About sheet. It wears QuaC's fonts and colours and stays light on a dark-mode machine.
+- **Semantic search in the data dictionary.** A **Semantic search** switch in the JSON Schema tab's header
+  adds variables related in meaning to a search, badged "related": _getting fired_ finds
+  `resp_laid_off_12m` and `partner_laid_off_12m`, which share no word with it. It runs MongoDB's LEAF-IR
+  embedding model (`MongoDB/mdbr-leaf-ir`, Apache-2.0) in a worker in your browser — on WebGPU at fp16 where
+  the browser has it with `shader-f16`, on WebAssembly at q8 otherwise. It is the one model offered. Off by
+  default, since its first use downloads the model (23 MB, or 46 MB on WebGPU), and remembered once turned on.
+  **Nothing leaves the browser:** the model, Transformers.js and ONNX Runtime's WebAssembly build are all
+  served from QuaC's site, where the library would fetch them from huggingface.co and jsDelivr, and the worker
+  refuses any other address; the end-to-end privacy test now runs with the switch on. While it is on, the
+  dictionary's vectors are kept in QuaC's own IndexedDB database so a reload need not recompute them; turning it
+  off, clearing the JSON Schema, Clear all inputs and Reset delete them.
 
 ### Added — both
 
@@ -169,6 +182,8 @@ surface are unchanged; one exit code widens (below).
 
 - The "Painting N of M cell flags" banner, with the cap it reported.
 - QuaC's own dictionary table and its search, replaced by the component above.
+- The dictionary's CSV download. **Copy** still copies the dictionary as CSV text; the download is the Excel
+  workbook.
 
 ### Changed — CLI
 
@@ -196,9 +211,16 @@ surface are unchanged; one exit code widens (below).
 
 ### Changed — dependencies
 
-- `@jeyabbalas/data-table` 0.7.0 → **0.10.0** and `json-schema-data-dictionary` 0.1.0 → **0.7.0**, both pinned
+- `@jeyabbalas/data-table` 0.7.0 → **0.10.0** and `json-schema-data-dictionary` 0.1.0 → **0.8.0**, both pinned
   exactly. `vitest` and `@vitest/browser-playwright` 4 → 5, `es-module-lexer` 2 → 3, and every in-range update:
   vite 8.3, playwright 1.64, eslint 10.12, typescript-eslint 8.71, CodeMirror and Lezer patches.
+- **New, for semantic search, browser only:** `@huggingface/transformers` 4.3.1 and `onnxruntime-web`
+  1.31.0-dev.20260914, pinned exactly to the build Transformers.js drives (a unit test keeps them one package).
+  Both are `devDependencies`: the published CLI package does not change. The LEAF model is not an npm package;
+  the build downloads it from Hugging Face at a fixed revision into `public/models/`, every file pinned by
+  SHA-256, as it does DuckDB's extensions. Transformers.js also installs `onnxruntime-node`, whose install
+  script fetches CUDA libraries on Linux x64; CI sets `ONNXRUNTIME_NODE_INSTALL=skip`, and so should a Linux
+  developer.
 - **Still held**, for 1.1.0's reasons: TypeScript 6.0 (typescript-eslint, through its latest canary, declares
   `<6.1.0`) and `@types/node` 24 (the `engines` floor). duckdb-wasm stays at 1.33.1-dev57.0, data-table's peer
   and the build the vendored extensions are hashed against; `xlsx` 0.20.3 is still SheetJS's latest.
@@ -207,13 +229,13 @@ surface are unchanged; one exit code widens (below).
 
 | Measure                           | 1.1.0   | 1.2.0                    |
 | --------------------------------- | ------- | ------------------------ |
-| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 55.5 KB                  |
+| Entry JS (gzipped, 300 KB budget) | 48.7 KB | 56.4 KB                  |
 | Cells the report grid can colour  | 20,000  | every recorded flag      |
 | JSON Schema Test Suite (2020-12)  | 2,125 / 2,353 | 2,278 / 2,353      |
-| Unit tests                        | 1,211   | 1,467                    |
+| Unit tests                        | 1,211   | 1,480                    |
 | Browser tests                     | 73      | 77                       |
 | CLI tests                         | 45      | 53                       |
-| End-to-end tests                  | 124     | 124                      |
+| End-to-end tests                  | 124     | 128                      |
 | `npm audit` findings              | 2       | 2                        |
 | Third-party a11y items open       | 0       | 2 (dictionary component) |
 
@@ -230,6 +252,12 @@ installs from `cdn.sheetjs.com` rather than the npm registry. New with this rele
   it while loading, so the validator sees its standard text (`T` separator, a UTC `Z` dropped, trailing
   fractional zeros dropped) rather than the file's own text; the CLI reads the text as written. JSON files are not
   affected.
+- **Semantic search is slower without WebGPU.** GitHub Pages cannot make the page cross-origin isolated, so
+  WebAssembly runs on one thread: about 50 texts a second on a recent laptop, which is 9 seconds for the 265
+  variables of the bundled example, and minutes for a dictionary of thousands. WebGPU is far faster. A browser
+  whose GPU lacks `shader-f16` runs on WebAssembly, because the site does not serve the fp32 weights (91 MB)
+  WebGPU would need there. The model and runtime add about 110 MB to the deployed site; a visitor downloads
+  only the one precision their browser runs.
 - `idn-hostname` and `idn-email` follow IDNA2008 closely but not exhaustively. A handful of JSON-Schema-Test-Suite
   cases still fail — `$dynamicRef` corners, `unevaluated*` with `if` but no `then`, draft-07 `content*`
   assertion — none of them shapes a tabular schema uses.

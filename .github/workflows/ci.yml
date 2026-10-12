@@ -8,6 +8,11 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      # @huggingface/transformers (the dictionary's semantic search, browser
+      # only) depends on onnxruntime-node, whose install script downloads CUDA
+      # libraries from NuGet on linux/x64. Nothing here runs ONNX under Node.
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

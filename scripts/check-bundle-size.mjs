@@ -24,6 +24,13 @@ const CODEMIRROR_MARKER = 'cm-announced';
 // extractor: it survives minification and appears nowhere in app code
 // (data-dictionary.ts guards the empty case rather than letting it throw).
 const DICTIONARY_MARKER = 'requires a non-empty array';
+// Transformers.js and ONNX Runtime (the dictionary's semantic search) belong in
+// the semantic-search worker and nowhere else: some 200 KB gz that only a
+// reader who turns the switch on should load, off the main thread. The marker is the
+// library's default Cache Storage name, a string literal that survives
+// minification and that QuaC never uses (the worker turns that cache off).
+const TRANSFORMERS_MARKER = 'transformers-cache';
+const SEMANTIC_WORKER = /^semantic\.worker-[\w-]+\.js$/;
 // The headless Node runtime (P20, src/headless/**) must not reach the web build
 // AT ALL — not the entry, not a lazy chunk. It pulls @duckdb/node-api and
 // node:fs, which have no business in a browser bundle. Unlike the three markers
@@ -100,12 +107,21 @@ for (const rel of [...entryRels, ...lazyChunks.map((f) => `assets/${f}`)]) {
   }
 }
 
+for (const rel of [...entryRels, ...lazyChunks.map((f) => `assets/${f}`)]) {
+  const name = rel.replace(/^assets\//, '');
+  if (!SEMANTIC_WORKER.test(name) && readFileSync(join(distDir, rel)).includes(TRANSFORMERS_MARKER)) {
+    console.error(`check-bundle-size: FAIL — Transformers.js left the semantic-search worker (${rel})`);
+    process.exit(1);
+  }
+}
+
 // Report the lazy third-party chunk weights so their cost stays visible in CI
 // logs.
 for (const { label, marker, missing } of [
   { label: 'exceljs', marker: EXCELJS_MARKER, missing: 'report-export path absent?' },
   { label: 'codemirror', marker: CODEMIRROR_MARKER, missing: 'studio workspace path absent?' },
   { label: 'data-dictionary', marker: DICTIONARY_MARKER, missing: 'dictionary path absent?' },
+  { label: 'semantic-search worker', marker: TRANSFORMERS_MARKER, missing: 'semantic worker absent?' },
 ]) {
   const chunk = lazyChunks.find((f) => readFileSync(join(assetsDir, f)).includes(marker));
   if (chunk === undefined) {

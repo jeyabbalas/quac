@@ -17,6 +17,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      # As in ci.yml: no CUDA download for a dependency of a browser-only devDependency.
+      ONNXRUNTIME_NODE_INSTALL: skip
     permissions:
       # The whole point: this mints the short-lived OIDC token npm exchanges for
       # publish rights. No NPM_TOKEN exists in this repository, so a leaked

@@ -19,10 +19,14 @@
  * **The journey is chosen to touch every lazy chunk**, because a chunk that
  * never loads cannot be caught phoning home: xlsx (SheetJS) → csv (worker
  * boot + the json and icu extensions) → JSON Schema (Ajv, and the data
- * dictionary — json-schema-data-dictionary's component, whose semantic search
- * would download a model if QuaC turned it on) → a rules file with a `js`
- * correction (QuickJS) → Run (the parquet extension) → Download (exceljs) →
- * `#/studio` (CodeMirror).
+ * dictionary — json-schema-data-dictionary's component — with its Semantic
+ * search switch on: Transformers.js and ONNX Runtime in their worker, and the
+ * LEAF model, which the library would fetch from huggingface.co and QuaC
+ * serves itself) → a rules file with a `js` correction (QuickJS) → Run (the
+ * parquet extension) → Download (exceljs) → `#/studio` (CodeMirror).
+ *
+ * A `blob:` URL of this origin is this page's own memory, not a request to
+ * anyone: Transformers.js hands ONNX Runtime its loader that way.
  *
  * **Both halves are asserted.** The negative half — no off-origin URL was
  * requested, and the belt-and-braces abort never fired — is worthless without
@@ -45,15 +49,19 @@ import { expect, test } from '@playwright/test';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 const PUBLIC_DUCKDB = fileURLToPath(new URL('../../public/duckdb', import.meta.url));
+const PUBLIC_MODELS = fileURLToPath(new URL('../../public/models', import.meta.url));
 const TINY = join(FIXTURES, 'tiny');
 
 const ORIGIN = 'http://localhost:4173';
 const INGEST_TIMEOUT = 90_000;
 const RUN_TIMEOUT = 150_000;
+const SEMANTIC_TIMEOUT = 120_000;
 test.describe.configure({ timeout: 300_000 });
 
 /** Anything NOT on the preview origin. A RegExp route matches the full URL. */
-const OFF_ORIGIN = /^(?!http:\/\/localhost:4173\/)/;
+const OFF_ORIGIN = /^(?!(?:blob:)?http:\/\/localhost:4173\/)/;
+const onOrigin = (url: string): boolean =>
+  url.startsWith(`${ORIGIN}/`) || url.startsWith(`blob:${ORIGIN}/`);
 
 /**
  * A correction written in JS, so the QuickJS chunk is genuinely loaded and
@@ -67,15 +75,15 @@ const JS_RULES = [
   'N002,validate,column,person_id,unique,,,error,Identifiers must be unique.,true',
 ].join('\n');
 
-/** Every file under public/duckdb/, as origin-absolute URLs under /quac/. */
-function vendoredDuckdbUrls(): string[] {
-  const walk = (dir: string): string[] =>
-    readdirSync(dir).flatMap((entry) => {
-      const full = join(dir, entry);
+/** Every file under a public/ directory, as origin-absolute URLs under /quac/. */
+function vendoredUrls(dir: string, path: string): string[] {
+  const walk = (at: string): string[] =>
+    readdirSync(at).flatMap((entry) => {
+      const full = join(at, entry);
       return statSync(full).isDirectory() ? walk(full) : [full];
     });
-  return walk(PUBLIC_DUCKDB).map(
-    (file) => `${ORIGIN}/quac/duckdb/${relative(PUBLIC_DUCKDB, file).split(sep).join(posix.sep)}`,
+  return walk(dir).map(
+    (file) => `${ORIGIN}/quac/${path}/${relative(dir, file).split(sep).join(posix.sep)}`,
   );
 }
 
@@ -119,12 +127,18 @@ test('a full local run makes zero off-origin requests', async ({ page }) => {
     { timeout: INGEST_TIMEOUT },
   );
 
-  // 3b — the data dictionary, opened and searched: the component that COULD
-  // fetch, if QuaC ever passed it an embedder, so it has to be seen working.
+  // 3b — the data dictionary with semantic search on, searched: the one
+  // feature whose library defaults name other hosts (huggingface.co for the
+  // model, jsDelivr for ONNX Runtime), so it has to be seen working.
   await page.locator('.q-preview .q-paneltab', { hasText: 'JSON Schema' }).click();
+  await page.getByRole('checkbox', { name: 'Semantic search' }).check();
+  await expect(page.locator('json-data-dictionary [data-dd-semantic-status]')).toHaveText(
+    'Semantic search on',
+    { timeout: SEMANTIC_TIMEOUT },
+  );
   await page.locator('json-data-dictionary [data-dd-search]').fill('age');
   await expect(page.locator('json-data-dictionary [data-dd-count]')).toHaveText(
-    /^\d+ \/ \d+ variables$/,
+    /^\d+ \/ \d+ variables/,
     { timeout: INGEST_TIMEOUT },
   );
 
@@ -166,7 +180,7 @@ test('a full local run makes zero off-origin requests', async ({ page }) => {
   expect(await page.locator('.cm-editor').count()).toBeGreaterThan(0);
 
   // ---- the negative half -------------------------------------------------
-  const offOrigin = [...new Set(requested.filter((url) => !url.startsWith(`${ORIGIN}/`)))];
+  const offOrigin = [...new Set(requested.filter((url) => !onOrigin(url)))];
   expect(offOrigin, 'QuaC requested something off-origin').toEqual([]);
   expect(blocked, 'an off-origin request was attempted and aborted').toEqual([]);
 
@@ -181,6 +195,18 @@ test('a full local run makes zero off-origin requests', async ({ page }) => {
     'no hardened worker script was recorded',
   ).toBe(true);
   expect(sawExtension, 'no vendored extension was recorded').toBe(true);
+  // The semantic-search worker's requests are recorded too: the model's
+  // weights and ONNX Runtime's WebAssembly build, from this site.
+  expect(
+    requested.some((url) =>
+      /\/quac\/models\/MongoDB\/mdbr-leaf-ir\/onnx\/model_(?:quantized|fp16)\.onnx_data$/.test(url),
+    ),
+    'no LEAF weights were recorded — did semantic search run?',
+  ).toBe(true);
+  expect(
+    requested.some((url) => /\/quac\/assets\/ort-wasm-simd-threaded[\w.-]*\.wasm$/.test(url)),
+    'no ONNX Runtime WebAssembly binary was recorded',
+  ).toBe(true);
   // …and the run really did produce a report, so none of the above is the
   // trivially-clean network of an app that did nothing.
   expect(await page.locator('.q-report-grid').count()).toBeGreaterThan(0);
@@ -197,13 +223,30 @@ test('a full local run makes zero off-origin requests', async ({ page }) => {
  * passing an all-200 assertion over zero files.
  */
 test('every vendored DuckDB asset is served under /quac/duckdb/', async ({ page }) => {
-  const urls = vendoredDuckdbUrls();
+  const urls = vendoredUrls(PUBLIC_DUCKDB, 'duckdb');
   expect(urls.length, 'public/duckdb/ looks empty — did prebuild run?').toBeGreaterThanOrEqual(10);
 
   const failures: string[] = [];
   for (const url of urls) {
     // HEAD would be cheaper, but a 96 MB GET is what the app actually does and
     // vite preview answers HEAD differently for some asset types.
+    const response = await page.request.get(url, { maxRedirects: 0 });
+    if (response.status() !== 200) failures.push(`${String(response.status())} ${url}`);
+  }
+  expect(failures).toEqual([]);
+});
+
+/**
+ * The LEAF model the semantic-search worker reads from /quac/models/
+ * (scripts/vendor-semantic-model.mjs), enumerated from disk like the DuckDB
+ * assets above. The floor is its seven pinned files plus LICENSE and NOTICE.
+ */
+test('every vendored model file is served under /quac/models/', async ({ page }) => {
+  const urls = vendoredUrls(PUBLIC_MODELS, 'models');
+  expect(urls.length, 'public/models/ looks empty — did prebuild run?').toBeGreaterThanOrEqual(9);
+
+  const failures: string[] = [];
+  for (const url of urls) {
     const response = await page.request.get(url, { maxRedirects: 0 });
     if (response.status() !== 200) failures.push(`${String(response.status())} ${url}`);
   }

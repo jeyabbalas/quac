@@ -128,8 +128,9 @@ test('search ranks the exact name first, empties, and clears', async ({ page }) 
     'household_size',
   );
 
-  // QuaC runs without semantic search (it would download a model from Hugging
-  // Face), so an empty result says so plainly and never "looks for related".
+  // Semantic search is off until the head's switch turns it on
+  // (semanticSearch.spec), so an empty result says so plainly and never
+  // "looks for related".
   await search.fill('zzzz');
   await expect(dd.locator('[data-dd-count]')).toHaveText('0 / 265 variables');
   await expect(dd.locator('[data-dd-empty]')).toContainText('No variables match “zzzz”.');

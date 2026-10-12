@@ -83,6 +83,16 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
 
+2026-10-11 · dictionary · **json-schema-data-dictionary 0.7.0 → 0.8.0, and semantic search with LEAF.** The bump was
+drop-in (skip patterns as enforced, comments shown, the download an `.xlsx` — V52; agreement invariant and axe unchanged).
+Semantic search: a switch in the JSON Schema panel head (`preview/dataDictionary.ts`, `semanticSearch.ts`) gives the
+component `semanticSearch` with LEAF-IR only, run in QuaC's worker (`semantic.worker.ts`, `semanticModel.ts`,
+`semanticGuard.ts`) from files the site serves: `scripts/vendor-semantic-model.mjs` (SHA-pinned weights in
+`public/models/`) and Vite `?url` copies of ONNX Runtime's wasm. No third-party request (network-isolation runs with it
+on); vectors only in `quac-semantic`, deleted by off / schema clear / Reset (V53–V59). Watch: Transformers.js's
+absolute-URL local path trap (V54), shared github.io storage (V58), `ONNXRUNTIME_NODE_INSTALL=skip` on Linux (V57).
+Unit 1,480 · browser 77 · CLI 53 · e2e 128 · entry 56.4 KB gz.
+
 2026-10-11 · schema-correctness · **The validator judges the dataset's own values, as JSON.** A five-reviewer audit
 (differential oracle vs a plain validator, the JSON-Schema-Test-Suite, row/dataset semantics, translator, value mapping)
 found 3,196 disagreements on JSON files and dozens of engine/translator defects (V43–V51). Row sources (`schema/row-source.ts`,

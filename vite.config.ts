@@ -24,6 +24,9 @@ export default defineConfig({
     // ajv/ajv-formats reach the browser via dynamic import (meta-validate) and
     // the validation worker (P09) — same late-discovery reload otherwise.
     // exceljs is reached only via the report-export dynamic import (P15).
+    // Transformers.js only from the semantic-search worker, which the scan
+    // never follows: found late, it reloaded the page the first time the
+    // dictionary's Semantic search switch was turned on.
     include: [
       '@jeyabbalas/data-table',
       'ajv',
@@ -31,6 +34,7 @@ export default defineConfig({
       'ajv/dist/2020.js',
       'ajv-formats',
       'exceljs',
+      '@huggingface/transformers',
     ],
   },
   preview: { port: 4173, strictPort: true },

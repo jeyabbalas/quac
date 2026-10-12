@@ -13,12 +13,15 @@
  *
  * What stays QuaC's: the head and caption every Preview panel shares, the
  * state notes (this panel never duplicates the schema slot card's findings,
- * ignored-file list or CORS help: it points at the card and stops), and the
- * look — QuaC's fonts and colours reach the component through its `--dd-*`
+ * ignored-file list or CORS help: it points at the card and stops), the
+ * Semantic search switch in the head (semanticSearch.ts), and the look —
+ * QuaC's fonts and colours reach the component through its `--dd-*`
  * properties (preview.css). The extraction contract is
  * core/schema/data-dictionary.ts.
  */
 import type {
+  ColumnResizeDetail,
+  ColumnWidths,
   DataDictionaryElement,
   DataDictionaryTable,
   RenderOptions,
@@ -27,37 +30,53 @@ import { effect } from '../../../../app/signals';
 import { dictionaryTable, topLevelRows } from '../../../../core/schema/data-dictionary';
 import { needsRootChoice, schemaState } from '../../../../core/schema/schema-store';
 import { note } from './previewDom';
+import {
+  readSemanticPref,
+  semanticSearchOptions,
+  stopSemanticSearch,
+  writeSemanticPref,
+} from './semanticSearch';
+import type { SemanticLibraryExports } from './semanticSearch';
 
 const variables = (n: number): string => `${String(n)} variable${n === 1 ? '' : 's'}`;
 const fields = (n: number): string => `${String(n)} nested field${n === 1 ? '' : 's'}`;
 
 /**
- * - `theme: 'light'`: the default, `'auto'`, follows prefers-color-scheme and
- *   would put a dark dictionary inside QuaC's white work area on a dark-OS
- *   machine — the trap Verified fact V22 records for data-table's colorScheme.
- * - No `semanticSearch`: it downloads an embedding model from Hugging Face, and
- *   QuaC makes no third-party request after load (network-isolation.spec).
- *   Keyword search needs nothing else.
+ * `theme: 'light'`: the default, `'auto'`, follows prefers-color-scheme and
+ * would put a dark dictionary inside QuaC's white work area on a dark-OS
+ * machine — the trap Verified fact V22 records for data-table's colorScheme.
+ * `semanticSearch` is added while the head's switch is on.
  */
 const RENDER_OPTIONS: RenderOptions = { theme: 'light' };
 
-type Render = (
-  container: HTMLElement,
-  table: DataDictionaryTable,
-  options?: RenderOptions,
-) => DataDictionaryElement;
+/** What the panel uses of the package: the renderer, and what semantic search needs. */
+type Library = Pick<
+  typeof import('json-schema-data-dictionary'),
+  'renderDataDictionary' | SemanticLibraryExports
+>;
 
-let rendererPromise: Promise<Render> | null = null;
+let libraryPromise: Promise<Library> | null = null;
 
 /**
  * Memoized dynamic import, for the entry chunk's sake: the Load view ships in
  * it, and the package must not. Resolves to the same lazy chunk as the core
- * module's extractor import.
+ * module's extractor import. The destructuring names what is used, so the
+ * bundler can leave the rest of the package out of that chunk.
  */
-function loadRenderer(): Promise<Render> {
-  rendererPromise ??= import('json-schema-data-dictionary').then((m) => m.renderDataDictionary);
-  return rendererPromise;
+function loadLibrary(): Promise<Library> {
+  libraryPromise ??= import('json-schema-data-dictionary').then(
+    ({ renderDataDictionary, createWorkerEmbedder, createIndexedDbVectorCache }) => ({
+      renderDataDictionary,
+      createWorkerEmbedder,
+      createIndexedDbVectorCache,
+    }),
+  );
+  return libraryPromise;
 }
+
+/** The component's search box, inside its open shadow root. */
+const searchBox = (element: DataDictionaryElement): HTMLInputElement | null =>
+  element.shadowRoot?.querySelector<HTMLInputElement>('[data-dd-search]') ?? null;
 
 export function mountDataDictionary(panel: HTMLElement): void {
   const head = document.createElement('div');
@@ -67,7 +86,26 @@ export function mountDataDictionary(panel: HTMLElement): void {
   title.textContent = 'JSON Schema';
   const meta = document.createElement('span');
   meta.className = 'q-preview-meta';
-  head.append(title, meta);
+
+  // The switch. A plain labelled checkbox, like the run bar's Apply
+  // corrections. Hidden with the dictionary: there is nothing to search in a
+  // state note.
+  const semantic = document.createElement('label');
+  semantic.className = 'q-dd-semantic';
+  semantic.title =
+    'Also list variables related in meaning, not only those that share a word. ' +
+    'Runs the LEAF model in this browser; the first use downloads it from this site, ' +
+    'and nothing is sent anywhere.';
+  const semanticBox = document.createElement('input');
+  semanticBox.type = 'checkbox';
+  semanticBox.checked = readSemanticPref();
+  semantic.append(semanticBox, document.createTextNode(' Semantic search'));
+  semantic.hidden = true;
+
+  const side = document.createElement('span');
+  side.className = 'q-dd-headside';
+  side.append(meta, semantic);
+  head.append(title, side);
 
   // Says what the thing below the head IS, in every state — the tab and title
   // name the input, so something has to name the rendering. Outside `body`, so
@@ -86,9 +124,42 @@ export function mountDataDictionary(panel: HTMLElement): void {
   frame.className = 'q-dd';
   /** One element for the panel's lifetime: see show(). */
   let element: DataDictionaryElement | null = null;
+  let lib: Library | null = null;
+
+  // The reader's column widths, handed back on every render: assigning the
+  // component's options (the switch, a new schema) starts it from these
+  // rather than from its defaults.
+  let widths: ColumnWidths | undefined;
+  frame.addEventListener('dd-column-resize', (event) => {
+    widths = (event as CustomEvent<ColumnResizeDetail>).detail.widths;
+  });
+
+  const optionsFor = (library: Library): RenderOptions => ({
+    ...RENDER_OPTIONS,
+    ...(widths === undefined ? {} : { columnWidths: widths }),
+    ...(semanticBox.checked ? { semanticSearch: semanticSearchOptions(library) } : {}),
+  });
+
+  semanticBox.addEventListener('change', () => {
+    writeSemanticPref(semanticBox.checked);
+    if (element !== null && lib !== null) {
+      // New options re-render the component; a query typed before the flip
+      // is run again, now with (or without) the related variables.
+      const query = searchBox(element)?.value ?? '';
+      element.options = optionsFor(lib);
+      const box = searchBox(element);
+      if (box !== null && query !== '') {
+        box.value = query;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    // After the re-render, which dropped the dictionary's index.
+    if (!semanticBox.checked) void stopSemanticSearch();
+  });
 
   const showNote = (text: string): void => {
     meta.textContent = '';
+    semantic.hidden = true;
     body.replaceChildren(note(text));
   };
   // "…to see it here", not "…to see its data dictionary": the caption directly
@@ -126,10 +197,10 @@ export function mountDataDictionary(panel: HTMLElement): void {
     // Rendered synchronously before the await: the dynamic import already
     // yields a task boundary, and the extraction itself takes milliseconds.
     showNote('Building the data dictionary…');
-    void Promise.all([pending, loadRenderer()])
-      .then(([table, render]) => {
+    void Promise.all([pending, loadLibrary()])
+      .then(([table, library]) => {
         if (mine !== token || schemaState.get().set !== set) return; // stale
-        show(table, render);
+        show(table, library);
       })
       .catch((err: unknown) => {
         if (mine !== token || schemaState.get().set !== set) return;
@@ -140,11 +211,12 @@ export function mountDataDictionary(panel: HTMLElement): void {
       });
   });
 
-  function show(table: DataDictionaryTable | null, render: Render): void {
+  function show(table: DataDictionaryTable | null, library: Library): void {
     if (table === null || table.rows.length === 0) {
       showNote('This schema defines no variables.');
       return;
     }
+    lib = library;
     // The head carries the SHAPE of the dictionary; the component's own count
     // beside its search box is the live readout as you type. Variables are
     // the dataset's columns; a nested one's field rows are counted apart.
@@ -154,15 +226,18 @@ export function mountDataDictionary(panel: HTMLElement): void {
     meta.textContent =
       `${String(categories)} categor${categories === 1 ? 'y' : 'ies'} · ${variables(top)}` +
       (nested > 0 ? ` · ${fields(nested)}` : '');
+    semantic.hidden = false;
 
     // The frame is detached here — a note always precedes this — so a reused
-    // element takes its new table while disconnected and renders once, on
-    // reconnecting. Reuse is the point: the element keeps the reader's column
-    // widths across its re-renders, so a schema reload does not reset them.
+    // element takes its options and table while disconnected and renders
+    // once, on reconnecting. Options are re-read every time: the switch may
+    // have moved, or a cleared schema stopped the semantic worker, while no
+    // dictionary was on show.
     if (element === null) {
       body.replaceChildren(frame);
-      element = render(frame, table, RENDER_OPTIONS);
+      element = library.renderDataDictionary(frame, table, optionsFor(library));
     } else {
+      element.options = optionsFor(library);
       element.table = table;
       body.replaceChildren(frame);
     }

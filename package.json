@@ -47,9 +47,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "predev": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
+    "predev": "node scripts/copy-duckdb-assets.mjs && node scripts/vendor-semantic-model.mjs && node scripts/copy-example-assets.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-example-assets.mjs",
+    "prebuild": "node scripts/copy-duckdb-assets.mjs && node scripts/vendor-semantic-model.mjs && node scripts/copy-example-assets.mjs",
     "build": "vite build",
     "build:cli": "vite build --config vite.cli.config.ts",
     "cli": "npm run build:cli --silent && node dist-cli/quac.mjs",
@@ -96,6 +96,7 @@
     "@fontsource/boogaloo": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@huggingface/transformers": "4.3.1",
     "@jeyabbalas/data-table": "0.10.0",
     "@lezer/highlight": "^1.2.5",
     "@playwright/test": "^1.64.0",
@@ -107,6 +108,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.13.0",
     "json-schema-data-dictionary": "0.8.0",
+    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
     "playwright": "^1.64.0",
     "prettier": "^3.9.10",
     "typescript": "~6.0.3",

@@ -4,6 +4,7 @@ node_modules/
 dist/
 dist-cli/
 public/duckdb/
+public/models/
 playwright-report/
 test-results/
 blob-report/

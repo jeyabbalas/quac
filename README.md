@@ -73,7 +73,16 @@ the same variables. Its **JSON Schema** tab shows the schema as a searchable dat
 built with [json-schema-data-dictionary](https://github.com/jeyabbalas/json-schema-to-data-dictionary):
 the codes each variable allows and when a skip pattern sets them, with every skip pattern followable
 from either end — open **Skip logic** for the whole list, or follow a variable to the ones it
-governs.
+governs. **Excel** downloads it as a formatted workbook: the dictionary, its skip logic, and an
+About sheet.
+
+Turn on **Semantic search**, in the tab's header, and a search also lists variables related in
+meaning, not only those that share a word: _getting fired_ finds the two layoff variables. It runs
+MongoDB's [LEAF-IR](https://huggingface.co/MongoDB/mdbr-leaf-ir) text-embedding model in your
+browser, on WebGPU where the browser has it and WebAssembly where it does not. The first time,
+the browser downloads the model from this site (23 MB, or 46 MB for WebGPU) and then keeps it in
+its cache; your schema never leaves the page. It is off until you turn it on, and stays the way
+you left it.
 
 ---
 
@@ -382,9 +391,11 @@ of a header loads fine under `quac --schema` / `--rules`.
 **In the browser.** After the page loads, QuaC makes no third-party request at all. No analytics, no
 telemetry, no runtime CDN, no upload — DuckDB's WebAssembly build and its extensions are served from
 this site rather than fetched from `extensions.duckdb.org`, and the worker that executes rule SQL
-has its network removed at the platform level. You can watch this in DevTools' Network tab; it is
-also asserted by an end-to-end test that fails the build if a single off-origin request is made
-during a full run.
+has its network removed at the platform level. The same goes for semantic search: the LEAF model
+and the runtime that runs it are served from this site rather than fetched from Hugging Face or a
+CDN, and the worker they run in refuses any other address. You can watch this in DevTools'
+Network tab; it is also asserted by an end-to-end test that fails the build if a single off-origin
+request is made during a full run, semantic search included.
 
 **What does stay on your device.** QuaC keeps your loaded **inputs** in this browser's IndexedDB, so
 that reloading the tab does not cost you the work of setting the run up again: the dataset's
@@ -394,6 +405,11 @@ its own.
 
 - **Reset** in the header, or **Clear all inputs** at the bottom of the Load view, wipes it. Both
   confirm first, and both remove the saved session as well as the loaded slots.
+- **With semantic search on**, QuaC also keeps the dictionary's vectors — numbers computed from
+  the schema's variable names and descriptions, no text — in its own IndexedDB database, so a reload
+  does not have to compute them again. Turning semantic search off, clearing the JSON Schema, Clear
+  all inputs and Reset all delete them. Whether the switch is on is remembered in `localStorage`;
+  the model itself sits in the browser's ordinary cache, like the rest of the site.
 - The **QC report is never stored.** It is built in memory and handed to your downloads folder.
 - A restored session **never re-runs QC by itself**. Computing is always something you asked for.
 
@@ -535,7 +551,10 @@ npm run dev
 | `npm run screenshots`   | Regenerate the images in this README                  |
 
 The first `npm run dev` or `npm run build` downloads ~20 MB of DuckDB WebAssembly extensions into
-the gitignored `public/duckdb/`, pinned by SHA-256.
+the gitignored `public/duckdb/`, and ~70 MB of the LEAF model (`MongoDB/mdbr-leaf-ir`, at a fixed
+revision) into the gitignored `public/models/`, every file pinned by SHA-256. On Linux x64, set
+`ONNXRUNTIME_NODE_INSTALL=skip` before `npm ci`: a dependency of Transformers.js otherwise downloads
+CUDA libraries the build never uses.
 
 Requirements are in [docs/BRIEF.md](docs/BRIEF.md); design and implementation notes in
 [docs/plan/specs/](docs/plan/specs/).

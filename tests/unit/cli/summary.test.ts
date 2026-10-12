@@ -16,6 +16,7 @@ import type { SummaryContext } from '../../../src/cli/summary';
 import type { QCFlag } from '../../../src/core/flags/flag';
 import type { RunArtifacts } from '../../../src/core/pipeline';
 import type { ReportModel } from '../../../src/core/report/reportModel';
+import type { QcFindings } from '../../../src/core/report/findings';
 import type { RuleFileLintResult } from '../../../src/core/rules/types';
 import type { RunQuacResult } from '../../../src/headless/run';
 import type { SchemaSet } from '../../../src/core/schema/types';
@@ -72,6 +73,7 @@ function result(over: { rules?: RuleFileLintResult[]; schemaSet?: SchemaSet | nu
       flagsEmitted: 3,
       flagsTruncated: false,
       countsByRuleId: { 'schema:prop:age:value': 3 },
+      checks: [],
       elapsedMs: 44,
       aborted: false,
     },
@@ -114,6 +116,8 @@ function result(over: { rules?: RuleFileLintResult[]; schemaSet?: SchemaSet | nu
     outPath: '/abs/out/quac-report_people_20260730-1200.xlsx',
     artifacts,
     model,
+    // buildSummary never reads the findings; the CLI writes them itself.
+    findings: {} as QcFindings,
     inputs: {
       dataset: {
         path: 'data/people.csv',
@@ -268,6 +272,21 @@ describe('buildSummary — §7 field by field', () => {
       dataRowsTruncated: true,
     });
   });
+
+  it('is null under report when the run wrote none (--no-report)', () => {
+    const r: RunQuacResult<string | null> = { ...result(), outPath: null };
+    expect(buildSummary(r, CTX).report).toBeNull();
+  });
+
+  it('lists the findings files the CLI wrote, in order, and none by default', () => {
+    expect(buildSummary(result(), CTX).findings).toEqual([]);
+    const findings = [
+      { path: '/abs/f.md', format: 'markdown' as const },
+      { path: '-', format: 'markdown' as const },
+      { path: '/abs/f.json', format: 'json' as const },
+    ];
+    expect(buildSummary(result(), { ...CTX, findings }).findings).toEqual(findings);
+  });
 });
 
 describe('buildSummary — it has to survive JSON', () => {
@@ -290,6 +309,7 @@ describe('buildSummary — it has to survive JSON', () => {
       'dataset',
       'durations',
       'exitCode',
+      'findings',
       'flagsTruncated',
       'generatedAt',
       'inputs',

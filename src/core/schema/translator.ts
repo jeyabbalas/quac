@@ -175,7 +175,7 @@ function article(noun: string): string {
 }
 
 /** Collapse expectation — §D.4 except the string-pattern golden-#6 override. */
-function collapseExpectation(spec: ValueSpec): string {
+export function collapseExpectation(spec: ValueSpec): string {
   if (spec.kind === 'string-pattern' && spec.patternTitle !== undefined) {
     const humanized = humanizePattern(spec.pattern);
     if (humanized !== null) {
@@ -232,7 +232,7 @@ const TYPE_NOUNS: Readonly<Record<string, string>> = {
 const typeNoun = (type: string): string => TYPE_NOUNS[type] ?? `${article(type)} ${type}`;
 
 /** `an integer`, `an integer or null` — what a `type` keyword asks for. */
-function typeList(type: unknown): string {
+export function typeList(type: unknown): string {
   const list = Array.isArray(type) ? type.map(String) : [String(type)];
   return list.map(typeNoun).join(' or ');
 }
@@ -251,7 +251,7 @@ function joinAnd(items: readonly string[]): string {
 /** Values past this many in a standalone `enum` list are counted, not printed (as §D.4 codes). */
 const ENUM_LIST_CAP = 8;
 
-function cappedValues(values: readonly unknown[]): string {
+export function cappedValues(values: readonly unknown[]): string {
   const shown = values.slice(0, ENUM_LIST_CAP).map(renderData).join(', ');
   const more = values.length - ENUM_LIST_CAP;
   return more > 0 ? `${shown}, … (${String(more)} more)` : shown;
@@ -289,7 +289,7 @@ const FORMAT_NOUNS: Readonly<Record<string, string>> = {
   byte: 'base64-encoded value',
 };
 
-const formatNoun = (format: string): string => FORMAT_NOUNS[format] ?? `'${format}' value`;
+export const formatNoun = (format: string): string => FORMAT_NOUNS[format] ?? `'${format}' value`;
 
 /** An ISO 8601 local date-time — valid in itself, but with no offset RFC 3339 requires. */
 const OFFSETLESS_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/;
@@ -335,7 +335,7 @@ function formatBody(error: AjvErrorLike): string {
 }
 
 /** What one union branch accepts, in a word or two — from the branch alone, no `$ref` followed. */
-function branchNoun(branch: unknown): string | null {
+export function branchNoun(branch: unknown): string | null {
   if (branch === true) return 'any value';
   if (typeof branch !== 'object' || branch === null || Array.isArray(branch)) return null;
   const node = branch as Record<string, unknown>;
@@ -367,7 +367,7 @@ function branchNoun(branch: unknown): string | null {
   return null;
 }
 
-function describeBranches(schema: unknown): string {
+export function describeBranches(schema: unknown): string {
   const branches = Array.isArray(schema) ? schema : [];
   const nouns = [...new Set(branches.map(branchNoun).filter((n): n is string => n !== null))];
   if (nouns.length === 0 || nouns.length < branches.length) {
@@ -686,8 +686,11 @@ function keywordBody(error: AjvErrorLike, spec: ValueSpec | undefined, locate?: 
  * The same finding as a predicate on a named subject — "must be at most 17" —
  * for conditional messages ("when …, people[2].age must be at most 17").
  * Null for a keyword with no such phrasing (the caller uses the sentence).
+ *
+ * Exported for schema/requirement.ts, which words a CHECK rather than a
+ * failure: it hands in params read from the schema itself, never Ajv's.
  */
-function predicate(error: AjvErrorLike, spec: ValueSpec | undefined): string | null {
+export function predicate(error: AjvErrorLike, spec: ValueSpec | undefined): string | null {
   const p = error.params;
   switch (error.keyword) {
     case 'const': {
@@ -906,6 +909,24 @@ class RowRenderer {
       : `${column}${instancePath.slice(columnPath(column).length)}`;
   }
 
+  /**
+   * A flag's `meta`: the keyword, Ajv's schemaPath and — with a probe — where
+   * the keyword sits in its file. The findings report (core/report/findings.ts)
+   * names a check by that place, and Ajv's own path cannot give it: past a
+   * `$ref` it is the reference as written, relative to a file it does not name.
+   */
+  private metaOf(error: AjvErrorLike, conditionalIndex?: number): NonNullable<QCFlag['meta']> {
+    const at = this.probe?.locate(error.parentSchema) ?? null;
+    return {
+      keyword: error.keyword,
+      schemaPath: error.schemaPath,
+      ...(conditionalIndex === undefined ? {} : { conditionalIndex }),
+      ...(at === null || error.keyword === 'false schema'
+        ? {}
+        : { location: `${at.uri}#${at.pointer}/${escapeSegment(error.keyword)}` }),
+    };
+  }
+
   /** The dependent clause an error's schema object applies under, if any. */
   private dependentClause(error: AjvErrorLike, clauses: readonly Clause[]): Clause | null {
     const keys = new Set(dependentKeysInPath(error.schemaPath));
@@ -1027,7 +1048,7 @@ class RowRenderer {
       severity: 'error',
       message: `${body}${locationSuffix(error, column, this.locate)}.${trailers(meta)}`,
       ...(error.data === undefined ? {} : { value: error.data }),
-      meta: { keyword: error.keyword, schemaPath: error.schemaPath },
+      meta: this.metaOf(error),
     };
   }
 
@@ -1041,11 +1062,7 @@ class RowRenderer {
       row: this.row,
       severity: 'error',
       message: `${lead}${body}.${noteOf(clauses)}`,
-      meta: {
-        keyword: error.keyword,
-        schemaPath: error.schemaPath,
-        ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-      },
+      meta: this.metaOf(error, rule?.index),
     });
   }
 
@@ -1059,7 +1076,7 @@ class RowRenderer {
       column,
       severity: 'error',
       message,
-      meta: { keyword: error.keyword, schemaPath: error.schemaPath },
+      meta: this.metaOf(error),
     });
   }
 
@@ -1076,7 +1093,7 @@ class RowRenderer {
         column,
         severity: 'error',
         message: REQUIRED_CELL_MESSAGE,
-        meta: { keyword: 'required', schemaPath: error.schemaPath },
+        meta: this.metaOf(error),
       });
       return;
     }
@@ -1089,11 +1106,7 @@ class RowRenderer {
       column,
       severity: 'error',
       message: `value is missing — this variable is required ${clausePhrase(clauses)}.${noteOf(clauses)}`,
-      meta: {
-        keyword: error.keyword,
-        schemaPath: error.schemaPath,
-        ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-      },
+      meta: this.metaOf(error, rule?.index),
     });
   }
 
@@ -1190,11 +1203,7 @@ class RowRenderer {
     const ruleId = rule === undefined ? schemaPropRuleId(column, 'value') : schemaCondRuleId(rule.index, column);
     const trailer = rule === undefined ? trailers(meta) : '';
     const note = noteOf(clauses);
-    const metaOf = (e: AjvErrorLike): QCFlag['meta'] => ({
-      keyword: e.keyword,
-      schemaPath: e.schemaPath,
-      ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-    });
+    const metaOf = (e: AjvErrorLike): QCFlag['meta'] => this.metaOf(e, rule?.index);
     const first = group.errors[0];
     if (first === undefined) return [];
     const phrase = clausePhrase(clauses);
@@ -1313,11 +1322,7 @@ class RowRenderer {
         `${lead}${body}${locationSuffix(error, column, this.locate)}.` +
         `${noteOf(clauses)}${rule === undefined ? trailers(meta) : ''}`,
       ...(error.data === undefined ? {} : { value: error.data }),
-      meta: {
-        keyword: error.keyword,
-        schemaPath: error.schemaPath,
-        ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-      },
+      meta: this.metaOf(error, rule?.index),
     });
   }
 
@@ -1390,11 +1395,7 @@ class RowRenderer {
         `${lead}${body}${locationSuffix(error, column, this.locate)}.` +
         `${noteOf(clauses)}${rule === undefined ? trailers(meta) : ''}`,
       ...(error.data === undefined ? {} : { value: error.data }),
-      meta: {
-        keyword: error.keyword,
-        schemaPath: error.schemaPath,
-        ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-      },
+      meta: this.metaOf(error, rule?.index),
     });
   }
 
@@ -1437,11 +1438,7 @@ class RowRenderer {
         `${lead}field name ${quoteName(name)} is not allowed${reason === null ? '' : ` (${reason})`}` +
         `${locationSuffix(error, column, this.locate)}.${noteOf(clauses)}${rule === undefined ? trailers(meta) : ''}`,
       value: name,
-      meta: {
-        keyword: error.keyword,
-        schemaPath: error.schemaPath,
-        ...(rule === undefined ? {} : { conditionalIndex: rule.index }),
-      },
+      meta: this.metaOf(error, rule?.index),
     });
   }
 

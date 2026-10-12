@@ -11,5 +11,16 @@ export interface QCFlag {
   message: string; // self-contained sentence; EXCLUDES column name and ruleId
   value?: unknown; // offending value snapshot (cell scope)
   correction?: { before: unknown; after: unknown };
-  meta?: { keyword?: string; schemaPath?: string; conditionalIndex?: number };
+  meta?: {
+    keyword?: string;
+    schemaPath?: string;
+    conditionalIndex?: number;
+    /**
+     * Where the keyword sits: `<file's retrievalUri>#<JSON Pointer>`. Set by
+     * the translator, which can locate the schema object an error came from;
+     * a schemaPath alone cannot say, since past a `$ref` it is relative to a
+     * file it does not name.
+     */
+    location?: string;
+  };
 }

@@ -235,6 +235,41 @@
   flex: 1 1 auto;
 }
 
+/* Findings without data (qc-report-spec.md §7): a hairline group under the
+   actions, like the severity filter above them — secondary to the report's
+   primary button, one small button per format. */
+.q-findings-export {
+  border: var(--q-border-hairline);
+  border-radius: var(--q-radius-md);
+  padding: var(--q-space-2) var(--q-space-3) var(--q-space-3);
+  margin: var(--q-space-3) 0 0;
+  min-width: 0;
+}
+
+.q-findings-export legend {
+  font-size: var(--q-text-xs);
+  color: var(--q-gray-700);
+  padding: 0 4px;
+}
+
+.q-findings-export-note {
+  margin: 0 0 var(--q-space-2);
+  font-size: var(--q-text-sm);
+  color: var(--q-gray-700);
+}
+
+.q-findings-export-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--q-space-2);
+}
+
+/* While one format builds, all three read as unavailable but keep focus. */
+.q-findings-export-buttons .q-btn[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 /* Excel export progress — replaces the action buttons while the workbook
    builds. Tier 1 sticker like the run progress card. */
 .q-export-progress {

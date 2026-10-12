@@ -34,6 +34,8 @@ describe('parseCliArgs — the happy grammar', () => {
       dataset: 'data.csv',
       schema: ['s.json'],
       rules: [],
+      report: true,
+      findings: [],
       applyCorrections: true,
       failOn: 'none',
       quiet: false,
@@ -59,6 +61,10 @@ describe('parseCliArgs — the happy grammar', () => {
         'Sheet2',
         '--out',
         'reports/',
+        '--findings',
+        'shared/findings.md',
+        '--findings',
+        'findings.JSON',
         '--no-corrections',
         '--summary',
         '-',
@@ -74,6 +80,11 @@ describe('parseCliArgs — the happy grammar', () => {
       sheet: 'Sheet2',
       out: 'reports/',
       summary: '-',
+      report: true,
+      findings: [
+        { kind: 'file', path: 'shared/findings.md', format: 'markdown' },
+        { kind: 'file', path: 'findings.JSON', format: 'json' },
+      ],
       applyCorrections: false,
       failOn: 'warning',
       quiet: true,
@@ -99,7 +110,9 @@ describe('parseCliArgs — the happy grammar', () => {
       'applyCorrections',
       'dataset',
       'failOn',
+      'findings',
       'quiet',
+      'report',
       'rules',
       'schema',
     ]);
@@ -107,6 +120,79 @@ describe('parseCliArgs — the happy grammar', () => {
 
   it('lets a dataset named like a flag through after --', () => {
     expect(run(['--rules', 'r.csv', '--', '--weird-name.csv']).dataset).toBe('--weird-name.csv');
+  });
+});
+
+describe('parseCliArgs — the findings without data', () => {
+  it('reads each --findings format from its extension, case aside, in argument order', () => {
+    expect(
+      run([
+        'd.csv',
+        '--rules',
+        'r.csv',
+        '--findings',
+        'a.md',
+        '--findings',
+        'b.markdown',
+        '--findings',
+        'c.Json',
+        '--findings',
+        'out/d.xlsx',
+      ]).findings,
+    ).toEqual([
+      { kind: 'file', path: 'a.md', format: 'markdown' },
+      { kind: 'file', path: 'b.markdown', format: 'markdown' },
+      { kind: 'file', path: 'c.Json', format: 'json' },
+      { kind: 'file', path: 'out/d.xlsx', format: 'xlsx' },
+    ]);
+  });
+
+  it("takes '-' as Markdown on stdout", () => {
+    expect(run(['d.csv', '--rules', 'r.csv', '--findings', '-']).findings).toEqual([
+      { kind: 'stdout', format: 'markdown' },
+    ]);
+  });
+
+  it('leaves a name without an extension for main() to look at — it may be a directory', () => {
+    expect(
+      run(['d.csv', '--rules', 'r.csv', '--findings', 'reports', '--findings', 'out/']).findings,
+    ).toEqual([
+      { kind: 'directory?', path: 'reports' },
+      { kind: 'directory?', path: 'out/' },
+    ]);
+  });
+
+  it('reads --no-report as the report being OFF, and its absence as on', () => {
+    expect(run(['d.csv', '--rules', 'r.csv']).report).toBe(true);
+    expect(run(['d.csv', '--rules', 'r.csv', '--no-report']).report).toBe(false);
+  });
+
+  it('refuses an extension it cannot write, naming the three it can', () => {
+    const err = refusal(['d.csv', '--rules', 'r.csv', '--findings', 'findings.txt']);
+    expect(err.kind).toBe('usage');
+    expect(err.message).toContain('.md, .json or .xlsx');
+    expect(err.message).toContain('findings.txt');
+  });
+
+  it('refuses --out with --no-report: one names the report, the other declines it', () => {
+    const err = refusal(['d.csv', '--rules', 'r.csv', '--no-report', '--out', 'r.xlsx']);
+    expect(err.kind).toBe('usage');
+    expect(err.message).toContain('--no-report');
+  });
+
+  it('refuses two outputs on stdout', () => {
+    expect(
+      refusal(['d.csv', '--rules', 'r.csv', '--findings', '-', '--summary', '-']).message,
+    ).toContain('stdout');
+    expect(
+      refusal(['d.csv', '--rules', 'r.csv', '--findings', '-', '--findings', '-']).message,
+    ).toContain('stdout');
+  });
+
+  it('documents --findings and --no-report in --help', () => {
+    expect(USAGE).toContain('--findings <path|->');
+    expect(USAGE).toContain('--no-report');
+    expect(USAGE).toContain('no value from the dataset');
   });
 });
 

@@ -19,9 +19,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SUMMARY_SCHEMA_VERSION, buildSummary } from '../../../src/cli/summary';
+import { FINDINGS_SCHEMA_VERSION } from '../../../src/core/report/findings';
+import { renderFindingsMarkdown } from '../../../src/core/report/findingsMarkdown';
+import { writeFindingsWorkbook } from '../../../src/core/report/findingsWorkbook';
 import { runQuac } from '../../../src/headless/run';
 import { QuacCliError } from '../../../src/headless/errors';
 import type * as Declared from '../../../types/quac';
+import type { QcFindings } from '../../../src/core/report/findings';
 import type { SummaryContext, SummaryJson } from '../../../src/cli/summary';
 import type { RunQuacDatasetInfo, RunQuacOptions, RunQuacResult } from '../../../src/headless/run';
 import type { QuacErrorKind } from '../../../src/headless/errors';
@@ -43,9 +47,16 @@ const TYPE_CHECKS: [
   Assignable<Parameters<typeof runQuac>[0], RunQuacOptions>,
   Assignable<Declared.RunProgress, RunProgress>,
   Assignable<RunProgress, Declared.RunProgress>,
-  // what a run returns
+  // what a run returns — a plain string path unless `report: false` (the overloads)
   Assignable<RunQuacResult, Declared.RunQuacResult>,
-  Assignable<Awaited<ReturnType<typeof runQuac>>, Declared.RunQuacResult>,
+  Assignable<RunQuacResult<string | null>, Declared.RunQuacResult<string | null>>,
+  Assignable<Awaited<ReturnType<typeof runQuac>>, Declared.RunQuacResult<string | null>>,
+  Assignable<Awaited<ReturnType<typeof Declared.runQuac>>, Declared.RunQuacResult<string | null>>,
+  // the findings document — a public JSON contract, so both ways
+  Assignable<Declared.QcFindings, QcFindings>,
+  Assignable<QcFindings, Declared.QcFindings>,
+  Assignable<Parameters<typeof renderFindingsMarkdown>[0], Declared.QcFindings>,
+  Assignable<Parameters<typeof writeFindingsWorkbook>[0], Declared.QcFindings>,
   Assignable<Declared.RunQuacDatasetInfo, RunQuacDatasetInfo>,
   Assignable<RunQuacDatasetInfo, Declared.RunQuacDatasetInfo>,
   // the JSON scripts parse
@@ -59,10 +70,26 @@ const TYPE_CHECKS: [
   Assignable<QuacErrorKind, Declared.QuacErrorKind>,
 ] = [
   true, true, true, true, true, true,
-  true, true, true, true,
+  true, true, true, true, true, true, true, true, true, true,
   true, true, true, true, true,
   true, true,
 ];
+
+/**
+ * The overloads, resolved as a caller's code resolves them: a run that keeps
+ * the report gets a plain `string` path — the 1.1 contract — and only
+ * `report: false` gets `null`. Typechecked, never called.
+ */
+declare const declaredRunQuac: typeof Declared.runQuac;
+export async function overloadResolution(): Promise<unknown[]> {
+  const kept: string = (await runQuac({ dataset: 'x' })).outPath;
+  const dropped: null = (await runQuac({ dataset: 'x', report: false })).outPath;
+  const report = Math.random() > 0.5;
+  const either: string | null = (await runQuac({ dataset: 'x', report })).outPath;
+  const declaredKept: string = (await declaredRunQuac({ dataset: 'x' })).outPath;
+  const declaredDropped: null = (await declaredRunQuac({ dataset: 'x', report: false })).outPath;
+  return [kept, dropped, either, declaredKept, declaredDropped];
+}
 
 describe('public type surface', () => {
   it('matches the implementation, field for field', () => {
@@ -70,12 +97,16 @@ describe('public type surface', () => {
     // cannot be deleted along with its row and leave the suite still green.
     // (There is nothing to assert at runtime: the compiler already proved
     // every element is `true`, which is exactly what makes this a guard.)
-    expect(TYPE_CHECKS).toHaveLength(17);
+    expect(TYPE_CHECKS).toHaveLength(23);
   });
 
   it('declares the runtime values the package exports', () => {
     const version: typeof Declared.SUMMARY_SCHEMA_VERSION = SUMMARY_SCHEMA_VERSION;
     expect(version).toBe(1);
+    const findingsVersion: typeof Declared.FINDINGS_SCHEMA_VERSION = FINDINGS_SCHEMA_VERSION;
+    expect(findingsVersion).toBe(1);
+    expect(typeof renderFindingsMarkdown).toBe('function');
+    expect(typeof writeFindingsWorkbook).toBe('function');
     expect(typeof runQuac).toBe('function');
     expect(typeof buildSummary).toBe('function');
 

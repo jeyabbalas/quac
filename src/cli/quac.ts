@@ -5,17 +5,21 @@
  *
  * Exit codes are a closed set scripts may depend on:
  *
- *   0  report written        3  schema-set error
+ *   0  run finished          3  schema-set error
  *   1  usage error           4  run failure (also: the schema stage did not
- *   2  input/ingest error       finish — report and summary still written)
- *   5  report or summary write failure
- *   6  --fail-on threshold met — the report AND summary were written first
+ *   2  input/ingest error       finish — every output still written)
+ *   5  an output (report, findings, summary) could not be written
+ *   6  --fail-on threshold met — every output was written first
  *   130 SIGINT
  */
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { APP_VERSION } from '../app/version';
 import { IngestError } from '../core/ingest/errors';
+import { findingsFilename } from '../core/report/findings';
+import { renderFindingsMarkdown } from '../core/report/findingsMarkdown';
+import { writeFindingsWorkbook } from '../core/report/findingsWorkbook';
 import { QuacCliError } from '../headless/errors';
 import { runQuac } from '../headless/run';
 import { USAGE, parseCliArgs } from './args';
@@ -27,10 +31,12 @@ import {
   reportWritten,
 } from './progress';
 import { buildSummary, exitCodeFor } from './summary';
-import type { ParsedArgs } from './args';
+import type { FindingsTarget, ParsedArgs } from './args';
+import type { FindingsFormat, QcFindings } from '../core/report/findings';
 import type { QuacErrorKind } from '../headless/errors';
 import type { RunQuacResult } from '../headless/run';
 import type { Reporter } from './progress';
+import type { WrittenFindings } from './summary';
 
 /** §6, closed. `run` also absorbs anything unexpected — see `codeFor`. */
 const EXIT: Record<QuacErrorKind, number> = {
@@ -90,6 +96,19 @@ export async function main(argv: readonly string[]): Promise<number> {
     );
   }
 
+  // A `--findings` name without an extension must be a directory; find out
+  // now, before a long run ends in a refusal.
+  let findingsTargets: ResolvedFindingsTarget[];
+  try {
+    findingsTargets = await resolveFindingsTargets(args.findings);
+  } catch (err) {
+    if (err instanceof QuacCliError) {
+      reportError(reporter, err);
+      return EXIT[err.kind];
+    }
+    throw err;
+  }
+
   // SIGINT is cooperative: abort the pipeline, then let the promise settle so
   // the bridge's `finally` closes DuckDB and removes its temp directory. A
   // bare process.exit here would leak both.
@@ -99,7 +118,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   };
   process.on('SIGINT', onSigint);
 
-  let result: RunQuacResult;
+  let result: RunQuacResult<string | null>;
   try {
     result = await runQuac({
       dataset: args.dataset,
@@ -108,6 +127,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       ...(args.index === undefined ? {} : { index: args.index }),
       ...(args.sheet === undefined ? {} : { sheet: args.sheet }),
       ...(args.out === undefined ? {} : { out: args.out }),
+      report: args.report,
       applyCorrections: args.applyCorrections,
       signal: controller.signal,
       onProgress: reporter.onProgress,
@@ -125,19 +145,102 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   reporter.endProgress();
   reportLint(reporter, result.inputs.rules);
-  reportRunWarnings(reporter, result);
-  reportWritten(reporter, result);
+
+  const written: WrittenFindings[] = [];
+  for (const target of findingsTargets) {
+    const path =
+      target.kind === 'directory'
+        ? join(
+            target.path,
+            findingsFilename(
+              result.findings.dataset.name,
+              new Date(result.findings.generatedAt),
+              'markdown',
+            ),
+          )
+        : target.kind === 'file'
+          ? resolve(process.cwd(), target.path)
+          : '-';
+    try {
+      await writeFindings(result.findings, target.format, path);
+    } catch (err) {
+      reporter.error(`Could not write the findings to '${path}'.`, [messageOf(err)]);
+      return EXIT.report;
+    }
+    written.push({ path, format: target.format });
+  }
+
+  reportRunWarnings(reporter, result, written);
+  reportWritten(reporter, result, written);
 
   const exitCode = exitCodeFor(args.failOn, result);
   if (args.summary !== undefined) {
     try {
-      await writeSummary(args.summary, result, exitCode);
+      await writeSummary(args.summary, result, exitCode, written);
     } catch (err) {
       reporter.error(`Could not write the summary to '${args.summary}'.`, [messageOf(err)]);
       return EXIT.report;
     }
   }
   return exitCode;
+}
+
+/** A `--findings` target once `main()` has looked at the disk. */
+type ResolvedFindingsTarget =
+  | { kind: 'stdout'; format: 'markdown' }
+  | { kind: 'file'; path: string; format: FindingsFormat }
+  | { kind: 'directory'; path: string; format: 'markdown' };
+
+async function resolveFindingsTargets(
+  targets: readonly FindingsTarget[],
+): Promise<ResolvedFindingsTarget[]> {
+  const resolved: ResolvedFindingsTarget[] = [];
+  for (const target of targets) {
+    if (target.kind !== 'directory?') {
+      resolved.push(target);
+      continue;
+    }
+    const isDirectory = await stat(target.path).then(
+      (s) => s.isDirectory(),
+      () => false,
+    );
+    if (!isDirectory) {
+      throw new QuacCliError(
+        'usage',
+        `--findings takes a file named .md, .json or .xlsx, or an existing directory — '${target.path}' is neither.`,
+      );
+    }
+    resolved.push({
+      kind: 'directory',
+      path: resolve(process.cwd(), target.path),
+      format: 'markdown',
+    });
+  }
+  return resolved;
+}
+
+/** One findings file — or stdout, which then carries nothing else. */
+async function writeFindings(
+  findings: QcFindings,
+  format: FindingsFormat,
+  path: string,
+): Promise<void> {
+  switch (format) {
+    case 'markdown': {
+      const text = renderFindingsMarkdown(findings);
+      if (path === '-') process.stdout.write(text);
+      else await writeFile(path, text, 'utf8');
+      return;
+    }
+    case 'json':
+      await writeFile(path, `${JSON.stringify(findings, null, 2)}\n`, 'utf8');
+      return;
+    case 'xlsx': {
+      const blob = await writeFindingsWorkbook(findings);
+      await writeFile(path, Buffer.from(await blob.arrayBuffer()));
+      return;
+    }
+  }
 }
 
 /**
@@ -148,14 +251,16 @@ export async function main(argv: readonly string[]): Promise<number> {
  */
 async function writeSummary(
   target: string,
-  result: RunQuacResult,
+  result: RunQuacResult<string | null>,
   exitCode: number,
+  findings: readonly WrittenFindings[],
 ): Promise<void> {
   const json = JSON.stringify(
     buildSummary(result, {
       quacVersion: APP_VERSION,
       exitCode,
       generatedAt: new Date().toISOString(),
+      findings: [...findings],
     }),
     null,
     2,

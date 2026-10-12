@@ -1,6 +1,6 @@
 # Spec: QC Report — FlagStore, In-App Display, Excel Workbook
 
-> Audience: P08 (FlagStore), P14 (report view + annotations + tooltips), P15 (Excel export).
+> Audience: P08 (FlagStore), P14 (report view + annotations + tooltips), P15 (Excel export); 1.2.0 (§7, the findings without data).
 > Depends on: `architecture.md` (QCFlag, `__row__`, rendering rule), `data-table-api.md` (annotations, tooltips).
 
 ## 1. FlagStore (`src/core/flags/flagStore.ts`)
@@ -82,3 +82,41 @@ App version, run timestamp, dataset filename + row/col counts, schema files (nam
 ## 6. Report model (`reportModel.ts`) — pure & testable
 
 `buildReportModel(flagStore, columnMeta, runInfo, rowSource)` → a plain object describing every sheet (headers, column layout incl. review-column placement + collision-resolved names, cell texts, fills, the Sheet 2 `missingVariablesNote` on schema-less runs) that `excelWriter.ts` renders 1:1. All layout decisions (sister-column insertion, merge order, truncation, collisions) happen in the model so node tests can assert them without exceljs; a second node test round-trips through exceljs (write → re-read) to pin styling.
+
+## 7. Findings without data (1.2.0)
+
+The QC report holds the data — every sheet but Run Info quotes it — so it cannot be what a user hands a third party who must not see it (the team that sent the data, a coordinating centre, a schema or rules author). The findings without data are that document: every check the dataset failed, where the JSON Schema or the QC rules define it, and how many records failed it. Three formats from one model, in the app (Summary panel → **Findings without data**: `Excel` · `Markdown` · `JSON`) and the CLI (`--findings <path|->`, repeatable; `--no-report`, headless.md §5).
+
+### 7.1 No data, by construction
+
+A QCFlag's `message` and `value` carry the data (`'twelve hundred' is not a valid integer`, a correction's before/after, a dataset rule's result rows, an engine error quoting a cell). So the builder (`core/report/findings.ts`, `buildFindings`) never sees a flag. `FindingsInput` admits only:
+
+- **definitions** — the schema set + digest, every loaded rules file (lint-excluded rules included) with its lint result and source URL;
+- **the dataset's shape** — its name, format, column names, record count;
+- **counts** — `ValidationSummary.checks` (below), `RuleRunStat`s (`violationCount`, `changedCells`, `byTarget`), and the FlagStore through `Pick<FlagStore, 'rowsOf' | 'summary'>`, whose row ids it only ever counts.
+
+Every sentence is worded from those parts — the schema's by `core/schema/requirement.ts`, which takes a keyword and its schema object (never Ajv's error) and reuses the translator's `predicate()` with params read from the schema. Three things that are not data but could carry it are scrubbed: a broken rule's engine message is reduced to its class (`DuckDB reported a Conversion Error`; QuaC's own fixed sentences pass, minus a JS function's "first error"), a URL loses credentials, query and fragment (a signed link's token), and a schema/rules load or lint message gets the same URL treatment. Rules files' `comment` and `condition` ARE included, as written — they are the definitions being referenced; README says so, since a rule may name a record.
+
+`tests/unit/report/findingsNoData.test.ts` is the proof: a dataset whose every checkable value carries a marker, run through schema messages, a list's items, a rule's value, a dataset query, a correction, a DuckDB error that quotes a cell and a throwing JS correction — the run's flags and the QC report DO hold the markers (so a leak is visible), and the JSON, Markdown and Excel findings hold none, while still reporting every check.
+
+### 7.2 Exact per-check counts
+
+A schema ruleId is too coarse for a third party (`schema:prop:age:value` lumps `type` and `maximum`), so `ValidationSummary.checks: SchemaCheckTally[]` counts each **check — ruleId × keyword × schemaPath —** exactly, past the flag cap like `countsByRuleId`, with distinct records (rows arrive in order, so one last-row per check suffices). The worker tallies its per-record flags before the cap decides which are posted; `validation-run.ts` tallies the column- and dataset-level flags it raises itself (`addRunFlags`), and the summary concatenates them. A tally carries identifying fields only (`check-tally.ts`).
+
+The translator puts `meta.location` (`<retrievalUri>#<pointer to the keyword>`) on every flag it raises, via the probe's `locate(error.parentSchema)`: Ajv's schemaPath cannot name the file past a `$ref` (it is the reference as written — `../../common/defs.json#/$defs/record_id/pattern`), the location can (`common/defs.json#/$defs/record_id/pattern`). `checkSubject` reads the path inside a value from the schemaPath — a path through the schema, so `household[].age`, never `household[2].age` — and gives up where a `$ref` restarts it.
+
+Rules count in their scope's own units: records for row/longitudinal (`violationCount` is a COUNT(*) of rows); per variable for column assertions (`RuleRunStat.byTarget`, new: the per-target COUNT(*), or a `count_distinct_in_range` distinct count) plus distinct records across them from `rowsOf`; result rows for a dataset query; values changed for a correction. `recordsExact: false` marks a figure a cap left short.
+
+### 7.3 The document (`QcFindings`, `findingsSchemaVersion: 1`)
+
+The model IS the JSON: `containsData: false`, `generator`, `generatedAt`, `dataset`, `inputs` (schema root/files relative to `baseUrl` for a URL set, `setId`, `title`, `$id`; rules files with URL source; corrections applied), `overview` (records with an error-level / warning-level failure — the union of `rowsOf` over those severities — checks failed, rule outcome counts, values corrected, missing variables, columns not in the schema), `schemaChecks` (level `dataset` · `variable` · `value`; variable, title, path, requirement, keyword, plain `schemaValue`, location, severity, records, failures, % of records, ruleId — ordered level → severity → records ↓ → failures ↓ → schema order), `rules` (every rule, file order: outcome `failed` · `passed` · `corrected` · `unchanged` · `error` · `not-evaluated` · `disabled` · `skipped` · `excluded` · `not-applied` · `not-run`, with reason, records, result rows, values changed, by variable) and `notes` (cancelled / stage errors / assess-only / caps first; schema load warnings, unchecked root keywords, the JSON-source fallback, precision; the schema files' own `$comment`s last). Additive changes only within version 1. `types/quac.d.ts` declares it in full — it is a public contract, unlike `artifacts`.
+
+The app reads the definitions a run checked against from `RunArtifacts.definitions`, which `runController` snapshots at run start: replacing a check input or editing rules in Studio keeps the report on screen (UIX-7), so the live stores can move on while the counts stay the run's.
+
+### 7.4 Formats
+
+- **Markdown** (`findingsMarkdown.ts`) — for reading and sharing as text and diffing run against run. GitHub-flavoured: a facts table, a summary table, schema checks by level (Defined at = `file#pointer` in code), rules that found problems (table, then each one's file, row, scope, variables and fenced SQL), corrections, rules that did not run, rules that passed, notes, how to read. Deterministic but for the generated-at line. Schema literals sit in code spans; prose is escaped only where Markdown would misread it (an asterisk, an edge underscore — never `household_id`'s —, a tag's `<`, a link's `[`); a pipe in a table cell is `\|`, inside code too.
+- **JSON** — `JSON.stringify(findings, null, 2)`.
+- **Excel** (`findingsWorkbook.ts`) — Summary · Schema checks · QC rules · Notes, in the report's header style, frozen header, autofilter on the two tables, numbers as numbers (% as an exact ratio under `0.0%`), severity tints on failed checks only.
+
+File names follow the report's: `quac-findings_<dataset-stem>_<YYYYMMDD-HHmm>.<md|json|xlsx>`.

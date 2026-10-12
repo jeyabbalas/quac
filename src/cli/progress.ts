@@ -18,6 +18,7 @@ import type { RunProgress, RunStage } from '../core/pipeline';
 import type { RuleFileLintResult, RuleRunStat } from '../core/rules/types';
 import type { QuacCliError } from '../headless/errors';
 import type { RunQuacResult } from '../headless/run';
+import type { WrittenFindings } from './summary';
 
 /**
  * Mirrors `PROGRESS_LABELS` (`ui/components/duckProgress.ts`) for the five run
@@ -141,7 +142,11 @@ export function reportLint(reporter: Reporter, results: readonly RuleFileLintRes
  * All of it is app parity: the surfaces the Load cards and report panels show,
  * said once, in the order a reader wants them.
  */
-export function reportRunWarnings(reporter: Reporter, result: RunQuacResult): void {
+export function reportRunWarnings(
+  reporter: Reporter,
+  result: RunQuacResult<string | null>,
+  findings: readonly WrittenFindings[] = [],
+): void {
   const { artifacts, inputs, model } = result;
 
   if (inputs.dataset.sizeVerdict === 'warn') {
@@ -170,9 +175,14 @@ export function reportRunWarnings(reporter: Reporter, result: RunQuacResult): vo
   }
 
   if (model.missingVariables.length > 0) {
+    const where =
+      result.outPath !== null
+        ? ' (listed on the report’s Missing Variables sheet)'
+        : findings.length > 0
+          ? ' (listed in the findings)'
+          : '';
     reporter.note(
-      `${plural(model.missingVariables.length, 'schema variable')} missing from the dataset ` +
-        '(listed on the report’s Missing Variables sheet).',
+      `${plural(model.missingVariables.length, 'schema variable')} missing from the dataset${where}.`,
     );
   }
 
@@ -201,15 +211,25 @@ function countSkipped(stats: readonly RuleRunStat[]): [RuleRunStat['status'], nu
 }
 
 /**
- * The closing line: where the report went, and what is in it. `--quiet` takes
- * it — every number in it is in the summary JSON, which is what a quiet run
- * asked for.
+ * The closing lines: where the report and the findings went, and what the run
+ * found. `--quiet` takes them — every number in them is in the summary JSON,
+ * which is what a quiet run asked for. Findings sent to stdout are not listed:
+ * they are already on the screen.
  */
-export function reportWritten(reporter: Reporter, result: RunQuacResult): void {
+export function reportWritten(
+  reporter: Reporter,
+  result: RunQuacResult<string | null>,
+  findings: readonly WrittenFindings[] = [],
+): void {
   const flags = result.artifacts.flagStore.summary(result.artifacts.rowsTotal);
   const { error, warning, info } = flags.severityTotals;
+  const files = findings.filter((f) => f.path !== '-').map((f) => f.path);
+  const lines: string[] = [];
+  if (result.outPath !== null) lines.push(`quac: report written → ${result.outPath}`);
+  for (const file of files) lines.push(`quac: findings written → ${file}`);
+  if (lines.length === 0) lines.push('quac: run finished — no report written (--no-report)');
   reporter.note(
-    `quac: report written → ${result.outPath}\n` +
+    `${lines.join('\n')}\n` +
       `      ${format(error)} error · ${format(warning)} warning · ${format(info)} info ` +
       `across ${plural(flags.rowsAffected, 'row')} of ${format(result.inputs.dataset.rows)}` +
       (flags.truncated ? ' (flag cap reached — per-rule counts are still exact)' : ''),

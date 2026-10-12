@@ -11,8 +11,19 @@
  */
 import { parseArgs } from 'node:util';
 import { QuacCliError } from '../headless/errors';
+import type { FindingsFormat } from '../core/report/findings';
 
 export type FailOn = 'error' | 'warning' | 'none';
+
+/**
+ * One `--findings` value. Its format comes from the name; a name without an
+ * extension may be a directory, which only `main()` can look at (this module
+ * does no I/O) — it then gets the default name, in Markdown, or a refusal.
+ */
+export type FindingsTarget =
+  | { kind: 'stdout'; format: 'markdown' }
+  | { kind: 'file'; path: string; format: FindingsFormat }
+  | { kind: 'directory?'; path: string };
 
 export interface CliArgs {
   dataset: string;
@@ -21,6 +32,10 @@ export interface CliArgs {
   index?: string;
   sheet?: string;
   out?: string;
+  /** False with `--no-report`: the data-bearing workbook is not written. */
+  report: boolean;
+  /** `--findings`, in argument order: the findings without data. */
+  findings: FindingsTarget[];
   applyCorrections: boolean;
   /** A path, or `-` for stdout. Absent ⇒ no summary is written. */
   summary?: string;
@@ -40,8 +55,9 @@ export const USAGE = `quac — data quality control for tabular data, headless.
 
 Usage
   quac <dataset> [--schema <file|dir|url>]... [--rules <file|url>]...
-       [--index <id>] [--sheet <name>] [--out <path>] [--no-corrections]
-       [--summary <path|->] [--fail-on <error|warning|none>] [--quiet]
+       [--index <id>] [--sheet <name>] [--out <path>] [--no-report]
+       [--findings <path|->]... [--no-corrections] [--summary <path|->]
+       [--fail-on <error|warning|none>] [--quiet]
   quac --version
   quac --help
 
@@ -61,9 +77,20 @@ Options
                            be. Printed for you if the choice is ambiguous.
   --sheet <name>           Worksheet to read from an .xlsx dataset. Required
                            when the workbook has more than one sheet.
-  --out <path>             Where to write the .xlsx report — a file path, or a
-                           directory to write the default name into.
+  --out <path>             Where to write the .xlsx QC report — a file path, or
+                           a directory to write the default name into.
                            Default: the current directory.
+  --no-report              Do not write the QC report, the workbook that holds
+                           the data. Pair it with --findings, --summary or
+                           --fail-on.
+  --findings <path|->      Write the findings without data: every check the
+                           dataset failed, where the JSON Schema or the QC
+                           rules define it, and how many records failed it —
+                           no value from the dataset, so it can be shared. The
+                           name picks the format: .md (Markdown), .json or
+                           .xlsx; a directory gets a Markdown file with the
+                           default name. '-' writes Markdown to stdout.
+                           Repeatable, one format per value.
   --no-corrections         Report on the data as-is; do not apply correction
                            rules.
   --summary <path|->       Write the machine-readable run summary as JSON.
@@ -78,10 +105,10 @@ Options
   --help                   Print this message and exit.
 
 Exit codes
-  0  report written        3  schema-set error
+  0  run finished          3  schema-set error
   1  usage error           4  run failure
-  2  input/ingest error    5  report or summary write failure
-  6  --fail-on threshold met (the report was still written)
+  2  input/ingest error    5  an output could not be written
+  6  --fail-on threshold met (every output was still written)
   130 interrupted
 
 Your data never leaves this machine. The only network requests QuaC makes are
@@ -99,6 +126,8 @@ const OPTIONS = {
   index: { type: 'string' },
   sheet: { type: 'string' },
   out: { type: 'string' },
+  'no-report': { type: 'boolean' },
+  findings: { type: 'string', multiple: true },
   'no-corrections': { type: 'boolean' },
   summary: { type: 'string' },
   'fail-on': { type: 'string' },
@@ -114,6 +143,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     index: string;
     sheet: string;
     out: string;
+    'no-report': boolean;
+    findings: string[];
     'no-corrections': boolean;
     summary: string;
     'fail-on': string;
@@ -159,6 +190,27 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     throw new QuacCliError('usage', `--fail-on takes ${FAIL_ON.join(', ')} — not '${failOn}'.`);
   }
 
+  const report = values['no-report'] !== true;
+  if (!report && values.out !== undefined) {
+    throw new QuacCliError(
+      'usage',
+      '--out names where the QC report goes, and --no-report says not to write one — ' +
+        'use one or the other.',
+    );
+  }
+  const findings = (values.findings ?? []).map(findingsTarget);
+  const stdout = [
+    ...findings.filter((t) => t.kind === 'stdout').map(() => '--findings -'),
+    ...(values.summary === '-' ? ['--summary -'] : []),
+  ];
+  if (stdout.length > 1) {
+    throw new QuacCliError(
+      'usage',
+      `Only one output can go to stdout, and ${stdout.join(' and ')} both ask for it.`,
+      { detail: ['Write the others to files.'] },
+    );
+  }
+
   return {
     kind: 'run',
     args: {
@@ -169,11 +221,37 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...optional('sheet', values.sheet),
       ...optional('out', values.out),
       ...optional('summary', values.summary),
+      report,
+      findings,
       applyCorrections: values['no-corrections'] !== true,
       failOn: failOn ?? 'none',
       quiet: values.quiet === true,
     },
   };
+}
+
+const FINDINGS_FORMATS: Readonly<Record<string, FindingsFormat>> = {
+  md: 'markdown',
+  markdown: 'markdown',
+  json: 'json',
+  xlsx: 'xlsx',
+};
+
+/** A `--findings` value: stdout, a file named for its format, or possibly a directory. */
+function findingsTarget(value: string): FindingsTarget {
+  if (value === '-') return { kind: 'stdout', format: 'markdown' };
+  const name = value.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) ?? '';
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0 || /[/\\]$/.test(value)) return { kind: 'directory?', path: value };
+  const format = FINDINGS_FORMATS[name.slice(dot + 1).toLowerCase()];
+  if (format === undefined) {
+    throw new QuacCliError(
+      'usage',
+      `--findings writes .md, .json or .xlsx — '${value}' is none of them.`,
+      { detail: ['Name the file with one of those extensions, or pass a directory.'] },
+    );
+  }
+  return { kind: 'file', path: value, format };
 }
 
 /** Optional-property spread: an absent flag stays absent, never `undefined`. */

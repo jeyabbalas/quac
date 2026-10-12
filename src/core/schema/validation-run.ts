@@ -21,6 +21,7 @@ import { duckTypeBase, mayHoldWideIntegers, parseDuckType, readsAsJson } from '.
 import { computePertinence } from '../pertinence';
 import { quoteIdentifier } from '../sql-identifier';
 import { applyCastPlan, buildCastPlan, describeColumns } from './casting';
+import { createCheckTallies } from './check-tally';
 import { undeclaredColumnMeta } from './column-meta';
 import { datasetShape, schemaRefUri } from './dataset-shape';
 import { createRefResolver } from './deref';
@@ -235,6 +236,13 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     flagStore.add(flags);
     flagCount += flags.length;
   };
+  // The flags this run raises itself — column- and dataset-level — are
+  // tallied here; the worker tallies its own (ValidationSummary.checks).
+  const runChecks = createCheckTallies();
+  const addRunFlags = (flags: readonly QCFlag[]): void => {
+    for (const flag of flags) runChecks.add(flag);
+    addFlags(flags);
+  };
 
   const startedAt = performance.now();
   let validateStartedAt = startedAt;
@@ -347,7 +355,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
         );
       }
     }
-    addFlags(flags);
+    addRunFlags(flags);
   }
 
   // ---- quac_typed: the schema's cast, for the rules (§C.1) ----
@@ -375,7 +383,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
     }
     if (records === null) {
       mode = 'typed';
-      addFlags([
+      addRunFlags([
         datasetFlag(
           SCHEMA_DATASET_RULE_IDS.source,
           'warning',
@@ -391,7 +399,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   const columnScope = pertinenceOf(datasetKeys);
   const missingRequired = columnScope.missingRequired;
   let extras = columnScope.extras;
-  if (records === null) addFlags(columnScope.flags);
+  if (records === null) addRunFlags(columnScope.flags);
 
   // ---- What the dataset as a whole must satisfy (dataset-shape.ts) ----
   const shape = datasetShape(set);
@@ -416,7 +424,7 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   };
   const minItems = shape?.minItems;
   const maxItems = shape?.maxItems;
-  addFlags(
+  addRunFlags(
     (shape?.warnings ?? []).map((warning) => datasetFlag(SCHEMA_DATASET_RULE_IDS.unchecked, 'warning', warning)),
   );
 
@@ -434,13 +442,14 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
         datasetFlag(SCHEMA_DATASET_RULE_IDS.minItems, 'error', minItemsMessage(0, minItems)),
       );
     }
-    addFlags(flags);
+    addRunFlags(flags);
     return {
       rowsTotal: 0,
       rowsWithErrors: 0,
       flagsEmitted: 0,
       flagsTruncated: false,
       countsByRuleId: {},
+      checks: runChecks.list(),
       elapsedMs: Math.round(performance.now() - startedAt),
       aborted: false,
     };
@@ -608,14 +617,16 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
   const summary = loop.summary;
   if (records !== null) {
     const seen = pertinenceOf(loop.keysSeen ?? datasetKeys);
-    addFlags(seen.flags);
+    addRunFlags(seen.flags);
     extras = seen.extras;
   }
 
   // ---- Dataset-scope findings (§D.6, aggregating) ----
   emitProgress('aggregating', rowsTotal, true);
   if (!summary.aborted) {
-    const flags: QCFlag[] = [...loop.datasetFlags];
+    // The worker's own dataset findings are in its tally already.
+    addFlags(loop.datasetFlags);
+    const flags: QCFlag[] = [];
     if (minItems !== undefined && rowsTotal < minItems) {
       flags.push(datasetFlag(SCHEMA_DATASET_RULE_IDS.minItems, 'error', minItemsMessage(rowsTotal, minItems)));
     }
@@ -638,9 +649,9 @@ export async function runSchemaValidation(deps: ValidationRunDeps): Promise<Vali
       if (rejected.has(column) || undeclaredOf(key) !== null) continue;
       flags.push(columnFlag(schemaColumnRuleId(column, 'undescribed'), column, 'info', undescribedColumnMessage(key)));
     }
-    addFlags(flags);
+    addRunFlags(flags);
   }
   emitProgress('aggregating', rowsTotal, true);
 
-  return { ...summary, rowsTotal };
+  return { ...summary, rowsTotal, checks: [...summary.checks, ...runChecks.list()] };
 }

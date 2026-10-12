@@ -83,6 +83,13 @@ export interface RuleRunStat {
   flagsEmitted: number;
   truncated: boolean;
   changedCells?: number; // correct rules
+  /**
+   * Column-scope validate rules only, one entry per target in target order:
+   * the rows a per-row assertion found violating there (exact COUNT(*)), or —
+   * `count_distinct_in_range` — 1 when the column's distinct count is out of
+   * range, with that count. `violationCount` is their sum.
+   */
+  byTarget?: { column: string; violations: number; distinct?: number }[];
   durationMs: number;
   error?: string;
 }

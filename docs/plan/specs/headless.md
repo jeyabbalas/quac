@@ -68,6 +68,8 @@ pipeline returns partial artifacts rather than throwing, so `runQuac` checks the
 `runPipeline` and throws instead of emitting a half-validated workbook (§6's exit 130 promises
 no file).
 
+**1.2.0 additions (qc-report-spec.md §7).** (d) The result carries `findings: QcFindings` — the findings without data, built after the run from definitions and counts only, always (it is cheap); it IS the JSON `--findings x.json` writes, and the package also exports `renderFindingsMarkdown`, `writeFindingsWorkbook` and `FINDINGS_SCHEMA_VERSION`. (e) `report?: boolean` (default true): `false` writes no workbook and `outPath` is `null`. The overloads keep `outPath: string` for every caller that leaves the report on — `RunQuacResult<OutPath = string>`, with `runQuac(o & { report: false })` → `RunQuacResult<null>` and a plain `RunQuacOptions` (a boolean `report`) → `RunQuacResult<string | null>` — so a 1.1 caller's types do not change.
+
 Never calls `process.exit`; throws typed errors (`QuacCliError` with a `kind` mapping onto §6 codes) that `main()` translates. The assembly (all seams existing):
 
 1. **Ingest**: read bytes → `sniffFormat` → `assessFileSize` guardrails (§8) → `ingestDataset(bridge, {name, bytes, format, sheetName?})` — unchanged over the adapter (Buffer→ArrayBuffer slice).
@@ -82,10 +84,13 @@ Never calls `process.exit`; throws typed errors (`QuacCliError` with a `kind` ma
 
 ```
 quac <dataset> [--schema <file|dir|url>]... [--rules <file|url>]...
-     [--index <id>] [--sheet <name>] [--out <path>] [--no-corrections]
-     [--summary <path|->] [--fail-on <error|warning|none>] [--quiet]
+     [--index <id>] [--sheet <name>] [--out <path>] [--no-report]
+     [--findings <path|->]... [--no-corrections] [--summary <path|->]
+     [--fail-on <error|warning|none>] [--quiet]
 quac --version | quac --help
 ```
+
+**`--findings` and `--no-report` (1.2.0).** `--findings` is repeatable, one output per value, and its name picks the format: `.md`/`.markdown`, `.json` or `.xlsx` (any case); `-` is Markdown on stdout; a name with no extension must be an existing directory (`main()` checks before the run — `args.ts` does no I/O and hands it on as `directory?`), which gets `quac-findings_<stem>_<stamp>.md`. Refusals, exit 1: another extension; an extensionless name that is no directory; `--no-report` with `--out`; two outputs on stdout (`--findings -` twice, or with `--summary -`). `--no-report` passes `report: false`. Findings are written after the run and before the summary; the closing note prints one `quac: findings written → <path>` line per file (stdout ones excepted, they are already on screen) and, with no report, `quac: run finished — no report written (--no-report)`.
 
 `node:util` parseArgs (zero new runtime deps; repeatables via `multiple: true`; positional dataset via `allowPositionals`). No subcommands in v1.
 
@@ -102,13 +107,13 @@ Closed set — scripts may depend on it:
 
 | Code | Meaning |
 |---|---|
-| 0 | Report written (findings do NOT affect exit unless `--fail-on`) |
+| 0 | Run finished: every output asked for — report, findings, summary — written (findings do NOT affect exit unless `--fail-on`) |
 | 1 | Usage error: bad/unknown flags, no dataset, no check source, mixed local/URL `--schema` (§8), bad `--fail-on` value |
 | 2 | Input/ingest error: unreadable/unsupported/oversize dataset (guardrail hard-stop), multi-sheet workbook without `--sheet` or unknown `--sheet` (stderr lists the workbook's sheet names), unreadable rules file, failed URL fetch |
 | 3 | Schema-set error: fatal load errors / null digest with no other check source, ambiguous root without a matching `--index` (stderr lists `set.root.candidates` — fileId, declaredId, title — plus the `--index` hint) |
 | 4 | Run failure: prepare-stage error, bridge/DuckDB init failure, any uncaught exception (top-level catch maps unknowns here); a schema stage that did not finish (`stageErrors` with stage `schema` — its findings are missing, so a clean exit would misreport; the report and summary are still written first) |
-| 5 | Report/summary write failure |
-| 6 | `--fail-on` threshold met — the report AND summary were still written first |
+| 5 | Report, findings or summary write failure |
+| 6 | `--fail-on` threshold met — every output was still written first |
 | 130 | SIGINT (cooperative cancel through the pipeline's AbortSignal; no report) |
 
 Non-prepare `stageErrors` are **not** fatal (the app presents partials): write the partial report, print the stage errors as `warning:` lines, exit 0 (or 6). `--fail-on error` → exit 6 when `severityTotals.error > 0`; `warning` → when errors+warnings > 0; `none` (default) → never. No count-threshold form in v1 (that is `--summary - | jq` territory).
@@ -137,7 +142,8 @@ Non-prepare `stageErrors` are **not** fatal (the app presents partials): write t
   "missingVariables": [ { "name", "description" } ],    // ReportModel
   "stageErrors": [ { "stage", "message" } ],
   "durations": { "prepare", "corrections", "schema", "rules", "annotate" },     // RunArtifacts.durations (ms)
-  "report": { "path", "dataRowsTruncated" }             // abs path; ReportModel.data.truncated
+  "report": { "path", "dataRowsTruncated" } | null,     // abs path; ReportModel.data.truncated; null with --no-report (1.2.0)
+  "findings": [ { "path", "format" } ]                  // what --findings wrote, in order; "-" for stdout (1.2.0)
 }
 ```
 
@@ -194,5 +200,7 @@ never reach `JSON.stringify` — the summary maps stage errors to `{stage, messa
 | `unit/cli/summary.test.ts` | node | §7 field-by-field from a synthetic `RunArtifacts`/`ReportModel` |
 | `cli/run.test.ts` | **cli (built)** | golden journey 18 |
 | `cli/exitCodes.test.ts` | **cli (built)** | golden journey 19 |
+| `cli/findings.test.ts` | **cli (built)** | 1.2.0: `--no-report` + `--findings` in all three formats and a directory — no workbook, the summary's `report: null` and `findings[]`, none of the seeded values in any file; `--findings -` alone on stdout; the four refusals (exit 1) and a write failure (exit 5) |
+| `unit/report/findingsNoData.test.ts` | node | 1.2.0: the no-data proof (qc-report-spec.md §7.1) — marked values reach the run's flags and the QC report, and none of the three findings formats |
 
 **CLI tier**: a new vitest project `cli` (`tests/cli/**/*.test.ts`, node env) that black-boxes the BUILT `dist-cli/quac.mjs` via `child_process` — exit codes, stderr shapes, exceljs re-read of the workbook, summary JSON parse; URL-intake cases run an in-test `node:http` static server over `tests/fixtures/` (no CORS server — CORS is a browser concept). Scripts: `"test:cli": "vitest run --project cli"`, `"pretest:cli": "npm run build:cli"` (the `pretest:browser` house pattern). CI: `test:cli` runs after `fixtures:check`, before the Playwright steps (fail cheap, no browsers needed).

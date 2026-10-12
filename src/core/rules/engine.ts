@@ -249,6 +249,8 @@ export async function nestedOf(runner: SQLRunner): Promise<Set<string>> {
 interface ExecOutcome {
   violationCount: number;
   truncated: boolean;
+  /** Column-scope rules: the count per target (RuleRunStat.byTarget). */
+  byTarget?: { column: string; violations: number; distinct?: number }[];
 }
 
 async function runRowBool(
@@ -262,9 +264,14 @@ async function runRowBool(
   let violationCount = 0;
   let truncated = false;
   const message = flagMessage(rule);
+  // A column rule runs its assertion once per target: each count is that column's.
+  const byTarget: { column: string; violations: number }[] = [];
   for (const { condition, targets } of conds) {
     const n = firstScalar(await runner.query(violCountSQL(condition)));
     violationCount += n;
+    if (rule.ruleScope === 'column') {
+      for (const target of targets) byTarget.push({ column: target, violations: n });
+    }
     if (n === 0) continue;
     const rows = await runner.query(violFetchSQL(condition, targets, rowCap, nested));
     parseNestedColumns(rows, nested);
@@ -296,7 +303,7 @@ async function runRowBool(
       }
     }
   }
-  return { violationCount, truncated };
+  return { violationCount, truncated, ...(rule.ruleScope === 'column' ? { byTarget } : {}) };
 }
 
 async function runColumnAggregate(
@@ -307,9 +314,12 @@ async function runColumnAggregate(
 ): Promise<ExecOutcome> {
   let violating = 0;
   const message = flagMessage(rule);
+  const byTarget: { column: string; violations: number; distinct: number }[] = [];
   for (const agg of aggs) {
     const n = firstScalar(await runner.query(agg.countSql));
-    if (n < agg.lo || n > agg.hi) {
+    const outOfRange = n < agg.lo || n > agg.hi;
+    byTarget.push({ column: agg.target, violations: outOfRange ? 1 : 0, distinct: n });
+    if (outOfRange) {
       violating += 1;
       sink.emit({
         source: 'rules',
@@ -321,7 +331,7 @@ async function runColumnAggregate(
       });
     }
   }
-  return { violationCount: violating, truncated: false };
+  return { violationCount: violating, truncated: false, byTarget };
 }
 
 /**
@@ -514,6 +524,7 @@ async function runValidationsPhase(ctx: PhaseCtx, allRules: QCRule[]): Promise<v
         violationCount: outcome.violationCount,
         flagsEmitted: emitted,
         truncated: outcome.truncated || suppressed > 0,
+        ...(outcome.byTarget === undefined ? {} : { byTarget: outcome.byTarget }),
         durationMs: performance.now() - started,
       });
     } catch (err) {

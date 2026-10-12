@@ -83,6 +83,16 @@ Headless tail (2026-07-30 amendment): **P20 → P21 → P22** — the release ph
 > counts line (unit/browser/e2e, entry KB gz). Repro narratives, measurement dumps, rejected alternatives and
 > verification walkthroughs belong in the phase file or the spec they amend — not here.
 
+2026-10-12 · findings · **Findings without data — what failed, shareable, with no value from the dataset.** A
+counterpart to the QC report (which quotes the data in every sheet) for a third party: each failed check, where the
+schema or rules define it, how many records failed it. One document (`core/report/findings.ts`, `QcFindings`,
+`findingsSchemaVersion` 1) → Markdown (`findingsMarkdown.ts`), JSON, Excel (`findingsWorkbook.ts`); app: three buttons
+under the Summary panel's actions (`findingsExport.ts`, lazy); CLI: `--findings <path|->` + `--no-report`; `runQuac` →
+`findings`, `report: false`. No data by construction — the builder takes no flag (V60); groundwork: exact per-check
+tallies (`check-tally.ts`, `ValidationSummary.checks`), `meta.location` from the translator (V61), wording from the schema
+(`schema/requirement.ts`), `RuleRunStat.byTarget`, `RunArtifacts.definitions`. Watch: rule conditions ship as written;
+URLs lose their query (V62). Spec: qc-report-spec.md §7. Unit 1,542 · browser 77 · CLI 62 · e2e 130 · entry 56.9 KB gz.
+
 2026-10-11 · dictionary · **json-schema-data-dictionary 0.7.0 → 0.8.0, and semantic search with LEAF.** The bump was
 drop-in (skip patterns as enforced, comments shown, the download an `.xlsx` — V52; agreement invariant and axe unchanged).
 Semantic search: a switch in the JSON Schema panel head (`preview/dataDictionary.ts`, `semanticSearch.ts`) gives the

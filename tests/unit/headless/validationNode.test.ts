@@ -218,8 +218,46 @@ describe('the sticky flag cap', () => {
     // The cap governs materialization only — Sheet 4's tallies must stay whole.
     expect(cappedSummary.countsByRuleId).toEqual(fullSummary.countsByRuleId);
     expect(cappedSummary.rowsWithErrors).toBe(fullSummary.rowsWithErrors);
+    // …and so must the per-check tallies the findings without data are built from.
+    expect(cappedSummary.checks).toEqual(fullSummary.checks);
     capped.end();
     uncapped.end();
+  });
+
+  test('per-check tallies split a ruleId by keyword and place, and sum to its count', async () => {
+    const w = openWorker();
+    w.post(initMessage(2));
+    await settle();
+    w.post({ type: 'batch', seq: 0, rowStart: 0, rows: ROWS });
+    await settle();
+    w.post({ type: 'flush' });
+    await settle();
+    const summary = doneOf(w.received).summary;
+    expect(summary.checks.length).toBeGreaterThan(0);
+    const summed = new Map<string, number>();
+    for (const check of summary.checks) {
+      summed.set(check.ruleId, (summed.get(check.ruleId) ?? 0) + check.count);
+      // A per-record check counts each record once, however often it failed there.
+      if (check.scope === 'cell' || check.scope === 'row') {
+        expect(check.records).toBeGreaterThan(0);
+        expect(check.records).toBeLessThanOrEqual(check.count);
+      }
+      // The translator located every keyword it reported in its file.
+      if (check.keyword !== undefined && check.scope !== 'dataset') {
+        expect(check.location).toMatch(/^quac-set:\/mini\.schema\.json#\//);
+        expect(check.location?.endsWith(`/${check.keyword}`)).toBe(true);
+      }
+    }
+    expect(Object.fromEntries(summed)).toEqual(summary.countsByRuleId);
+    // Identifying fields only — a tally carries no message and no value.
+    for (const check of summary.checks) {
+      expect(Object.keys(check).sort()).toEqual(
+        expect.arrayContaining(['count', 'records', 'ruleId', 'scope', 'severity']),
+      );
+      expect(check).not.toHaveProperty('message');
+      expect(check).not.toHaveProperty('value');
+    }
+    w.end();
   });
 });
 

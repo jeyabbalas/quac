@@ -286,6 +286,7 @@ describe('buildReportModel — Sheet 4 repeat offenders', () => {
       flagsEmitted: 9,
       flagsTruncated: false,
       countsByRuleId: { 'schema:prop:x:value': 9 },
+      checks: [],
       elapsedMs: 1,
       aborted: false,
     };

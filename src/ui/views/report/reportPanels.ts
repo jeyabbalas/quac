@@ -28,6 +28,7 @@ import {
 } from '../../../core/report/reportModel';
 import type { ShellContext } from '../../../app/shell';
 import type { RunArtifacts } from '../../../core/pipeline';
+import type { FindingsFormat } from '../../../core/report/findings';
 import type { QCRule } from '../../../core/rules/types';
 import type { SeverityToggles } from './reportGrid';
 
@@ -127,6 +128,67 @@ function scopeNote(text: string): HTMLParagraphElement {
 }
 
 const NO_RULES_TITLE = 'No QC rules were loaded for this run.';
+
+/** The findings formats, as the buttons name them (qc-report-spec.md §7). Pinned copy. */
+const FINDINGS_BUTTONS: readonly { format: FindingsFormat; label: string; file: string }[] = [
+  { format: 'xlsx', label: 'Excel', file: 'an Excel workbook (.xlsx)' },
+  { format: 'markdown', label: 'Markdown', file: 'Markdown (.md)' },
+  { format: 'json', label: 'JSON', file: 'JSON (.json)' },
+];
+
+/**
+ * The findings without data: three buttons, one per format, under a legend
+ * that says what they share and what they never do. The builder and exceljs
+ * load on the first click (findingsExport.ts), as the QC report's do.
+ */
+function findingsExportGroup(ctx: ShellContext): HTMLFieldSetElement {
+  const group = document.createElement('fieldset');
+  group.className = 'q-findings-export';
+  const legend = document.createElement('legend');
+  legend.textContent = 'Findings without data';
+  const note = document.createElement('p');
+  note.className = 'q-findings-export-note';
+  note.id = 'q-findings-export-note';
+  note.textContent =
+    'Every failed check, where the schema or rules define it, and how many records failed it — ' +
+    'with no values from the dataset, so you can share it.';
+  const buttons = document.createElement('div');
+  buttons.className = 'q-findings-export-buttons';
+  let busy = false;
+  for (const { format, label, file } of FINDINGS_BUTTONS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'q-btn q-btn--small';
+    button.textContent = label;
+    button.title = `Download the findings without data as ${file}`;
+    button.setAttribute('aria-label', `${label}: download the findings without data`);
+    button.setAttribute('aria-describedby', note.id);
+    button.addEventListener('click', () => {
+      if (busy) return;
+      busy = true;
+      // aria-disabled, not `disabled`: disabling the pressed button would drop
+      // keyboard focus to the page; `busy` already refuses a second press.
+      group.setAttribute('aria-busy', 'true');
+      for (const b of buttons.querySelectorAll('button')) b.setAttribute('aria-disabled', 'true');
+      void (async () => {
+        try {
+          const { runFindingsExport } = await import('./findingsExport');
+          await runFindingsExport(ctx, format);
+          showToast('Findings downloaded — they contain no data.', { kind: 'info' });
+        } catch (err) {
+          reportError(err, { fallbackCode: 'EXPORT_FAILED' });
+        } finally {
+          busy = false;
+          group.removeAttribute('aria-busy');
+          for (const b of buttons.querySelectorAll('button')) b.removeAttribute('aria-disabled');
+        }
+      })();
+    });
+    buttons.append(button);
+  }
+  group.append(legend, note, buttons);
+  return group;
+}
 
 export function mountReportPanels(
   host: HTMLElement,
@@ -256,7 +318,7 @@ export function mountReportPanels(
       hooks.onRerun();
     });
     actions.append(download, rerun);
-    target.append(actions);
+    target.append(actions, findingsExportGroup(ctx));
 
     // Excel export: swap the action buttons for a duck-progress + Cancel while
     // it runs. The orchestrator (and exceljs) load only on first click.

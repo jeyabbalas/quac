@@ -339,7 +339,7 @@
 
 /* ---- JSON Schema → data dictionary -------------------------------------- */
 
-/* The panel is json-schema-data-dictionary's <json-data-dictionary> (0.7.0),
+/* The panel is json-schema-data-dictionary's <json-data-dictionary> (0.8.0),
    not QuaC markup: its search, sections, skip-logic links and resizable
    columns live in its shadow root. What QuaC sets is the frame and the look.
 

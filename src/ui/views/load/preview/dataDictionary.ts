@@ -1,9 +1,10 @@
 /**
  * Preview → JSON Schema panel: the loaded JSON Schema as a data dictionary,
  * rendered by json-schema-data-dictionary's own `<json-data-dictionary>`
- * component (0.7.0) — ranked search, skip patterns you can follow from either
+ * component (0.8.0) — ranked search, skip patterns you can follow from either
  * end, a Metadata panel, a sticky column header, resizable columns, Copy and
- * CSV, and a nested variable's fields as indented rows of their own. It replaced the table, search and row projection QuaC used to build
+ * an Excel download, and a nested variable's fields as indented rows of their
+ * own. It replaced the table, search and row projection QuaC used to build
  * itself; the package owns that interaction now, and its tests pin it.
  *
  * The TAB is named for the input (`JSON Schema`, the slot card's name); the

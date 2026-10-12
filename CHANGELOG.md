@@ -18,8 +18,8 @@ Entries below say which half they apply to.
 
 Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`
 0.7.0 → 0.10.0 holds a million annotations, so the report grid now paints every flag a run records.
-`json-schema-data-dictionary` 0.1.0 → 0.7.0 brings its own dictionary component, which now renders the JSON
-Schema preview. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
+`json-schema-data-dictionary` 0.1.0 → 0.8.0 brings its own dictionary component, which now renders the JSON
+Schema preview and downloads it as a formatted Excel workbook. Both libraries read **nested data** — lists, structs, maps, JSON — and so, now, does QuaC from
 end to end: a JSON or Parquet dataset whose values are lists and records is validated, ruled on, shown and
 reported as the values it holds.
 
@@ -43,9 +43,11 @@ surface are unchanged; one exit code widens (below).
 - **The JSON Schema preview is a full data dictionary.** The Load view's JSON Schema tab is now
   json-schema-data-dictionary's own component: skip patterns you can follow from either end (a **Skip logic**
   panel listing every rule, a "Skips N" chip on each variable that drives one, conditions that link to the
-  variable they set), a **Metadata** panel, search that ranks the exact variable name first, a column header
-  that stays in view, resizable columns, and **Copy** / **CSV**. It wears QuaC's fonts and colours, stays light
-  on a dark-mode machine, and runs without semantic search, which would download a model.
+  variable they set), stated as exactly what the schema enforces, with each rule's `$comment` beside it; a
+  **Metadata** panel; search that ranks the exact variable name first; a column header that stays in view;
+  resizable columns; **Copy**; and an **Excel** download — a formatted workbook with the dictionary, every skip
+  pattern and an About sheet. It wears QuaC's fonts and colours, stays light on a dark-mode machine, and runs
+  without semantic search, which would download a model.
 
 ### Added — both
 
@@ -169,6 +171,8 @@ surface are unchanged; one exit code widens (below).
 
 - The "Painting N of M cell flags" banner, with the cap it reported.
 - QuaC's own dictionary table and its search, replaced by the component above.
+- The dictionary's CSV download. **Copy** still copies the dictionary as CSV text; the download is the Excel
+  workbook.
 
 ### Changed — CLI
 
@@ -196,7 +200,7 @@ surface are unchanged; one exit code widens (below).
 
 ### Changed — dependencies
 
-- `@jeyabbalas/data-table` 0.7.0 → **0.10.0** and `json-schema-data-dictionary` 0.1.0 → **0.7.0**, both pinned
+- `@jeyabbalas/data-table` 0.7.0 → **0.10.0** and `json-schema-data-dictionary` 0.1.0 → **0.8.0**, both pinned
   exactly. `vitest` and `@vitest/browser-playwright` 4 → 5, `es-module-lexer` 2 → 3, and every in-range update:
   vite 8.3, playwright 1.64, eslint 10.12, typescript-eslint 8.71, CodeMirror and Lezer patches.
 - **Still held**, for 1.1.0's reasons: TypeScript 6.0 (typescript-eslint, through its latest canary, declares

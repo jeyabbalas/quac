@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import type { Workbook } from 'exceljs';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 const INGEST_TIMEOUT = 90_000;
@@ -152,6 +153,33 @@ test('a skip pattern can be followed to the variable it sets', async ({ page }) 
   // "if baseline_record = 1 → -666 → … move_reason": follow the link.
   await panel.locator('[data-dd-goto="move_reason"]').first().click();
   await expect(dictRow(page, 'move_reason')).toBeInViewport();
+});
+
+test('the download is the formatted Excel workbook, as json-schema-data-dictionary 0.8.0 builds it', async ({
+  page,
+}) => {
+  await openDictionary(page);
+  const button = dictionary(page).locator('[data-dd-action="download"]');
+  await expect(button).toHaveText('Excel');
+
+  const downloadPromise = page.waitForEvent('download');
+  await button.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(
+    'hesp-household-economic-security-panel-core-table.xlsx',
+  );
+  const path = await download.path();
+
+  // The three sheets, and one row per variable under the header on the first.
+  const { default: ExcelJS } = await import('exceljs');
+  const wb: Workbook = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(path);
+  expect(wb.worksheets.map((sheet) => sheet.name)).toEqual(['Data dictionary', 'Skip logic', 'About']);
+  const sheet = wb.getWorksheet('Data dictionary');
+  const names: string[] = [];
+  sheet?.getColumn(1).eachCell((cell) => names.push(cell.text));
+  expect(names).toContain('household_size');
+  expect(names).toContain('move_reason');
 });
 
 test('the dictionary stays on QuaC’s light paper on a dark-OS machine', async ({ page }) => {

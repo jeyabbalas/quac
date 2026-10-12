@@ -11,10 +11,7 @@ QuaC ships as two products from one repository, and they version together:
 
 Entries below say which half they apply to.
 
-## [1.2.0] — Unreleased
-
-> Prepared, not released: this section collects the 1.2.0 changes so far. Set the date when the version is
-> tagged.
+## [1.2.0] — 2026-10-12
 
 Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`
 0.7.0 → 0.10.0 holds a million annotations, so the report grid now paints every flag a run records.
@@ -92,7 +89,6 @@ widens (a schema stage that cannot finish now exits 4, below).
   schema — exactly, past the flag cap as its per-rule counts already were, with the records each one failed;
   and each schema finding records where its keyword sits in its file. Column-scope QC rules record their count
   per variable. The findings above are built on these; the QC report is unchanged.
-
 - **Nested data is checked, not rejected.** A JSON or Parquet dataset keeps DuckDB's nested types (`LIST`,
   `STRUCT`, `MAP`, `JSON`) through every stage. The JSON Schema describes the inside of a value with ordinary
   keywords (`items`, `properties`, `required`, `uniqueItems`, `propertyNames`, `anyOf` …) and a finding says
@@ -272,11 +268,12 @@ widens (a schema stage that cannot finish now exits 4, below).
 | Unit tests                        | 1,211   | 1,542                    |
 | Browser tests                     | 73      | 77                       |
 | CLI tests                         | 45      | 62                       |
-| End-to-end tests                  | 124     | 130                      |
+| End-to-end tests                  | 124     | 131                      |
 | `npm audit` findings              | 2       | 2                        |
 | Third-party a11y items open       | 0       | 2 (dictionary component) |
 
-The 1.2.0 numbers are from a local run (Node 26, macOS), the 1.1.0 ones from CI.
+Both columns are from CI, 1.2.0's from run 38206751891 on the release's parent commit; each end-to-end count
+includes the one skipped by design (the wide-dataset performance recording).
 
 ### Known limitations
 
@@ -503,6 +500,6 @@ attached automatically. The one setting a human owns lives on npmjs.com:
 package `@jeyabbalas/quac` → Settings → Trusted Publisher → GitHub Actions, org
 `jeyabbalas`, repo `quac`, workflow `release.yml`, no environment.
 
-[1.2.0]: https://github.com/jeyabbalas/quac/compare/v1.1.0...HEAD
+[1.2.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jeyabbalas/quac/releases/tag/v1.0.0

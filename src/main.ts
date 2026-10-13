@@ -2,7 +2,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/primitives.css';
 import { applyBootConfig } from './app/bootConfig';
-import { startRouter } from './app/router';
+import { readRawHash, startRouter } from './app/router';
 import { mountShell } from './app/shell';
 import { createAppStore } from './app/store';
 import { bindSlotSignal as bindRulesSlot } from './core/rules/rules-store';
@@ -18,5 +18,12 @@ bindRulesSlot(store.slots.rules);
 // mountShell mounts the Load view synchronously on EVERY route (UIX-19), so
 // the Dataset card's URL and restore loaders are registered before P16's boot
 // flow reads the fragment below — a #/report reload ingests its dataset too.
-mountShell(root, { store, router: startRouter() });
-void applyBootConfig(store);
+const ctx = { store, router: startRouter() };
+mountShell(root, ctx);
+const booted = applyBootConfig(store);
+// The companion channel (companion.md) loads only when the link asks for it.
+if (/[?&]companion=/.test(readRawHash())) {
+  void import('./app/companion').then((m) => {
+    m.startCompanion(ctx, booted);
+  });
+}

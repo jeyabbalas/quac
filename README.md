@@ -438,6 +438,16 @@ it in.
 **None of this applies to the CLI.** CORS is a browser rule. A URL the web app cannot reach for want
 of a header loads fine under `quac --schema` / `--rules`.
 
+### Companion pages
+
+A page served from your own machine — such as the project website of the
+[schemify](https://github.com/jeyabbalas/skills) skill — can keep a dataset checked as its schemas change.
+It opens QuaC with `#/load?companion=<its origin>`; you load your dataset in QuaC and press **Allow**. From
+then on, each set of JSON Schema files the page sends is checked against your dataset here, and the page
+receives only the findings without data. Only pages on this computer (`127.0.0.1`, `localhost`) can connect,
+nothing happens before you press Allow, and **Disconnect** ends it. The protocol is in
+[docs/plan/specs/companion.md](docs/plan/specs/companion.md).
+
 ---
 
 ## Privacy

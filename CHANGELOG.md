@@ -11,6 +11,16 @@ QuaC ships as two products from one repository, and they version together:
 
 Entries below say which half they apply to.
 
+## [Unreleased]
+
+### Added
+
+- **Web app — companion pages.** A page served from your own machine can open QuaC with
+  `#/load?companion=<its origin>` and, once you press **Allow**, send it JSON Schema files: QuaC checks the
+  dataset loaded here against each set and sends back only the findings without data. Only loopback origins
+  can connect, and only the window that opened the tab; **Disconnect** ends it. The schemify skill's project
+  website uses it to keep a dataset checked while its agent edits the schemas.
+
 ## [1.2.0] — 2026-10-12
 
 Two of QuaC's own libraries moved, and the report and the Load view move with them. `@jeyabbalas/data-table`

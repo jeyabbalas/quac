@@ -99,6 +99,28 @@ export async function restoreSchemaEntries(args: {
 }
 
 /**
+ * Companion load (companion.md): the files a companion page sent, their paths
+ * kept exactly as given — so the setId is the companion's own fingerprint of
+ * its schema folder — with the root it named. Replaces the slot like any load,
+ * and resolves with the set it installed, or null when a reset or a newer load
+ * superseded it (the slot then holds someone else's set, or nothing).
+ */
+export async function loadCompanionSchemas(
+  entries: readonly IntakeEntry[],
+  index?: string,
+): Promise<SchemaSet | null> {
+  // restoreSchemaEntries takes the next token synchronously, before its first await.
+  const token = loadToken + 1;
+  await restoreSchemaEntries({
+    entries,
+    origin: 'upload',
+    sourceUrls: [],
+    ...(index === undefined ? {} : { chosenIndexFileId: index }),
+  });
+  return token === loadToken ? schemaState.get().set : null;
+}
+
+/**
  * Load one or more schema URLs. Top-level fetch failures become E_FETCH
  * findings on the resulting set (never a rejection); the ref-graph crawl gets
  * the same fetch port for transitive refs.
